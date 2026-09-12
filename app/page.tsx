@@ -181,23 +181,28 @@ export default function Page() {
       {menu && <button className="shade" onClick={() => setMenu(false)} />}
 
       <main className="main">
-        <header>
-          <button className="hamb" onClick={() => setMenu(true)}>
-            <Menu />
-          </button>
-          <div>
-            <small>Active Campaign</small>
-            <button style={{ gap: "6px" }}>
-              {currentCandidate ? `${currentCandidate.name} — ${currentCandidate.electionName} (${currentCandidate.wardConstituency})` : "Candidate Campaign"}
+        <header className="appHeader">
+          <div className="headerLeft">
+            <button className="hamb" onClick={() => setMenu(true)} aria-label="Open menu">
+              <Menu size={20} />
             </button>
+            <div className="campaignMeta">
+              <span className="campaignSub">
+                {currentCandidate ? `${currentCandidate.wardConstituency} • ${currentCandidate.electionName}` : "Active Election"}
+              </span>
+              <h2 className="campaignTitle">
+                {currentCandidate ? currentCandidate.name : "Candidate Workspace"}
+              </h2>
+            </div>
           </div>
+
           <div className="tools">
             <span className={`roleBadge ${user.role === "SUPER_ADMIN" ? "super" : "cand"}`}>
-              {user.role === "SUPER_ADMIN" ? "Super Admin Mode" : "Candidate Admin"}
+              {user.role === "SUPER_ADMIN" ? "Super Admin" : "Candidate"}
             </span>
-            <button className="lang">हिंदी / EN</button>
-            <button className="bell">
-              <Bell />
+            <button className="lang" title="Language">हिंदी / EN</button>
+            <button className="bell" title="Notifications">
+              <Bell size={18} />
               <i />
             </button>
             <span className="avatar">{user.name.slice(0, 2).toUpperCase()}</span>
@@ -924,7 +929,9 @@ function CandidateDashboard({ go, candidate, voters }: { go: (p: string) => void
         sub="Here's the live field summary and booth completion status."
       >
         <button className="primary" onClick={() => go("import")}>
-          <Upload /> Import voter list (.xlsx / .csv)
+          <Upload size={16} />
+          <span className="desktopOnly">Import voter list (.xlsx / .csv)</span>
+          <span className="mobileOnly">Import Voter List</span>
         </button>
       </Title>
 
