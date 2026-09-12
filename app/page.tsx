@@ -29,16 +29,21 @@ import {
   Building2,
   Layers,
   Check,
-  UserCheck
+  UserCheck,
+  Globe
 } from "lucide-react";
 import { store } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
+import { translations, Lang } from "@/lib/translations";
 
 export default function Page() {
   const [user, setUser] = useState<UserAccount | null>(null);
   const [page, setPage] = useState<string>("dashboard");
   const [menu, setMenu] = useState(false);
+  const [lang, setLang] = useState<Lang>("hi");
+  const t = translations[lang];
+  const toggleLang = () => setLang((prev) => (prev === "hi" ? "en" : "hi"));
 
   // Active candidate context (default cand_1)
   const [activeCandidateId, setActiveCandidateId] = useState<string>("cand_1");
@@ -77,8 +82,12 @@ export default function Page() {
     setPage("dashboard");
   };
 
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
   if (!user) {
-    return <Login onLogin={handleLogin} />;
+    return <Login onLogin={handleLogin} lang={lang} toggleLang={toggleLang} t={t} />;
   }
 
   // Super Admin Direct View
@@ -93,6 +102,9 @@ export default function Page() {
         }}
         onCandidateCreated={refreshData}
         onLogout={handleLogout}
+        lang={lang}
+        toggleLang={toggleLang}
+        t={t}
       />
     );
   }
@@ -106,6 +118,9 @@ export default function Page() {
         onVoterUpdated={refreshData}
         onLogout={handleLogout}
         onBackToAdmin={user.role === "SUPER_ADMIN" || user.role === "CANDIDATE_ADMIN" ? () => setPage("dashboard") : undefined}
+        lang={lang}
+        toggleLang={toggleLang}
+        t={t}
       />
     );
   }
@@ -114,11 +129,11 @@ export default function Page() {
   const currentCandidate = candidates.find((c) => c.id === activeCandidateId) || candidates[0];
 
   const candidateNav = [
-    ["dashboard", "Dashboard", Home],
-    ["voters", "Voters", Users],
-    ["import", "Import Data", FileSpreadsheet],
-    ["team", "Team & Booths", UserRound],
-    ["reports", "Reports", BarChart3],
+    ["dashboard", t.navDashboard, Home],
+    ["voters", t.navVoters, Users],
+    ["import", t.navImport, FileSpreadsheet],
+    ["team", t.navTeam, UserRound],
+    ["reports", t.navReports, BarChart3],
   ] as const;
 
   return (
@@ -128,14 +143,14 @@ export default function Page() {
           <Logo />
           <div>
             <b>VoterDesk</b>
-            <span>Candidate Admin</span>
+            <span>{t.candidateWorkspace}</span>
           </div>
           <button className="close" onClick={() => setMenu(false)}>
             <X />
           </button>
         </div>
 
-        <p className="label">CAMPAIGN WORKSPACE</p>
+        <p className="label">{t.campaignWorkspace}</p>
         <nav>
           {candidateNav.map(([id, text, Icon]) => (
             <button
@@ -152,17 +167,17 @@ export default function Page() {
           ))}
         </nav>
 
-        <p className="label second">SWITCH VIEWS</p>
+        <p className="label second">{t.switchViews}</p>
         <nav>
           {user.role === "SUPER_ADMIN" && (
             <button onClick={() => setPage("superadmin")}>
               <ShieldCheck />
-              <span>Super Admin Portal</span>
+              <span>{t.superAdminPortal}</span>
             </button>
           )}
           <button onClick={() => setPage("field")}>
             <UserCheck />
-            <span>Karyakarta Field View</span>
+            <span>{t.karyakartaFieldView}</span>
           </button>
         </nav>
 
@@ -188,10 +203,10 @@ export default function Page() {
             </button>
             <div className="campaignMeta">
               <span className="campaignSub">
-                {currentCandidate ? `${currentCandidate.wardConstituency} • ${currentCandidate.electionName}` : "Active Election"}
+                {currentCandidate ? `${currentCandidate.wardConstituency} • ${currentCandidate.electionName}` : t.activeElection}
               </span>
               <h2 className="campaignTitle">
-                {currentCandidate ? currentCandidate.name : "Candidate Workspace"}
+                {currentCandidate ? currentCandidate.name : t.candidateWorkspace}
               </h2>
             </div>
           </div>
@@ -200,7 +215,21 @@ export default function Page() {
             <span className={`roleBadge ${user.role === "SUPER_ADMIN" ? "super" : "cand"}`}>
               {user.role === "SUPER_ADMIN" ? "Super Admin" : "Candidate"}
             </span>
-            <button className="lang" title="Language">हिंदी / EN</button>
+            <button
+              className="lang"
+              onClick={toggleLang}
+              title="Switch Language"
+              style={{
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                fontWeight: 700
+              }}
+            >
+              <Globe size={14} />
+              <span>{t.langToggle}</span>
+            </button>
             <button className="bell" title="Notifications">
               <Bell size={18} />
               <i />
@@ -210,11 +239,11 @@ export default function Page() {
         </header>
 
         <section className="content">
-          {page === "dashboard" && <CandidateDashboard go={setPage} candidate={currentCandidate} voters={voters} />}
-          {page === "voters" && <VotersTable candidateId={activeCandidateId} voters={voters} onUpdate={refreshData} />}
-          {page === "import" && <RealExcelImporter candidateId={activeCandidateId} onImportSuccess={() => { refreshData(); setPage("voters"); }} />}
-          {page === "team" && <TeamManagement candidateId={activeCandidateId} team={team} onUpdate={refreshData} />}
-          {page === "reports" && <ReportsView voters={voters} />}
+          {page === "dashboard" && <CandidateDashboard go={setPage} candidate={currentCandidate} voters={voters} t={t} />}
+          {page === "voters" && <VotersTable candidateId={activeCandidateId} voters={voters} onUpdate={refreshData} t={t} />}
+          {page === "import" && <RealExcelImporter candidateId={activeCandidateId} onImportSuccess={() => { refreshData(); setPage("voters"); }} t={t} />}
+          {page === "team" && <TeamManagement candidateId={activeCandidateId} team={team} onUpdate={refreshData} t={t} />}
+          {page === "reports" && <ReportsView voters={voters} t={t} />}
         </section>
       </main>
     </div>
@@ -224,7 +253,17 @@ export default function Page() {
 // -------------------------------------------------------------
 // 1. LOGIN COMPONENT (WITH 3-ROLE QUICK TABS)
 // -------------------------------------------------------------
-function Login({ onLogin }: { onLogin: (u: UserAccount) => void }) {
+function Login({
+  onLogin,
+  lang,
+  toggleLang,
+  t,
+}: {
+  onLogin: (u: UserAccount) => void;
+  lang: Lang;
+  toggleLang: () => void;
+  t: (typeof translations)["hi"];
+}) {
   const [roleTab, setRoleTab] = useState<"CANDIDATE_ADMIN" | "SUPER_ADMIN" | "KARYAKARTA">("CANDIDATE_ADMIN");
   const [phone, setPhone] = useState("94141 14497");
   const [password, setPassword] = useState("voterdesk");
@@ -306,15 +345,37 @@ function Login({ onLogin }: { onLogin: (u: UserAccount) => void }) {
         <div className="loginBrand">
           <Logo />
           <div>
-            <b>VoterDesk</b>
-            <span>Multi-Role Campaign Platform</span>
+            <b>{t.loginBrandTitle}</b>
+            <span>{t.loginBrandSub}</span>
           </div>
         </div>
 
+        <button
+          type="button"
+          onClick={toggleLang}
+          style={{
+            alignSelf: "flex-end",
+            marginBottom: "12px",
+            border: "1px solid rgba(148, 163, 184, 0.6)",
+            borderRadius: "999px",
+            background: "#f8fafc",
+            color: "#0f172a",
+            padding: "7px 12px",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "6px",
+          }}
+        >
+          <Globe size={14} />
+          <span>{t.langToggle}</span>
+        </button>
+
         <div className="loginCopy">
-          <em>CHOOSE YOUR ACCESS ROLE</em>
-          <h1>Sign in to VoterDesk</h1>
-          <p>Super Admin, Candidate Admin, or Karyakarta portal.</p>
+          <em>{t.loginRoleLabel}</em>
+          <h1>{t.loginTitle}</h1>
+          <p>{t.loginSubtitle}</p>
         </div>
 
         {/* 3-Role Switcher Tabs */}
@@ -324,21 +385,21 @@ function Login({ onLogin }: { onLogin: (u: UserAccount) => void }) {
             className={`roleTab ${roleTab === "CANDIDATE_ADMIN" ? "active" : ""}`}
             onClick={() => selectRole("CANDIDATE_ADMIN")}
           >
-            Candidate Admin
+            {t.loginRoleCandidate}
           </button>
           <button
             type="button"
             className={`roleTab ${roleTab === "SUPER_ADMIN" ? "active" : ""}`}
             onClick={() => selectRole("SUPER_ADMIN")}
           >
-            Super Admin
+            {t.loginRoleSuper}
           </button>
           <button
             type="button"
             className={`roleTab ${roleTab === "KARYAKARTA" ? "active" : ""}`}
             onClick={() => selectRole("KARYAKARTA")}
           >
-            Karyakarta (Worker)
+            {t.loginRoleKaryakarta}
           </button>
         </div>
 
@@ -349,15 +410,15 @@ function Login({ onLogin }: { onLogin: (u: UserAccount) => void }) {
         )}
 
         <form onSubmit={handleSignIn}>
-          <label>Registered Mobile Number</label>
+          <label>{t.loginPhoneLabel}</label>
           <div className="phone">
             <span>+91</span>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" required />
           </div>
 
           <div className="passLabel">
-            <label>Password</label>
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>Pre-filled for demo</span>
+            <label>{t.loginPasswordLabel}</label>
+            <span style={{ fontSize: "11px", color: "var(--muted)" }}>{t.loginPasswordHint}</span>
           </div>
           <input
             className="password"
@@ -368,12 +429,12 @@ function Login({ onLogin }: { onLogin: (u: UserAccount) => void }) {
           />
 
           <button className="primary wide" disabled={loading}>
-            {loading ? "Signing in..." : `Sign in as ${roleTab === "SUPER_ADMIN" ? "Super Admin" : roleTab === "CANDIDATE_ADMIN" ? "Candidate Admin" : "Karyakarta"}`}
+            {loading ? t.loginSigningIn : `${t.loginPrimaryLabel} ${roleTab === "SUPER_ADMIN" ? t.loginRoleSuper : roleTab === "CANDIDATE_ADMIN" ? t.loginRoleCandidate : t.loginRoleKaryakarta}`}
           </button>
         </form>
 
         <p className="demo">
-          <ShieldCheck /> 1-Click login: Click any tab above to auto-fill credentials.
+          <ShieldCheck /> {t.loginDemoTip}
         </p>
       </section>
 
@@ -381,15 +442,15 @@ function Login({ onLogin }: { onLogin: (u: UserAccount) => void }) {
         <div className="grid" />
         <article>
           <Vote />
-          <h2>Manage elections with clarity, security & booth precision.</h2>
+          <h2>{t.loginArtTitle}</h2>
           <div className="artStat">
-            <span>Voter records organised</span>
+            <span>{t.loginArtMeta}</span>
             <b>73,860</b>
           </div>
           <div className="progress">
             <i style={{ width: "68%" }} />
           </div>
-          <small>68% field campaign targets achieved</small>
+          <small>{t.loginArtProgress}</small>
         </article>
       </section>
     </main>
@@ -405,12 +466,18 @@ function SuperAdminView({
   onSelectCandidate,
   onCandidateCreated,
   onLogout,
+  lang,
+  toggleLang,
+  t,
 }: {
   user: UserAccount;
   candidates: CandidateAccount[];
   onSelectCandidate: (id: string) => void;
   onCandidateCreated: () => void;
   onLogout: () => void;
+  lang: Lang;
+  toggleLang: () => void;
+  t: (typeof translations)["hi"];
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newCand, setNewCand] = useState({
@@ -456,18 +523,51 @@ function SuperAdminView({
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
-      <header style={{ height: "72px", background: "#0b224e", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 32px" }}>
+      <header style={{ height: "64px", background: "#0b224e", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 24px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
           <Logo />
           <div>
-            <b style={{ fontSize: "18px" }}>VoterDesk Super Admin</b>
+            <b style={{ fontSize: "17px" }}>VoterDesk Super Admin</b>
             <span style={{ display: "block", fontSize: "11px", color: "#a9c0e6" }}>System Owner Platform Console</span>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
-          <span className="roleBadge super">Master Administrator</span>
-          <button className="outline" style={{ background: "transparent", color: "white", borderColor: "#304875" }} onClick={onLogout}>
-            <LogOut size={16} /> Logout
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span className="roleBadge super desktopOnly">Master Administrator</span>
+          <button
+            style={{
+              background: "rgba(255, 255, 255, 0.16)",
+              color: "white",
+              border: "1px solid rgba(255, 255, 255, 0.3)",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+            onClick={toggleLang}
+          >
+            <Globe size={13} />
+            <span>{t.langToggle}</span>
+          </button>
+          <button
+            style={{
+              background: "rgba(255, 255, 255, 0.12)",
+              color: "white",
+              border: "1px solid rgba(255, 255, 255, 0.25)",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              fontSize: "12px",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px"
+            }}
+            onClick={onLogout}
+          >
+            <LogOut size={15} /> <span className="desktopOnly">Logout</span>
           </button>
         </div>
       </header>
@@ -662,12 +762,18 @@ function KaryakartaFieldView({
   onVoterUpdated,
   onLogout,
   onBackToAdmin,
+  lang,
+  toggleLang,
+  t,
 }: {
   user: UserAccount;
   voters: VoterRecord[];
   onVoterUpdated: () => void;
   onLogout: () => void;
   onBackToAdmin?: () => void;
+  lang: Lang;
+  toggleLang: () => void;
+  t: (typeof translations)["hi"];
 }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -708,23 +814,80 @@ function KaryakartaFieldView({
 
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9", paddingBottom: "40px" }}>
-      {/* Mobile Top Header */}
-      <header style={{ height: "64px", background: "#0b224e", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px", position: "sticky", top: 0, zIndex: 30 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      {/* Mobile Top Header with High-Contrast Buttons & Language Toggle */}
+      <header style={{ height: "60px", background: "#0b224e", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", position: "sticky", top: 0, zIndex: 30 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
           <Logo />
-          <div>
-            <b style={{ fontSize: "16px" }}>VoterDesk Field</b>
-            <span style={{ display: "block", fontSize: "10px", color: "#a9c0e6" }}>Karyakarta Mobile Portal</span>
+          <div style={{ minWidth: 0 }}>
+            <b style={{ fontSize: "15px", display: "block", whiteSpace: "nowrap" }}>{t.fieldPortal}</b>
+            <span style={{ display: "block", fontSize: "10px", color: "#a9c0e6", whiteSpace: "nowrap" }}>{t.fieldSub}</span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Active Working Language Switcher Button */}
+          <button
+            type="button"
+            style={{
+              background: "rgba(255, 255, 255, 0.16)",
+              color: "#ffffff",
+              border: "1px solid rgba(255, 255, 255, 0.35)",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              fontSize: "12px",
+              fontWeight: 700,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "4px",
+              cursor: "pointer"
+            }}
+            onClick={toggleLang}
+            title="Switch Language"
+          >
+            <Globe size={13} />
+            <span>{t.langToggle}</span>
+          </button>
+
+          {/* Back to Admin (if permitted) */}
           {onBackToAdmin && (
-            <button className="outline" style={{ color: "#fff", borderColor: "#284478", padding: "6px 10px", fontSize: "12px" }} onClick={onBackToAdmin}>
-              Back to Admin
+            <button
+              type="button"
+              style={{
+                background: "rgba(255, 255, 255, 0.16)",
+                color: "#ffffff",
+                border: "1px solid rgba(255, 255, 255, 0.35)",
+                borderRadius: "8px",
+                padding: "6px 10px",
+                fontSize: "12px",
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                cursor: "pointer"
+              }}
+              onClick={onBackToAdmin}
+            >
+              <span>{t.backToAdmin}</span>
             </button>
           )}
-          <button className="outline" style={{ color: "#fff", borderColor: "#284478", padding: "6px 10px", fontSize: "12px" }} onClick={onLogout}>
-            <LogOut size={14} />
+
+          {/* Logout Button */}
+          <button
+            type="button"
+            style={{
+              background: "rgba(255, 255, 255, 0.16)",
+              color: "#ffffff",
+              border: "1px solid rgba(255, 255, 255, 0.35)",
+              borderRadius: "8px",
+              padding: "6px 10px",
+              fontSize: "12px",
+              display: "inline-flex",
+              alignItems: "center",
+              cursor: "pointer"
+            }}
+            onClick={onLogout}
+            title={t.logout}
+          >
+            <LogOut size={15} />
           </button>
         </div>
       </header>
@@ -734,13 +897,13 @@ function KaryakartaFieldView({
         <div className="fieldBoothBanner">
           <div>
             <span style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "1px", color: "#93c5fd" }}>
-              Worker: {user.name}
+              {t.workerLabel}: {user.name}
             </span>
             <h2 style={{ margin: "4px 0 6px", fontSize: "20px" }}>
-              Assigned: Booth {assignedBooths.join(", ")}
+              {t.assignedBooth} {assignedBooths.join(", ")}
             </h2>
             <p style={{ margin: 0, fontSize: "12px", color: "#cbd5e1" }}>
-              Progress: {contacted} of {totalAssigned} voters contacted ({percentage}%)
+              {contacted} / {totalAssigned} {t.votersContactedOf} ({percentage}%)
             </p>
           </div>
           <div style={{ textAlign: "right" }}>
@@ -754,7 +917,7 @@ function KaryakartaFieldView({
             <Search size={16} style={{ position: "absolute", left: "12px", top: "13px", color: "#94a3b8" }} />
             <input
               style={{ width: "100%", height: "42px", paddingLeft: "36px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "14px", background: "#fff" }}
-              placeholder="Search voter name, EPIC or house..."
+              placeholder={t.karyakartaSearch}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -764,11 +927,11 @@ function KaryakartaFieldView({
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
-            <option value="ALL">All Status</option>
-            <option value="Pending">Pending</option>
-            <option value="Contacted">Contacted</option>
-            <option value="In-Favor">In Favor</option>
-            <option value="Slip-Given">Slip Given</option>
+            <option value="ALL">{t.allStatus}</option>
+            <option value="Pending">{t.stPending}</option>
+            <option value="Contacted">{t.stContacted}</option>
+            <option value="In-Favor">{t.stInFavor}</option>
+            <option value="Slip-Given">{t.stSlipGiven}</option>
           </select>
         </div>
 
@@ -780,7 +943,7 @@ function KaryakartaFieldView({
                 <div>
                   <b style={{ fontSize: "16px", color: "#0f172a" }}>{v.name}</b>
                   <span style={{ display: "block", fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
-                    Guardian: {v.guardian || "—"}
+                    {t.fatherHusband}: {v.guardian || "—"}
                   </span>
                 </div>
                 <span className={`status ${v.status.toLowerCase()}`}>{v.status}</span>
@@ -788,9 +951,9 @@ function KaryakartaFieldView({
 
               <div className="voterCardMeta">
                 <span><b>EPIC:</b> {v.epic}</span>
-                <span><b>House:</b> {v.house}</span>
-                <span><b>Age/Sex:</b> {v.age} / {v.gender}</span>
-                <span><b>Booth:</b> {v.booth}</span>
+                <span><b>{t.houseNo}:</b> {v.house}</span>
+                <span><b>{t.ageGender}:</b> {v.age} / {v.gender}</span>
+                <span><b>{t.booth}:</b> {v.booth}</span>
                 {v.phone && <span><b>Phone:</b> {v.phone}</span>}
               </div>
 
@@ -801,27 +964,27 @@ function KaryakartaFieldView({
                   style={{ background: v.status === "In-Favor" ? "#dcfce7" : "#fff", borderColor: "#86efac", color: "#15803d" }}
                   onClick={() => handleStatusChange(v.id, "In-Favor")}
                 >
-                  <Check size={14} /> Pakka Vote (In-Favor)
+                  <Check size={14} /> {t.btnInFavor}
                 </button>
                 <button
                   className="outline"
                   style={{ background: v.status === "Contacted" ? "#e0f2fe" : "#fff", borderColor: "#7dd3fc", color: "#0369a1" }}
                   onClick={() => handleStatusChange(v.id, "Contacted")}
                 >
-                  Contacted
+                  {t.btnContacted}
                 </button>
                 <button
                   className="outline"
                   style={{ background: v.status === "Slip-Given" ? "#e0e7ff" : "#fff", borderColor: "#c7d2fe", color: "#4338ca" }}
                   onClick={() => handleStatusChange(v.id, "Slip-Given")}
                 >
-                  Slip Handed Over
+                  {t.btnSlipGiven}
                 </button>
                 <button
                   className="outline"
                   onClick={() => setSelectedVoter(v)}
                 >
-                  Details / Slip
+                  {t.btnDetailsSlip}
                 </button>
               </div>
             </div>
@@ -905,7 +1068,7 @@ function KaryakartaFieldView({
 // -------------------------------------------------------------
 // 4. CANDIDATE ADMIN DASHBOARD
 // -------------------------------------------------------------
-function CandidateDashboard({ go, candidate, voters }: { go: (p: string) => void; candidate: CandidateAccount; voters: VoterRecord[] }) {
+function CandidateDashboard({ go, candidate, voters, t }: { go: (p: string) => void; candidate: CandidateAccount; voters: VoterRecord[]; t: (typeof translations)["hi"] }) {
   const total = voters.length;
   const contacted = voters.filter((v) => v.status === "Contacted" || v.status === "In-Favor" || v.status === "Slip-Given").length;
   const inFavor = voters.filter((v) => v.status === "In-Favor").length;
@@ -925,45 +1088,45 @@ function CandidateDashboard({ go, candidate, voters }: { go: (p: string) => void
     <>
       <Title
         tag={`${candidate.electionName.toUpperCase()} — ${candidate.wardConstituency}`}
-        title={`Welcome back, ${candidate.name}`}
-        sub="Here's the live field summary and booth completion status."
+        title={`${t.welcomeBack}, ${candidate.name}`}
+        sub={t.dashboardSub}
       >
         <button className="primary" onClick={() => go("import")}>
           <Upload size={16} />
-          <span className="desktopOnly">Import voter list (.xlsx / .csv)</span>
-          <span className="mobileOnly">Import Voter List</span>
+          <span className="desktopOnly">{t.importVotersFull}</span>
+          <span className="mobileOnly">{t.importVoters}</span>
         </button>
       </Title>
 
       <div className="stats">
         <article>
           <i className="blue"><Users /></i>
-          <span>Total voters</span>
+          <span>{t.totalVoters}</span>
           <b>{total.toLocaleString()}</b>
-          <small>Managed in this ward</small>
+          <small>{t.managedInWard}</small>
         </article>
         <article>
           <i className="green"><CheckCircle2 /></i>
-          <span>Contacted</span>
+          <span>{t.contacted}</span>
           <b>{contacted.toLocaleString()}</b>
-          <small>{contactedPct}% completed</small>
+          <small>{contactedPct}% {t.completed}</small>
         </article>
         <article>
           <i className="orange"><UserCheck /></i>
-          <span>Pakka Vote (In-Favor)</span>
+          <span>{t.pakkaVote}</span>
           <b>{inFavor.toLocaleString()}</b>
-          <small>High confidence supporters</small>
+          <small>{t.highConfidence}</small>
         </article>
         <article>
           <i className="red"><Users /></i>
-          <span>Pending</span>
+          <span>{t.pending}</span>
           <b>{pending.toLocaleString()}</b>
-          <small>{total > 0 ? Math.round((pending / total) * 100) : 0}% remaining</small>
+          <small>{total > 0 ? Math.round((pending / total) * 100) : 0}% {t.remaining}</small>
         </article>
       </div>
 
       <div className="two">
-        <Panel title="Booth Wise Completion" sub="Field survey and door-to-door progress by polling station">
+        <Panel title={t.boothCompletion} sub={t.boothSub}>
           {Object.entries(boothCounts).slice(0, 5).map(([bNo, data]) => {
             const pct = data.total > 0 ? Math.round((data.contacted / data.total) * 100) : 0;
             return (
@@ -981,29 +1144,29 @@ function CandidateDashboard({ go, candidate, voters }: { go: (p: string) => void
           })}
         </Panel>
 
-        <Panel title="Quick Actions" sub="Operations for candidate and managers">
+        <Panel title={t.quickActions} sub="Operations for candidate and managers">
           <div className="actions">
             <button onClick={() => go("import")}>
               <i className="blue"><FileSpreadsheet /></i>
               <span>
-                <b>Upload New Voter List (.xlsx / .csv)</b>
-                <small>Import official election commission electoral roll</small>
+                <b>{t.uploadNewList}</b>
+                <small>{t.uploadSub}</small>
               </span>
               ›
             </button>
             <button onClick={() => go("voters")}>
               <i className="orange"><Users /></i>
               <span>
-                <b>Review {pending} Pending Voters</b>
-                <small>Filter and assign to field karyakartas</small>
+                <b>{t.reviewPending} ({pending})</b>
+                <small>{t.reviewSub}</small>
               </span>
               ›
             </button>
             <button onClick={() => go("team")}>
               <i className="green"><UserRound /></i>
               <span>
-                <b>Manage Karyakarta Team</b>
-                <small>Assign booth duties and monitor targets</small>
+                <b>{t.manageTeam}</b>
+                <small>{t.manageSub}</small>
               </span>
               ›
             </button>
@@ -1021,10 +1184,12 @@ function VotersTable({
   candidateId,
   voters,
   onUpdate,
+  t,
 }: {
   candidateId: string;
   voters: VoterRecord[];
   onUpdate: () => void;
+  t: (typeof translations)["hi"];
 }) {
   const [q, setQ] = useState("");
   const [boothFilter, setBoothFilter] = useState("ALL");
@@ -1360,9 +1525,11 @@ function VotersTable({
 function RealExcelImporter({
   candidateId,
   onImportSuccess,
+  t,
 }: {
   candidateId: string;
   onImportSuccess: () => void;
+  t: (typeof translations)["hi"];
 }) {
   const [step, setStep] = useState(1);
   const [parsedData, setParsedData] = useState<ParsedSheetData | null>(null);
@@ -1601,10 +1768,12 @@ function TeamManagement({
   candidateId,
   team,
   onUpdate,
+  t,
 }: {
   candidateId: string;
   team: TeamMember[];
   onUpdate: () => void;
+  t: (typeof translations)["hi"];
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newMember, setNewMember] = useState({
@@ -1781,7 +1950,7 @@ function TeamManagement({
 // -------------------------------------------------------------
 // 8. REPORTS VIEW
 // -------------------------------------------------------------
-function ReportsView({ voters }: { voters: VoterRecord[] }) {
+function ReportsView({ voters, t }: { voters: VoterRecord[]; t: (typeof translations)["hi"] }) {
   const total = voters.length;
   const contacted = voters.filter((v) => v.status === "Contacted").length;
   const inFavor = voters.filter((v) => v.status === "In-Favor").length;
