@@ -1,0 +1,95 @@
+// Prisma Schema for VoterDesk
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User Roles: SUPER_ADMIN, CANDIDATE_ADMIN, KARYAKARTA
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String   @unique
+  password  String
+  role      String   @default("CANDIDATE_ADMIN") // SUPER_ADMIN | CANDIDATE_ADMIN | KARYAKARTA
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  candidateProfiles Candidate[]
+  karyakartaProfile KaryakartaProfile?
+}
+
+// Candidate Campaign Profile (Managed by Super Admin or Candidate Admin)
+model Candidate {
+  id               String   @id @default(cuid())
+  name             String
+  phone            String
+  party            String   @default("Independent")
+  electionName     String   @default("Municipal Election 2026")
+  wardConstituency String   @default("Ward 34")
+  status           String   @default("ACTIVE") // ACTIVE | EXPIRED | SUSPENDED
+  voterLimit       Int      @default(50000)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  booths      Booth[]
+  voters      Voter[]
+  karyakartas KaryakartaProfile[]
+}
+
+// Booth / Polling Station
+model Booth {
+  id          String   @id @default(cuid())
+  boothNumber String
+  name        String
+  area        String?
+  totalVoters Int      @default(0)
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([candidateId, boothNumber])
+}
+
+// Voter Record
+model Voter {
+  id          String   @id @default(cuid())
+  name        String
+  epic        String   // Voter ID / EPIC
+  guardian    String?  // Father / Husband Name
+  age         String?
+  gender      String?  // Male | Female | Other
+  house       String?  // House / Plot No
+  booth       String   // Booth / Part number
+  phone       String?
+  status      String   @default("Pending") // Pending | Contacted | In-Favor | Doubtful | Opposed | Slip-Given
+  workerName  String?  // Assigned Karyakarta name
+  notes       String?
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([candidateId, booth])
+  @@index([candidateId, epic])
+}
+
+// Karyakarta / Volunteer Profile
+model KaryakartaProfile {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  candidateId    String
+  candidate      Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  roleTitle      String   @default("Booth Worker") // Booth In-Charge | Field Worker | Data Operator
+  assignedBooths String   @default("[]") // JSON string array of booth numbers e.g. ["12", "14"]
+  status         String   @default("Active")
+  createdAt      DateTime @default(now())
+}
