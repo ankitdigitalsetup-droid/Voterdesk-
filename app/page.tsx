@@ -36,6 +36,7 @@ import { store } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
+import { matchesVoter } from "@/lib/transliterate";
 
 export default function Page() {
   const [user, setUser] = useState<UserAccount | null>(null);
@@ -835,17 +836,7 @@ function BoothManagerView({
       if (partFilter !== "ALL" && v.booth !== partFilter) return false;
 
       if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        const sNo = v.serialNo !== undefined ? String(v.serialNo).toLowerCase() : "";
-        return (
-          v.name.toLowerCase().includes(q) ||
-          (v.guardian && v.guardian.toLowerCase().includes(q)) ||
-          v.epic.toLowerCase().includes(q) ||
-          sNo.includes(q) ||
-          v.house.toLowerCase().includes(q) ||
-          v.booth.toLowerCase().includes(q) ||
-          (v.phone && v.phone.includes(q))
-        );
+        return matchesVoter(v, search);
       }
       return true;
     });
@@ -1120,7 +1111,7 @@ function BoothManagerView({
             />
             <input
               type="text"
-              placeholder={lang === "hi" ? "नाम, क्र सं., भाग, पिता/पति खोजें..." : "Search name, sr no, part, guardian..."}
+              placeholder={lang === "hi" ? "अंग्रेजी या हिंदी में नाम खोजें (जैसे: Rakesh, Mangal, पांचू)..." : "Search in English or Hindi (e.g. Rakesh, Mangal, Panchu)..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{
@@ -2057,15 +2048,8 @@ function VotersTable({
     return voters.filter((v) => {
       if (boothFilter !== "ALL" && v.booth !== boothFilter) return false;
       if (statusFilter !== "ALL" && v.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
-      if (q) {
-        const query = q.toLowerCase();
-        return (
-          v.name.toLowerCase().includes(query) ||
-          v.epic.toLowerCase().includes(query) ||
-          (v.guardian && v.guardian.toLowerCase().includes(query)) ||
-          v.house.toLowerCase().includes(query) ||
-          (v.phone && v.phone.includes(query))
-        );
+      if (q.trim()) {
+        return matchesVoter(v, q);
       }
       return true;
     });

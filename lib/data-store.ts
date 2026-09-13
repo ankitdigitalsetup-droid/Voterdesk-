@@ -1,4 +1,5 @@
 import { CandidateAccount, TeamMember, UserAccount, VoterRecord } from "./types";
+import { matchesVoter } from "./transliterate";
 
 // In-Memory global store for high-speed response & instant demo capability
 class DataStore {
@@ -380,6 +381,36 @@ class DataStore {
     },
     {
       id: "v_19",
+      name: "राकेश कुमार शर्मा",
+      epic: "RJX1001019",
+      guardian: "सोहन लाल शर्मा",
+      age: "42",
+      gender: "Male",
+      house: "52",
+      booth: "1",
+      serialNo: 26,
+      status: "Contacted",
+      worker: "Amit Joshi",
+      phone: "9829066666",
+      candidateId: "cand_1"
+    },
+    {
+      id: "v_20",
+      name: "राकेश सैनी",
+      epic: "RJX1001020",
+      guardian: "रामनिवास सैनी",
+      age: "36",
+      gender: "Male",
+      house: "55",
+      booth: "1",
+      serialNo: 27,
+      status: "In-Favor",
+      worker: "Amit Joshi",
+      phone: "9829077777",
+      candidateId: "cand_1"
+    },
+    {
+      id: "v_21",
       name: "Ramesh Kumar Sharma",
       epic: "RJX1032847",
       guardian: "Sohan Lal Sharma",
@@ -471,15 +502,7 @@ class DataStore {
       list = list.filter((v) => v.status.toLowerCase() === params.status?.toLowerCase());
     }
     if (params.query) {
-      const q = params.query.toLowerCase();
-      list = list.filter(
-        (v) =>
-          v.name.toLowerCase().includes(q) ||
-          v.epic.toLowerCase().includes(q) ||
-          (v.guardian && v.guardian.toLowerCase().includes(q)) ||
-          v.house.toLowerCase().includes(q) ||
-          v.booth.toLowerCase().includes(q)
-      );
+      list = list.filter((v) => matchesVoter(v, params.query!));
     }
     return list;
   }
