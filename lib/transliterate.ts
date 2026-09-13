@@ -265,9 +265,10 @@ export function matchesVoter(voter: VoterRecord, query: string): boolean {
     // 2. Father's / Husband's Name (Guardian)
     if (voter.guardian && singleFieldMatches(voter.guardian, token)) return true;
 
-    // 3. Address / House No. / Colony / Mohalla
+    // 3. Address / House No. / Colony / Mohalla / Booth Address
     if (voter.house && singleFieldMatches(voter.house, token)) return true;
     if (voter.address && singleFieldMatches(voter.address, token)) return true;
+    if (voter.boothAddress && singleFieldMatches(voter.boothAddress, token)) return true;
 
     // 4. EPIC No. (Voter ID card - require >= 4 digits if purely numeric, or alphanumeric like RJX)
     if (!isShortPureDigits && voter.epic && singleFieldMatches(voter.epic, token)) return true;

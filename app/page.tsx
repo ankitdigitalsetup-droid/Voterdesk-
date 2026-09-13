@@ -812,6 +812,11 @@ function BoothManagerView({
     age: "35",
     gender: "Male",
     house: "",
+    address: "",
+    boothAddress: "",
+    voted: "नहीं",
+    isSupporter: "हाँ",
+    isOutside: "नहीं",
     phone: "",
     status: "Pending" as VoterRecord["status"],
   });
@@ -911,6 +916,22 @@ function BoothManagerView({
     onVoterUpdated();
   };
 
+  const handleToggleField = (
+    voter: VoterRecord,
+    field: "voted" | "isSupporter" | "isOutside"
+  ) => {
+    const currentVal = String(voter[field] || (field === "isSupporter" ? "हाँ" : "नहीं"));
+    const isCurrentlyYes = currentVal === "हाँ" || currentVal === "Yes" || currentVal === "true";
+    const newVal = isCurrentlyYes ? "नहीं" : "हाँ";
+    const updatePayload: Partial<VoterRecord> = { [field]: newVal };
+    if (field === "isSupporter") {
+      updatePayload.status = newVal === "हाँ" ? "In-Favor" : "Pending";
+    }
+    store.updateVoter(voter.id, updatePayload);
+    setSelectedVoter((prev) => (prev && prev.id === voter.id ? { ...prev, ...updatePayload } : prev));
+    onVoterUpdated();
+  };
+
   const handleSaveVoter = (e: React.FormEvent) => {
     e.preventDefault();
     if (!voterForm.name.trim()) {
@@ -927,6 +948,11 @@ function BoothManagerView({
       age: voterForm.age || "35",
       gender: voterForm.gender || "Male",
       house: voterForm.house.trim(),
+      address: voterForm.address.trim(),
+      boothAddress: voterForm.boothAddress.trim(),
+      voted: voterForm.voted,
+      isSupporter: voterForm.isSupporter,
+      isOutside: voterForm.isOutside,
       phone: voterForm.phone.trim(),
       status: voterForm.status,
       worker: user.name,
@@ -945,6 +971,11 @@ function BoothManagerView({
       age: "35",
       gender: "Male",
       house: "",
+      address: "",
+      boothAddress: "",
+      voted: "नहीं",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
       phone: "",
       status: "Pending",
     });
@@ -956,19 +987,35 @@ function BoothManagerView({
     try {
       const parsed = await parseExcelFile(file);
       const mapping = detectFieldMapping(parsed.columns);
-      const toImport = parsed.rows.map((row) => ({
-        name: String(row[mapping.name] || "").trim(),
-        epic: String(row[mapping.epic] || "").trim().toUpperCase(),
-        guardian: String(row[mapping.guardian] || "").trim(),
-        age: String(row[mapping.age] || ""),
-        gender: String(row[mapping.gender] || "Male"),
-        house: String(row[mapping.house] || ""),
-        booth: String(row[mapping.booth] || "1"),
-        serialNo: mapping.serialNo ? row[mapping.serialNo] : undefined,
-        phone: String(row[mapping.phone] || ""),
-        status: "Pending" as VoterRecord["status"],
-        worker: "Unassigned",
-      })).filter((v) => v.name && v.epic);
+      const toImport = parsed.rows.map((row, idx) => {
+        const boothVal = String(row[mapping.booth] || "1").trim();
+        const serialVal = mapping.serialNo && row[mapping.serialNo] ? Number(row[mapping.serialNo]) : (idx + 1);
+        const epicVal = String(row[mapping.epic] || "").trim().toUpperCase() ||
+          `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
+
+        const isSupp = String(row[mapping.isSupporter] || "").trim();
+        const votedVal = String(row[mapping.voted] || "").trim();
+        const outsideVal = String(row[mapping.isOutside] || "").trim();
+
+        return {
+          name: String(row[mapping.name] || "").trim(),
+          epic: epicVal,
+          guardian: String(row[mapping.guardian] || "").trim(),
+          age: String(row[mapping.age] || "35"),
+          gender: String(row[mapping.gender] || "Male"),
+          house: String(row[mapping.house] || "").trim(),
+          booth: boothVal,
+          serialNo: serialVal,
+          phone: String(row[mapping.phone] || "").trim(),
+          address: String(row[mapping.address] || "").trim(),
+          voted: votedVal || "नहीं",
+          isSupporter: isSupp || "हाँ",
+          isOutside: outsideVal || "नहीं",
+          boothAddress: String(row[mapping.boothAddress] || "").trim(),
+          status: (isSupp === "हाँ" || isSupp === "Yes") ? ("In-Favor" as VoterRecord["status"]) : ("Pending" as VoterRecord["status"]),
+          worker: "Unassigned",
+        };
+      }).filter((v) => v.name);
 
       if (toImport.length === 0) {
         throw new Error("फ़ाइल में कोई वैध मतदाता रिकॉर्ड नहीं मिले।");
@@ -1571,7 +1618,59 @@ function BoothManagerView({
                     <td className="colIndex">{idx + 1}</td>
                     <td className="colPart">{v.booth}</td>
                     <td className="colSerial">{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
-                    <td className="colName">{v.name}</td>
+                    <td className="colName">
+                      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
+                        <span>{v.name}</span>
+                        {(v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) && (
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              background: "#dcfce7",
+                              color: "#15803d",
+                              padding: "1px 5px",
+                              borderRadius: "4px",
+                              fontWeight: 700,
+                              whiteSpace: "nowrap",
+                            }}
+                            title="वोट डाला गया"
+                          >
+                            ✓ वोट
+                          </span>
+                        )}
+                        {(v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") && (
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              background: "#fef3c7",
+                              color: "#b45309",
+                              padding: "1px 5px",
+                              borderRadius: "4px",
+                              fontWeight: 700,
+                              whiteSpace: "nowrap",
+                            }}
+                            title="समर्थक मतदाता"
+                          >
+                            ★ समर्थक
+                          </span>
+                        )}
+                        {(v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) && (
+                          <span
+                            style={{
+                              fontSize: "9.5px",
+                              background: "#fee2e2",
+                              color: "#b91c1c",
+                              padding: "1px 5px",
+                              borderRadius: "4px",
+                              fontWeight: 700,
+                              whiteSpace: "nowrap",
+                            }}
+                            title="बाहर/प्रवासी"
+                          >
+                            🚌 बाहर
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="colGuardian">{v.guardian || "—"}</td>
                   </tr>
                 );
@@ -1617,9 +1716,10 @@ function BoothManagerView({
                   {selectedVoter.status}
                 </span>
               </div>
-              <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#475467" }}>
+              <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#475467", lineHeight: "1.5" }}>
                 {t.fatherHusband}: <b>{selectedVoter.guardian || "—"}</b> • {t.houseNo}: <b>{selectedVoter.house || "—"}</b> • EPIC: <b>{selectedVoter.epic}</b>
                 {selectedVoter.address ? <> • {lang === "hi" ? "पता" : "Address"}: <b>{selectedVoter.address}</b></> : null}
+                {selectedVoter.boothAddress ? <> • 📍 {lang === "hi" ? "बूथ पता" : "Booth Address"}: <b style={{ color: "#0284c7" }}>{selectedVoter.boothAddress}</b></> : null}
               </p>
             </div>
 
@@ -1642,8 +1742,71 @@ function BoothManagerView({
             </button>
           </div>
 
+          {/* 11 Fields Quick Toggles: वोट डाला | सपोर्टर है | बाहर है */}
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", margin: "6px 0" }}>
+            <button
+              type="button"
+              onClick={() => handleToggleField(selectedVoter, "voted")}
+              style={{
+                background: (selectedVoter.voted === "हाँ" || selectedVoter.voted === "Yes" || selectedVoter.voted === true) ? "#15803d" : "#f1f5f9",
+                color: (selectedVoter.voted === "हाँ" || selectedVoter.voted === "Yes" || selectedVoter.voted === true) ? "#ffffff" : "#475467",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "4px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              🗳️ {lang === "hi" ? "वोट डाला:" : "Voted:"} {(selectedVoter.voted === "हाँ" || selectedVoter.voted === "Yes" || selectedVoter.voted === true) ? (lang === "hi" ? "हाँ ✓" : "Yes ✓") : (lang === "hi" ? "नहीं" : "No")}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleToggleField(selectedVoter, "isSupporter")}
+              style={{
+                background: (selectedVoter.isSupporter === "हाँ" || selectedVoter.isSupporter === "Yes" || selectedVoter.isSupporter === true || selectedVoter.status === "In-Favor") ? "#d97706" : "#f1f5f9",
+                color: (selectedVoter.isSupporter === "हाँ" || selectedVoter.isSupporter === "Yes" || selectedVoter.isSupporter === true || selectedVoter.status === "In-Favor") ? "#ffffff" : "#475467",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "4px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              ⭐ {lang === "hi" ? "सपोर्टर है:" : "Supporter:"} {(selectedVoter.isSupporter === "हाँ" || selectedVoter.isSupporter === "Yes" || selectedVoter.isSupporter === true || selectedVoter.status === "In-Favor") ? (lang === "hi" ? "हाँ ★" : "Yes ★") : (lang === "hi" ? "नहीं" : "No")}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleToggleField(selectedVoter, "isOutside")}
+              style={{
+                background: (selectedVoter.isOutside === "हाँ" || selectedVoter.isOutside === "Yes" || selectedVoter.isOutside === true) ? "#dc2626" : "#f1f5f9",
+                color: (selectedVoter.isOutside === "हाँ" || selectedVoter.isOutside === "Yes" || selectedVoter.isOutside === true) ? "#ffffff" : "#475467",
+                border: "1px solid #cbd5e1",
+                borderRadius: "6px",
+                padding: "4px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              🚌 {lang === "hi" ? "बाहर है:" : "Outside:"} {(selectedVoter.isOutside === "हाँ" || selectedVoter.isOutside === "Yes" || selectedVoter.isOutside === true) ? (lang === "hi" ? "हाँ (प्रवासी)" : "Yes") : (lang === "hi" ? "नहीं" : "No")}
+            </button>
+          </div>
+
           {/* Quick Status Buttons */}
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", margin: "8px 0" }}>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", margin: "6px 0" }}>
             <button
               type="button"
               style={{
@@ -1758,6 +1921,11 @@ function BoothManagerView({
                   age: selectedVoter.age,
                   gender: selectedVoter.gender,
                   house: selectedVoter.house,
+                  address: selectedVoter.address || "",
+                  boothAddress: selectedVoter.boothAddress || "",
+                  voted: String(selectedVoter.voted || "नहीं"),
+                  isSupporter: String(selectedVoter.isSupporter || "हाँ"),
+                  isOutside: String(selectedVoter.isOutside || "नहीं"),
                   phone: selectedVoter.phone || "",
                   status: selectedVoter.status,
                 });
@@ -2025,6 +2193,58 @@ function BoothManagerView({
                         <option value="In-Favor">{t.stInFavor}</option>
                         <option value="Slip-Given">{t.stSlipGiven}</option>
                         <option value="Doubtful">{t.stDoubtful}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="inputGrid">
+                    <div className="formGroup">
+                      <label>🏠 {lang === "hi" ? "एड्रेस (मोहल्ला / कॉलोनी)" : "Address / Locality"}</label>
+                      <input
+                        value={voterForm.address}
+                        onChange={(e) => setVoterForm({ ...voterForm, address: e.target.value })}
+                        placeholder={lang === "hi" ? "उदा: वार्ड 34, स्टेशन रोड" : "e.g. Ward 34, Station Road"}
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>📍 {lang === "hi" ? "Booth Address (बूथ पता)" : "Booth Address"}</label>
+                      <input
+                        value={voterForm.boothAddress}
+                        onChange={(e) => setVoterForm({ ...voterForm, boothAddress: e.target.value })}
+                        placeholder={lang === "hi" ? "उदा: रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1" : "e.g. Govt School, Room 1"}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="inputGrid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+                    <div className="formGroup">
+                      <label>🗳️ {lang === "hi" ? "वोट डाला" : "Voted"}</label>
+                      <select
+                        value={voterForm.voted}
+                        onChange={(e) => setVoterForm({ ...voterForm, voted: e.target.value })}
+                      >
+                        <option value="नहीं">{lang === "hi" ? "नहीं" : "No"}</option>
+                        <option value="हाँ">{lang === "hi" ? "हाँ" : "Yes"}</option>
+                      </select>
+                    </div>
+                    <div className="formGroup">
+                      <label>⭐ {lang === "hi" ? "सपोर्टर है" : "Supporter"}</label>
+                      <select
+                        value={voterForm.isSupporter}
+                        onChange={(e) => setVoterForm({ ...voterForm, isSupporter: e.target.value })}
+                      >
+                        <option value="हाँ">{lang === "hi" ? "हाँ (समर्थक)" : "Yes (Supporter)"}</option>
+                        <option value="नहीं">{lang === "hi" ? "नहीं" : "No"}</option>
+                      </select>
+                    </div>
+                    <div className="formGroup">
+                      <label>🚌 {lang === "hi" ? "बाहर है" : "Is Outside"}</label>
+                      <select
+                        value={voterForm.isOutside}
+                        onChange={(e) => setVoterForm({ ...voterForm, isOutside: e.target.value })}
+                      >
+                        <option value="नहीं">{lang === "hi" ? "नहीं (स्थानीय)" : "No (Local)"}</option>
+                        <option value="हाँ">{lang === "hi" ? "हाँ (प्रवासी)" : "Yes (Outside)"}</option>
                       </select>
                     </div>
                   </div>
@@ -2395,8 +2615,14 @@ function VotersTable({
     age: "35",
     gender: "Male",
     house: "",
-    booth: "12",
+    address: "",
+    boothAddress: "",
+    booth: "1",
+    serialNo: "",
     phone: "",
+    voted: "नहीं",
+    isSupporter: "हाँ",
+    isOutside: "नहीं",
     status: "Pending" as VoterRecord["status"],
   });
 
@@ -2433,7 +2659,8 @@ function VotersTable({
       if (advAddress.trim()) {
         const matchHouse = v.house && singleFieldMatches(v.house, advAddress);
         const matchAddr = v.address && singleFieldMatches(v.address, advAddress);
-        if (!matchHouse && !matchAddr) return false;
+        const matchBoothAddr = v.boothAddress && singleFieldMatches(v.boothAddress, advAddress);
+        if (!matchHouse && !matchAddr && !matchBoothAddr) return false;
       }
 
       // 4. EPIC
@@ -2448,10 +2675,24 @@ function VotersTable({
 
   const handleAddVoter = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newVoter.name || !newVoter.epic) return;
+    if (!newVoter.name.trim()) return;
+
+    const boothVal = newVoter.booth.trim() || "1";
+    const serialVal = newVoter.serialNo ? Number(newVoter.serialNo) : undefined;
+    const epicVal = newVoter.epic.trim().toUpperCase() ||
+      `RJX${boothVal.padStart(2, "0")}${String(serialVal || Math.floor(1000 + Math.random() * 9000)).padStart(5, "0")}`;
 
     store.addVoter({
       ...newVoter,
+      name: newVoter.name.trim(),
+      guardian: newVoter.guardian.trim(),
+      epic: epicVal,
+      booth: boothVal,
+      serialNo: serialVal,
+      house: newVoter.house.trim(),
+      address: newVoter.address.trim(),
+      boothAddress: newVoter.boothAddress.trim(),
+      phone: newVoter.phone.trim(),
       worker: "Unassigned",
       candidateId,
     });
@@ -2464,8 +2705,14 @@ function VotersTable({
       age: "35",
       gender: "Male",
       house: "",
-      booth: "12",
+      address: "",
+      boothAddress: "",
+      booth: "1",
+      serialNo: "",
       phone: "",
+      voted: "नहीं",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
       status: "Pending",
     });
     onUpdate();
@@ -2473,27 +2720,52 @@ function VotersTable({
 
   const handleExportCSV = () => {
     if (filtered.length === 0) return;
-    const headers = ["EPIC", "Name", "Guardian", "Age", "Gender", "House", "Booth", "Status", "Phone", "Worker"];
-    const rows = filtered.map((v) => [
-      v.epic,
-      `"${v.name}"`,
-      `"${v.guardian}"`,
-      v.age,
-      v.gender,
-      `"${v.house}"`,
+    const headers = [
+      "भाग संख्या",
+      "क्रम संख्या",
+      "नाम",
+      "पिता/पति",
+      "वोट डाला",
+      "सपोर्टर है",
+      "बाहर है",
+      "मोबाइल नो",
+      "हाउस No",
+      "एड्रेस",
+      "Booth Address",
+      "पहचान पत्र (EPIC)",
+      "आयु",
+      "लिंग",
+      "कार्यकर्ता",
+      "स्थिति"
+    ];
+    const rows = filtered.map((v, idx) => [
       v.booth,
-      v.status,
-      v.phone || "",
-      `"${v.worker}"`,
+      v.serialNo !== undefined ? v.serialNo : (idx + 1),
+      `"${(v.name || "").replace(/"/g, '""')}"`,
+      `"${(v.guardian || "").replace(/"/g, '""')}"`,
+      `"${v.voted === "हाँ" || v.voted === "Yes" || v.voted === true ? "हाँ" : "नहीं"}"`,
+      `"${v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor" ? "हाँ" : "नहीं"}"`,
+      `"${v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true ? "हाँ" : "नहीं"}"`,
+      `"${(v.phone || "").replace(/"/g, '""')}"`,
+      `"${(v.house || "").replace(/"/g, '""')}"`,
+      `"${(v.address || "").replace(/"/g, '""')}"`,
+      `"${(v.boothAddress || "").replace(/"/g, '""')}"`,
+      `"${(v.epic || "").replace(/"/g, '""')}"`,
+      v.age || "",
+      v.gender || "",
+      `"${(v.worker || "").replace(/"/g, '""')}"`,
+      v.status || "Pending",
     ]);
-    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((e) => e.join(","))].join("\n");
-    const encodedUri = encodeURI(csvContent);
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
+    link.setAttribute("href", url);
     link.setAttribute("download", `VoterDesk_Voters_${candidateId}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -2503,7 +2775,10 @@ function VotersTable({
         title="Voter Registry"
         sub={`Total ${filtered.length} voters match your filters.`}
       >
-        <div style={{ display: "flex", gap: "10px" }}>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button className="outline" onClick={downloadSampleExcelTemplate} title="11 कॉलम वाला एक्सेल टेम्पलेट डाउनलोड करें">
+            <Download size={16} /> Download Template (.xlsx)
+          </button>
           <button className="outline" onClick={handleExportCSV}>
             <Download size={16} /> Export CSV
           </button>
@@ -2717,8 +2992,20 @@ function VotersTable({
               {filtered.map((v) => (
                 <tr key={v.id}>
                   <td>
-                    <b>{v.name}</b>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      <b>{v.name}</b>
+                      {(v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) && (
+                        <span style={{ fontSize: "9px", background: "#dcfce7", color: "#15803d", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }} title="वोट डाला गया">✓ वोट</span>
+                      )}
+                      {(v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") && (
+                        <span style={{ fontSize: "9px", background: "#fef3c7", color: "#b45309", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }} title="समर्थक">★ समर्थक</span>
+                      )}
+                      {(v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) && (
+                        <span style={{ fontSize: "9px", background: "#fee2e2", color: "#b91c1c", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }} title="बाहर/प्रवासी">🚌 बाहर</span>
+                      )}
+                    </div>
                     <small>S/O, W/O: {v.guardian || "—"}</small>
+                    {v.address ? <small style={{ display: "block", color: "#64748b" }}>📍 {v.address}</small> : null}
                   </td>
                   <td>
                     <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--blue)" }}>{v.epic}</span>
@@ -2727,6 +3014,7 @@ function VotersTable({
                   <td>{v.house}</td>
                   <td>
                     <b>Booth {v.booth}</b>
+                    {v.serialNo !== undefined && <small style={{ display: "block", color: "#64748b" }}>Sr. {v.serialNo}</small>}
                   </td>
                   <td>
                     <select
@@ -2839,7 +3127,28 @@ function VotersTable({
 
               <div className="inputGrid">
                 <div className="formGroup">
-                  <label>House No.</label>
+                  <label>Booth / Part Number * (भाग संख्या)</label>
+                  <input
+                    required
+                    placeholder="e.g. 1"
+                    value={newVoter.booth}
+                    onChange={(e) => setNewVoter({ ...newVoter, booth: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>Serial Number (क्रम संख्या)</label>
+                  <input
+                    type="number"
+                    placeholder="e.g. 2"
+                    value={newVoter.serialNo}
+                    onChange={(e) => setNewVoter({ ...newVoter, serialNo: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>House No. (हाउस No)</label>
                   <input
                     placeholder="e.g. 42-A"
                     value={newVoter.house}
@@ -2847,23 +3156,65 @@ function VotersTable({
                   />
                 </div>
                 <div className="formGroup">
-                  <label>Booth / Part Number *</label>
+                  <label>Mobile Number (मोबाइल नो)</label>
                   <input
-                    required
-                    placeholder="e.g. 12"
-                    value={newVoter.booth}
-                    onChange={(e) => setNewVoter({ ...newVoter, booth: e.target.value })}
+                    placeholder="e.g. 9829012345"
+                    value={newVoter.phone}
+                    onChange={(e) => setNewVoter({ ...newVoter, phone: e.target.value })}
                   />
                 </div>
               </div>
 
-              <div className="formGroup">
-                <label>Mobile Number (Optional)</label>
-                <input
-                  placeholder="e.g. 9829012345"
-                  value={newVoter.phone}
-                  onChange={(e) => setNewVoter({ ...newVoter, phone: e.target.value })}
-                />
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>Address / Ward (एड्रेस)</label>
+                  <input
+                    placeholder="e.g. Ward 34, Station Road"
+                    value={newVoter.address}
+                    onChange={(e) => setNewVoter({ ...newVoter, address: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>Booth Address (मतदान केंद्र पता)</label>
+                  <input
+                    placeholder="e.g. Govt School Room 1"
+                    value={newVoter.boothAddress}
+                    onChange={(e) => setNewVoter({ ...newVoter, boothAddress: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="inputGrid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+                <div className="formGroup">
+                  <label>🗳️ वोट डाला (Voted)</label>
+                  <select
+                    value={newVoter.voted}
+                    onChange={(e) => setNewVoter({ ...newVoter, voted: e.target.value })}
+                  >
+                    <option value="नहीं">नहीं (No)</option>
+                    <option value="हाँ">हाँ (Yes)</option>
+                  </select>
+                </div>
+                <div className="formGroup">
+                  <label>⭐ सपोर्टर है (Supporter)</label>
+                  <select
+                    value={newVoter.isSupporter}
+                    onChange={(e) => setNewVoter({ ...newVoter, isSupporter: e.target.value })}
+                  >
+                    <option value="हाँ">हाँ (Yes)</option>
+                    <option value="नहीं">नहीं (No)</option>
+                  </select>
+                </div>
+                <div className="formGroup">
+                  <label>🚌 बाहर है (Is Outside)</label>
+                  <select
+                    value={newVoter.isOutside}
+                    onChange={(e) => setNewVoter({ ...newVoter, isOutside: e.target.value })}
+                  >
+                    <option value="नहीं">नहीं (No)</option>
+                    <option value="हाँ">हाँ (Yes)</option>
+                  </select>
+                </div>
               </div>
 
               <div className="formFoot" style={{ marginTop: "20px" }}>
@@ -2933,11 +3284,16 @@ function RealExcelImporter({
 
     const epicSet = new Set<string>();
 
-    for (const row of parsedData.rows) {
+    parsedData.rows.forEach((row, idx) => {
       const name = String(row[fieldMap.name] || "").trim();
-      const epic = String(row[fieldMap.epic] || "").trim().toUpperCase();
+      const booth = String(row[fieldMap.booth] || "1").trim();
+      const serialVal = row[fieldMap.serialNo] || (idx + 1);
+      let epic = String(row[fieldMap.epic] || "").trim().toUpperCase();
+      if (!epic && name) {
+        epic = `RJX${booth.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
+      }
 
-      if (!name || !epic) {
+      if (!name) {
         warnings++;
       } else if (epicSet.has(epic)) {
         duplicates++;
@@ -2945,7 +3301,7 @@ function RealExcelImporter({
         epicSet.add(epic);
         valid++;
       }
-    }
+    });
 
     setImportStats({ valid, warnings, duplicates });
     setStep(3);
@@ -2954,18 +3310,38 @@ function RealExcelImporter({
   const handleExecuteImport = () => {
     if (!parsedData) return;
 
-    const votersToImport = parsedData.rows.map((row) => ({
-      name: String(row[fieldMap.name] || "").trim(),
-      epic: String(row[fieldMap.epic] || "").trim().toUpperCase(),
-      guardian: String(row[fieldMap.guardian] || "").trim(),
-      age: String(row[fieldMap.age] || ""),
-      gender: String(row[fieldMap.gender] || "Male"),
-      house: String(row[fieldMap.house] || ""),
-      booth: String(row[fieldMap.booth] || "1"),
-      phone: String(row[fieldMap.phone] || ""),
-      status: "Pending" as VoterRecord["status"],
-      worker: "Unassigned",
-    })).filter((v) => v.name && v.epic);
+    const votersToImport = parsedData.rows.map((row, idx) => {
+      const name = String(row[fieldMap.name] || "").trim();
+      const booth = String(row[fieldMap.booth] || "1").trim();
+      const serialRaw = row[fieldMap.serialNo];
+      const serialNo = serialRaw !== undefined && serialRaw !== "" ? Number(serialRaw) || serialRaw : (idx + 1);
+      let epic = String(row[fieldMap.epic] || "").trim().toUpperCase();
+      if (!epic && name) {
+        epic = `RJX${booth.padStart(2, "0")}${String(serialNo).padStart(5, "0")}`;
+      }
+      const isSupp = String(row[fieldMap.isSupporter] || "").trim();
+      const votedVal = String(row[fieldMap.voted] || "").trim();
+      const outsideVal = String(row[fieldMap.isOutside] || "").trim();
+
+      return {
+        name,
+        epic,
+        guardian: String(row[fieldMap.guardian] || "").trim(),
+        age: String(row[fieldMap.age] || "35"),
+        gender: String(row[fieldMap.gender] || "Male"),
+        house: String(row[fieldMap.house] || "").trim(),
+        booth,
+        serialNo,
+        phone: String(row[fieldMap.phone] || "").trim(),
+        address: String(row[fieldMap.address] || "").trim(),
+        boothAddress: String(row[fieldMap.boothAddress] || "").trim(),
+        voted: votedVal || "नहीं",
+        isSupporter: isSupp || "हाँ",
+        isOutside: outsideVal || "नहीं",
+        status: (isSupp === "हाँ" || isSupp === "Yes") ? ("In-Favor" as VoterRecord["status"]) : ("Pending" as VoterRecord["status"]),
+        worker: "Unassigned",
+      };
+    }).filter((v) => v.name && v.epic);
 
     store.importVoters(candidateId, votersToImport);
     setStep(4);
@@ -3057,14 +3433,20 @@ function RealExcelImporter({
 
             <div className="mapping">
               {[
-                { key: "name", label: "Voter Full Name * (मतदाता का नाम)" },
-                { key: "epic", label: "EPIC / Voter ID Number * (पहचान पत्र क्रमांक)" },
-                { key: "guardian", label: "Guardian / Father / Husband Name (पिता/पति का नाम)" },
-                { key: "age", label: "Age (उम्र / आयु)" },
-                { key: "gender", label: "Gender (लिंग)" },
-                { key: "house", label: "House No. (मकान संख्या)" },
-                { key: "booth", label: "Part / Booth No. (भाग / बूथ संख्या)" },
-                { key: "phone", label: "Mobile Number (मोबाइल नं.)" },
+                { key: "booth", label: "1. भाग संख्या (Part / Booth No.) *" },
+                { key: "serialNo", label: "2. क्रम संख्या (Serial No. / क्र.सं.)" },
+                { key: "name", label: "3. नाम (Voter Full Name) *" },
+                { key: "guardian", label: "4. पिता/पति (Guardian / Father / Husband)" },
+                { key: "voted", label: "5. वोट डाला (Voted - हाँ/नहीं)" },
+                { key: "isSupporter", label: "6. सपोर्टर है (Supporter - हाँ/नहीं)" },
+                { key: "isOutside", label: "7. बाहर है (Is Outside - हाँ/नहीं)" },
+                { key: "phone", label: "8. मोबाइल नो (Mobile Number)" },
+                { key: "house", label: "9. हाउस No (House No.)" },
+                { key: "address", label: "10. एड्रेस (Address / Ward / Colony)" },
+                { key: "boothAddress", label: "11. Booth Address (मतदान केंद्र का पता)" },
+                { key: "epic", label: "वैकल्पिक: पहचान पत्र (EPIC - खाली होने पर स्वतः बनेगा)" },
+                { key: "age", label: "वैकल्पिक: आयु (Age)" },
+                { key: "gender", label: "वैकल्पिक: लिंग (Gender)" },
               ].map((field) => (
                 <div key={field.key}>
                   <span><b>{field.label}</b></span>

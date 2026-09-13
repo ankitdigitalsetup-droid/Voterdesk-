@@ -34,8 +34,12 @@ export interface VoterRecord {
   serialNo?: number | string; // Serial number in voter roll (क्र सं.)
   status: "Pending" | "Contacted" | "In-Favor" | "Doubtful" | "Opposed" | "Slip-Given";
   worker: string;
-  phone?: string;
-  address?: string;
+  phone?: string; // मोबाइल नो
+  address?: string; // एड्रेस
+  voted?: boolean | string; // वोट डाला (हाँ/नहीं / Yes/No)
+  isSupporter?: boolean | string; // सपोर्टर है (हाँ/नहीं / Yes/No)
+  isOutside?: boolean | string; // बाहर है (हाँ/नहीं / Yes/No)
+  boothAddress?: string; // Booth Address (मतदान केंद्र पता)
   notes?: string;
   candidateId: string;
 }

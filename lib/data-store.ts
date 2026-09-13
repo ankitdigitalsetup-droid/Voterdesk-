@@ -130,8 +130,13 @@ class DataStore {
       age: "48",
       gender: "Male",
       house: "12",
+      address: "वार्ड 34, स्टेशन रोड",
       booth: "1",
       serialNo: 2,
+      voted: "हाँ",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
       status: "In-Favor",
       worker: "Amit Joshi",
       phone: "9829011111",
@@ -146,8 +151,13 @@ class DataStore {
       age: "42",
       gender: "Female",
       house: "14",
+      address: "वार्ड 34, गांधी नगर",
       booth: "1",
       serialNo: 3,
+      voted: "नहीं",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
       status: "In-Favor",
       worker: "Amit Joshi",
       phone: "9829022222",
@@ -390,6 +400,10 @@ class DataStore {
       address: "वार्ड 34, शांति नगर",
       booth: "1",
       serialNo: 26,
+      voted: "नहीं",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
       status: "Contacted",
       worker: "Amit Joshi",
       phone: "9829066666",
@@ -403,8 +417,13 @@ class DataStore {
       age: "36",
       gender: "Male",
       house: "55",
+      address: "वार्ड 34, तिलक नगर",
       booth: "1",
       serialNo: 27,
+      voted: "हाँ",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
       status: "In-Favor",
       worker: "Amit Joshi",
       phone: "9829077777",
@@ -418,8 +437,13 @@ class DataStore {
       age: "46",
       gender: "Male",
       house: "42-A",
+      address: "वार्ड 34, पटेल नगर",
       booth: "12",
       serialNo: 1,
+      voted: "नहीं",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+      boothAddress: "महात्मा गांधी राजकीय विद्यालय, भीलवाड़ा",
       status: "Contacted",
       worker: "Amit Joshi",
       phone: "9829011111",
@@ -434,8 +458,13 @@ class DataStore {
       age: "39",
       gender: "Female",
       house: "18",
+      address: "वार्ड 34, पटेल नगर",
       booth: "12",
       serialNo: 2,
+      voted: "हाँ",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+      boothAddress: "महात्मा गांधी राजकीय विद्यालय, भीलवाड़ा",
       status: "In-Favor",
       worker: "Amit Joshi",
       phone: "9829022222",
@@ -453,6 +482,10 @@ class DataStore {
       address: "वार्ड 34, शास्त्री नगर",
       booth: "1",
       serialNo: 28,
+      voted: "हाँ",
+      isSupporter: "हाँ",
+      isOutside: "हाँ",
+      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
       status: "In-Favor",
       worker: "Amit Joshi",
       phone: "9829088888",
@@ -573,16 +606,23 @@ class DataStore {
   importVoters(candidateId: string, items: Omit<VoterRecord, "id" | "candidateId">[]) {
     let imported = 0;
     const added: VoterRecord[] = [];
-    for (const item of items) {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const epicVal = item.epic && item.epic.trim()
+        ? item.epic.trim().toUpperCase()
+        : `RJX${String(item.booth || "1").padStart(2, "0")}${String(item.serialNo || i + 1).padStart(5, "0")}`;
+
       // Avoid exact duplicate EPIC
-      const existing = this.voters.find((v) => v.candidateId === candidateId && v.epic.trim().toUpperCase() === item.epic.trim().toUpperCase());
-      if (!existing && item.name && item.epic) {
+      const existing = this.voters.find((v) => v.candidateId === candidateId && v.epic.trim().toUpperCase() === epicVal);
+      if (!existing && item.name) {
+        const isSupp = item.isSupporter === "हाँ" || item.isSupporter === "Yes" || item.isSupporter === true;
         const v: VoterRecord = {
           ...item,
+          epic: epicVal,
           serialNo: item.serialNo || (this.voters.filter((x) => x.candidateId === candidateId && x.booth === item.booth).length + 1),
           id: "v_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
           candidateId,
-          status: item.status || "Pending",
+          status: item.status || (isSupp ? "In-Favor" : "Pending"),
           worker: item.worker || "Unassigned",
         };
         this.voters.push(v);
