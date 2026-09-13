@@ -1592,86 +1592,147 @@ function BoothManagerView({
         <table className="bmTable">
           <thead>
             <tr>
-              <th style={{ width: "36px" }}>{t.colIndex}</th>
-              <th style={{ width: "52px" }}>{t.colPart}</th>
-              <th style={{ width: "52px" }}>{t.colSerial}</th>
-              <th className="thLeft" style={{ minWidth: "120px" }}>{t.colName}</th>
-              <th className="thLeft" style={{ minWidth: "130px" }}>{t.colGuardian}</th>
+              <th style={{ width: "55px" }}>{t.colPart}</th>
+              <th style={{ width: "55px" }}>{t.colSerial}</th>
+              <th className="thLeft" style={{ minWidth: "140px" }}>{t.colName}</th>
+              <th className="thLeft" style={{ minWidth: "140px" }}>{t.colGuardian}</th>
+              <th style={{ minWidth: "85px" }}>{t.colVoted}</th>
+              <th style={{ minWidth: "85px" }}>{t.colSupporter}</th>
+              <th style={{ minWidth: "85px" }}>{t.colOutside}</th>
+              <th style={{ minWidth: "115px" }}>{t.colPhone}</th>
+              <th style={{ width: "75px" }}>{t.colHouse}</th>
+              <th className="thLeft" style={{ minWidth: "150px" }}>{t.colAddress}</th>
+              <th className="thLeft" style={{ minWidth: "170px" }}>{t.colBoothAddress}</th>
             </tr>
           </thead>
           <tbody>
             {filteredVoters.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                <td colSpan={11} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
                   {t.noVotersMatch}
                 </td>
               </tr>
             ) : (
               filteredVoters.map((v, idx) => {
                 const isSelected = selectedVoter?.id === v.id;
+                const isVoted = v.voted === "हाँ" || v.voted === "Yes" || v.voted === true;
+                const isSupp = v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor";
+                const isOut = v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true;
+
                 return (
                   <tr
                     key={v.id}
                     className={isSelected ? "selectedRow" : ""}
                     onClick={() => setSelectedVoter(isSelected ? null : v)}
                   >
-                    <td className="colIndex">{idx + 1}</td>
+                    {/* 1. भाग संख्या */}
                     <td className="colPart">{v.booth}</td>
+
+                    {/* 2. क्रम संख्या */}
                     <td className="colSerial">{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
+
+                    {/* 3. नाम */}
                     <td className="colName">
-                      <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px" }}>
-                        <span>{v.name}</span>
-                        {(v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) && (
-                          <span
-                            style={{
-                              fontSize: "9.5px",
-                              background: "#dcfce7",
-                              color: "#15803d",
-                              padding: "1px 5px",
-                              borderRadius: "4px",
-                              fontWeight: 700,
-                              whiteSpace: "nowrap",
-                            }}
-                            title="वोट डाला गया"
-                          >
-                            ✓ वोट
-                          </span>
-                        )}
-                        {(v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") && (
-                          <span
-                            style={{
-                              fontSize: "9.5px",
-                              background: "#fef3c7",
-                              color: "#b45309",
-                              padding: "1px 5px",
-                              borderRadius: "4px",
-                              fontWeight: 700,
-                              whiteSpace: "nowrap",
-                            }}
-                            title="समर्थक मतदाता"
-                          >
-                            ★ समर्थक
-                          </span>
-                        )}
-                        {(v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) && (
-                          <span
-                            style={{
-                              fontSize: "9.5px",
-                              background: "#fee2e2",
-                              color: "#b91c1c",
-                              padding: "1px 5px",
-                              borderRadius: "4px",
-                              fontWeight: 700,
-                              whiteSpace: "nowrap",
-                            }}
-                            title="बाहर/प्रवासी"
-                          >
-                            🚌 बाहर
-                          </span>
-                        )}
-                      </div>
+                      <b style={{ color: "#0f172a" }}>{v.name}</b>
                     </td>
+
+                    {/* 4. पिता/पति */}
                     <td className="colGuardian">{v.guardian || "—"}</td>
+
+                    {/* 5. वोट डाला (1-click toggle) */}
+                    <td className="colCenter" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleField(v, "voted")}
+                        style={{
+                          border: isVoted ? "1px solid #86efac" : "1px solid #cbd5e1",
+                          background: isVoted ? "#dcfce7" : "#f8fafc",
+                          color: isVoted ? "#15803d" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={lang === "hi" ? "वोट स्थिति बदलें" : "Toggle Voted"}
+                      >
+                        {isVoted ? (lang === "hi" ? "✓ हाँ" : "✓ Yes") : (lang === "hi" ? "नहीं" : "No")}
+                      </button>
+                    </td>
+
+                    {/* 6. सपोर्टर है (1-click toggle) */}
+                    <td className="colCenter" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleField(v, "isSupporter")}
+                        style={{
+                          border: isSupp ? "1px solid #fde68a" : "1px solid #cbd5e1",
+                          background: isSupp ? "#fef3c7" : "#f8fafc",
+                          color: isSupp ? "#b45309" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={lang === "hi" ? "समर्थक स्थिति बदलें" : "Toggle Supporter"}
+                      >
+                        {isSupp ? (lang === "hi" ? "★ हाँ" : "★ Yes") : (lang === "hi" ? "नहीं" : "No")}
+                      </button>
+                    </td>
+
+                    {/* 7. बाहर है (1-click toggle) */}
+                    <td className="colCenter" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleField(v, "isOutside")}
+                        style={{
+                          border: isOut ? "1px solid #fca5a5" : "1px solid #cbd5e1",
+                          background: isOut ? "#fee2e2" : "#f8fafc",
+                          color: isOut ? "#b91c1c" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={lang === "hi" ? "बाहर/प्रवासी स्थिति बदलें" : "Toggle Outside"}
+                      >
+                        {isOut ? (lang === "hi" ? "🚌 हाँ" : "🚌 Yes") : (lang === "hi" ? "नहीं" : "No")}
+                      </button>
+                    </td>
+
+                    {/* 8. मोबाइल नो */}
+                    <td className="colPhone" onClick={(e) => e.stopPropagation()}>
+                      {v.phone ? (
+                        <a
+                          href={`tel:${v.phone}`}
+                          style={{
+                            color: "#0284c7",
+                            fontWeight: 600,
+                            textDecoration: "none",
+                            fontSize: "12px",
+                          }}
+                          title="कॉल करें"
+                        >
+                          📞 {v.phone}
+                        </a>
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>—</span>
+                      )}
+                    </td>
+
+                    {/* 9. हाउस No */}
+                    <td className="colHouse">{v.house || "—"}</td>
+
+                    {/* 10. एड्रेस */}
+                    <td className="colAddress">{v.address || "—"}</td>
+
+                    {/* 11. Booth Address */}
+                    <td className="colBoothAddress">{v.boothAddress || "—"}</td>
                   </tr>
                 );
               })
@@ -2974,87 +3035,184 @@ function VotersTable({
           </div>
         )}
 
-        <div className="tableWrap">
-          <table>
+        <div className="tableWrap" style={{ overflowX: "auto" }}>
+          <table style={{ minWidth: "1150px" }}>
             <thead>
               <tr>
-                <th>Voter Details</th>
-                <th>EPIC Number</th>
-                <th>Age / Gender</th>
-                <th>House No</th>
-                <th>Booth</th>
-                <th>Status</th>
-                <th>Assigned Worker</th>
-                <th>Actions</th>
+                <th style={{ width: "65px" }}>भाग संख्या</th>
+                <th style={{ width: "65px" }}>क्रम संख्या</th>
+                <th style={{ minWidth: "130px" }}>नाम</th>
+                <th style={{ minWidth: "130px" }}>पिता/पति</th>
+                <th style={{ minWidth: "85px" }}>वोट डाला</th>
+                <th style={{ minWidth: "85px" }}>सपोर्टर है</th>
+                <th style={{ minWidth: "85px" }}>बाहर है</th>
+                <th style={{ minWidth: "115px" }}>मोबाइल नो</th>
+                <th style={{ width: "75px" }}>हाउस No</th>
+                <th style={{ minWidth: "140px" }}>एड्रेस</th>
+                <th style={{ minWidth: "160px" }}>Booth Address</th>
+                <th style={{ width: "110px" }}>EPIC</th>
+                <th style={{ width: "50px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((v) => (
-                <tr key={v.id}>
-                  <td>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                      <b>{v.name}</b>
-                      {(v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) && (
-                        <span style={{ fontSize: "9px", background: "#dcfce7", color: "#15803d", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }} title="वोट डाला गया">✓ वोट</span>
-                      )}
-                      {(v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") && (
-                        <span style={{ fontSize: "9px", background: "#fef3c7", color: "#b45309", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }} title="समर्थक">★ समर्थक</span>
-                      )}
-                      {(v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) && (
-                        <span style={{ fontSize: "9px", background: "#fee2e2", color: "#b91c1c", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }} title="बाहर/प्रवासी">🚌 बाहर</span>
-                      )}
-                    </div>
-                    <small>S/O, W/O: {v.guardian || "—"}</small>
-                    {v.address ? <small style={{ display: "block", color: "#64748b" }}>📍 {v.address}</small> : null}
-                  </td>
-                  <td>
-                    <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--blue)" }}>{v.epic}</span>
-                  </td>
-                  <td>{v.age} / {v.gender}</td>
-                  <td>{v.house}</td>
-                  <td>
-                    <b>Booth {v.booth}</b>
-                    {v.serialNo !== undefined && <small style={{ display: "block", color: "#64748b" }}>Sr. {v.serialNo}</small>}
-                  </td>
-                  <td>
-                    <select
-                      className={`status ${v.status.toLowerCase()}`}
-                      style={{ border: "0", cursor: "pointer", background: "transparent" }}
-                      value={v.status}
-                      onChange={(e) => {
-                        store.updateVoter(v.id, { status: e.target.value as VoterRecord["status"] });
-                        onUpdate();
-                      }}
-                    >
-                      <option value="Pending">Pending</option>
-                      <option value="Contacted">Contacted</option>
-                      <option value="In-Favor">In-Favor</option>
-                      <option value="Slip-Given">Slip Given</option>
-                      <option value="Doubtful">Doubtful</option>
-                      <option value="Opposed">Opposed</option>
-                    </select>
-                  </td>
-                  <td>{v.worker}</td>
-                  <td>
-                    <button
-                      style={{ border: 0, background: "transparent", color: "#d83b3b", padding: "4px" }}
-                      title="Delete record"
-                      onClick={() => {
-                        if (confirm(`Are you sure you want to delete voter ${v.name}?`)) {
-                          store.deleteVoter(v.id);
+              {filtered.map((v, idx) => {
+                const isVoted = v.voted === "हाँ" || v.voted === "Yes" || v.voted === true;
+                const isSupp = v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor";
+                const isOut = v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true;
+
+                return (
+                  <tr key={v.id}>
+                    {/* 1. भाग संख्या */}
+                    <td style={{ textAlign: "center", fontWeight: 600 }}>{v.booth}</td>
+
+                    {/* 2. क्रम संख्या */}
+                    <td style={{ textAlign: "center", fontWeight: 700 }}>{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
+
+                    {/* 3. नाम */}
+                    <td>
+                      <b style={{ color: "#0f172a" }}>{v.name}</b>
+                    </td>
+
+                    {/* 4. पिता/पति */}
+                    <td>{v.guardian || "—"}</td>
+
+                    {/* 5. वोट डाला */}
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newVal = isVoted ? "नहीं" : "हाँ";
+                          store.updateVoter(v.id, { voted: newVal });
                           onUpdate();
-                        }
-                      }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                        }}
+                        style={{
+                          border: isVoted ? "1px solid #86efac" : "1px solid #cbd5e1",
+                          background: isVoted ? "#dcfce7" : "#f8fafc",
+                          color: isVoted ? "#15803d" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title="वोट स्थिति बदलें"
+                      >
+                        {isVoted ? "✓ हाँ" : "नहीं"}
+                      </button>
+                    </td>
+
+                    {/* 6. सपोर्टर है */}
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newVal = isSupp ? "नहीं" : "हाँ";
+                          store.updateVoter(v.id, {
+                            isSupporter: newVal,
+                            status: newVal === "हाँ" ? "In-Favor" : "Pending",
+                          });
+                          onUpdate();
+                        }}
+                        style={{
+                          border: isSupp ? "1px solid #fde68a" : "1px solid #cbd5e1",
+                          background: isSupp ? "#fef3c7" : "#f8fafc",
+                          color: isSupp ? "#b45309" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title="समर्थक स्थिति बदलें"
+                      >
+                        {isSupp ? "★ हाँ" : "नहीं"}
+                      </button>
+                    </td>
+
+                    {/* 7. बाहर है */}
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newVal = isOut ? "नहीं" : "हाँ";
+                          store.updateVoter(v.id, { isOutside: newVal });
+                          onUpdate();
+                        }}
+                        style={{
+                          border: isOut ? "1px solid #fca5a5" : "1px solid #cbd5e1",
+                          background: isOut ? "#fee2e2" : "#f8fafc",
+                          color: isOut ? "#b91c1c" : "#64748b",
+                          fontWeight: 700,
+                          fontSize: "11px",
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                        title="बाहर/प्रवासी स्थिति बदलें"
+                      >
+                        {isOut ? "🚌 हाँ" : "नहीं"}
+                      </button>
+                    </td>
+
+                    {/* 8. मोबाइल नो */}
+                    <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
+                      {v.phone ? (
+                        <a
+                          href={`tel:${v.phone}`}
+                          style={{
+                            color: "#0284c7",
+                            fontWeight: 600,
+                            textDecoration: "none",
+                            fontSize: "12px",
+                          }}
+                          title="कॉल करें"
+                        >
+                          📞 {v.phone}
+                        </a>
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>—</span>
+                      )}
+                    </td>
+
+                    {/* 9. हाउस No */}
+                    <td style={{ textAlign: "center", fontWeight: 600 }}>{v.house || "—"}</td>
+
+                    {/* 10. एड्रेस */}
+                    <td style={{ fontSize: "12px", color: "#334155" }}>{v.address || "—"}</td>
+
+                    {/* 11. Booth Address */}
+                    <td style={{ fontSize: "12px", color: "#0369a1" }}>{v.boothAddress || "—"}</td>
+
+                    {/* Optional: EPIC */}
+                    <td>
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--blue)" }}>{v.epic}</span>
+                    </td>
+
+                    {/* Delete Action */}
+                    <td style={{ textAlign: "center" }}>
+                      <button
+                        style={{ border: 0, background: "transparent", color: "#d83b3b", padding: "4px", cursor: "pointer" }}
+                        title="Delete record"
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete voter ${v.name}?`)) {
+                            store.deleteVoter(v.id);
+                            onUpdate();
+                          }
+                        }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "30px", color: "var(--muted)" }}>
+                  <td colSpan={13} style={{ textAlign: "center", padding: "30px", color: "var(--muted)" }}>
                     No voters match your search or filter criteria.
                   </td>
                 </tr>

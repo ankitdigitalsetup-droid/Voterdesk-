@@ -358,12 +358,14 @@
   overflow-x: auto;
   background: #ffffff;
   flex: 1;
+  -webkit-overflow-scrolling: touch;
 }
 
 .bmTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: 13px;
+  min-width: 1050px;
 }
 
 .bmTable th {
@@ -371,7 +373,7 @@
   color: #1e293b;
   font-size: 12px;
   font-weight: 700;
-  padding: 9px 4px;
+  padding: 9px 6px;
   text-align: center;
   border-right: 1px solid #cbd5e1;
   border-bottom: 1.5px solid #94a3b8;
@@ -384,7 +386,7 @@
 }
 
 .bmTable td {
-  padding: 9px 6px;
+  padding: 8px 6px;
   border-right: 1px solid #cbd5e1;
   border-bottom: 1px solid #cbd5e1;
   color: #1e293b;
@@ -410,14 +412,14 @@
 .bmTable td.colPart {
   text-align: center;
   font-weight: 600;
-  width: 50px;
+  width: 55px;
 }
 
 .bmTable td.colSerial {
   text-align: center;
   font-weight: 700;
   color: #0f172a;
-  width: 50px;
+  width: 55px;
 }
 
 .bmTable td.colName {
@@ -428,6 +430,32 @@
 
 .bmTable td.colGuardian {
   color: #334155;
+  padding-left: 8px;
+}
+
+.bmTable td.colCenter {
+  text-align: center;
+}
+
+.bmTable td.colPhone {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.bmTable td.colHouse {
+  text-align: center;
+  font-weight: 600;
+}
+
+.bmTable td.colAddress {
+  font-size: 12px;
+  color: #334155;
+  padding-left: 8px;
+}
+
+.bmTable td.colBoothAddress {
+  font-size: 12px;
+  color: #0369a1;
   padding-left: 8px;
 }
 
