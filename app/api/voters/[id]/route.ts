@@ -11,7 +11,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "Voter not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, voter: updated });
+    return NextResponse.json({ success: true, voter: updated, version: store.getVersion() });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Failed to update voter", details: err instanceof Error ? err.message : String(err) },
@@ -28,7 +28,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ error: "Voter not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ success: true, message: "Voter deleted successfully" });
+    return NextResponse.json({ success: true, message: "Voter deleted successfully", version: store.getVersion() });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Failed to delete voter", details: err instanceof Error ? err.message : String(err) },

@@ -22,28 +22,38 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { name, epic, guardian, age, gender, house, booth, phone, status, worker, notes, candidateId } = body;
+    const { name, epic, guardian, age, gender, house, booth, phone, address, boothAddress, voted, isSupporter, isOutside, status, worker, notes, candidateId } = body;
 
-    if (!name || !epic) {
-      return NextResponse.json({ error: "Voter name and EPIC number are required" }, { status: 400 });
+    if (!name) {
+      return NextResponse.json({ error: "Voter name is required" }, { status: 400 });
     }
+
+    const boothVal = String(booth || "1").trim();
+    const epicVal = epic && String(epic).trim()
+      ? String(epic).toUpperCase().trim()
+      : `RJX${boothVal.padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
 
     const voter = store.addVoter({
       name,
-      epic: epic.toUpperCase().trim(),
+      epic: epicVal,
       guardian: guardian || "",
-      age: String(age || ""),
+      age: String(age || "35"),
       gender: gender || "Male",
       house: house || "",
-      booth: booth || "1",
+      booth: boothVal,
       phone: phone || "",
-      status: status || "Pending",
+      address: address || "",
+      boothAddress: boothAddress || "",
+      voted: voted || "नहीं",
+      isSupporter: isSupporter || "हाँ",
+      isOutside: isOutside || "नहीं",
+      status: status || (isSupporter === "हाँ" ? "In-Favor" : "Pending"),
       worker: worker || "Unassigned",
       notes: notes || "",
       candidateId: candidateId || "cand_1",
     });
 
-    return NextResponse.json({ success: true, voter }, { status: 201 });
+    return NextResponse.json({ success: true, voter, version: store.getVersion() }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Failed to add voter", details: err instanceof Error ? err.message : String(err) },

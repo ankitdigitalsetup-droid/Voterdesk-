@@ -1,8 +1,89 @@
 import { CandidateAccount, TeamMember, UserAccount, VoterRecord } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 
-// In-Memory global store for high-speed response & instant demo capability
+// In-Memory & Persistent global store for high-speed multi-mobile synchronization
 class DataStore {
+  private version: number = Date.now();
+  private heartbeats: Map<string, { name: string; time: number; booth?: string }> = new Map();
+
+  constructor() {
+    this.loadFromDisk();
+  }
+
+  public getVersion(): number {
+    return this.version;
+  }
+
+  public touchVersion(): number {
+    this.version = Date.now();
+    this.saveToDisk();
+    return this.version;
+  }
+
+  public recordHeartbeat(workerName: string, booth?: string) {
+    if (!workerName) return;
+    this.heartbeats.set(workerName.trim().toLowerCase(), {
+      name: workerName.trim(),
+      time: Date.now(),
+      booth,
+    });
+  }
+
+  public getLiveWorkerCount(candidateId?: string): number {
+    const now = Date.now();
+    for (const [key, val] of this.heartbeats.entries()) {
+      if (now - val.time > 90000) {
+        this.heartbeats.delete(key);
+      }
+    }
+    return Math.max(1, this.heartbeats.size);
+  }
+
+  private loadFromDisk() {
+    if (typeof window !== "undefined") return;
+    try {
+      const fs = require("fs");
+      const os = require("os");
+      const path = require("path");
+      const filePath = path.join(os.tmpdir(), "voterdesk_store_v1.json");
+      if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (parsed && Array.isArray(parsed.voters) && parsed.voters.length > 0) {
+          this.voters = parsed.voters;
+          if (parsed.version) this.version = parsed.version;
+          if (Array.isArray(parsed.candidates)) this.candidates = parsed.candidates;
+          if (Array.isArray(parsed.team)) this.team = parsed.team;
+          if (Array.isArray(parsed.users)) this.users = parsed.users;
+        }
+      }
+    } catch {
+      // Fallback silently if file read fails
+    }
+  }
+
+  private saveToDisk() {
+    if (typeof window !== "undefined") return;
+    try {
+      const fs = require("fs");
+      const os = require("os");
+      const path = require("path");
+      const filePath = path.join(os.tmpdir(), "voterdesk_store_v1.json");
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({
+          version: this.version,
+          voters: this.voters,
+          candidates: this.candidates,
+          users: this.users,
+          team: this.team,
+        })
+      );
+    } catch {
+      // Ignore if filesystem is restricted
+    }
+  }
+
   private users: (UserAccount & { password: string })[] = [
     {
       id: "usr_super_1",
@@ -600,6 +681,7 @@ class DataStore {
     const cand = this.candidates.find((c) => c.id === voter.candidateId);
     if (cand) cand.voterCount += 1;
 
+    this.touchVersion();
     return newVoter;
   }
 
@@ -634,6 +716,7 @@ class DataStore {
     const cand = this.candidates.find((c) => c.id === candidateId);
     if (cand) cand.voterCount += imported;
 
+    this.touchVersion();
     return { imported, total: this.voters.filter((v) => v.candidateId === candidateId).length };
   }
 
@@ -641,6 +724,7 @@ class DataStore {
     const idx = this.voters.findIndex((v) => v.id === id);
     if (idx !== -1) {
       this.voters[idx] = { ...this.voters[idx], ...updates };
+      this.touchVersion();
       return this.voters[idx];
     }
     return null;
@@ -652,9 +736,17 @@ class DataStore {
       const removed = this.voters.splice(idx, 1)[0];
       const cand = this.candidates.find((c) => c.id === removed.candidateId);
       if (cand && cand.voterCount > 0) cand.voterCount -= 1;
+      this.touchVersion();
       return true;
     }
     return false;
+  }
+
+  setVotersList(candidateId: string, newVoters: VoterRecord[]) {
+    const otherVoters = this.voters.filter((v) => v.candidateId !== candidateId);
+    this.voters = [...newVoters, ...otherVoters];
+    const cand = this.candidates.find((c) => c.id === candidateId);
+    if (cand) cand.voterCount = newVoters.length;
   }
 
   // Team
@@ -726,5 +818,5 @@ class DataStore {
 // Global singleton instance
 const globalForStore = globalThis as unknown as { store: DataStore | undefined };
 export const store = globalForStore.store ?? new DataStore();
-if (process.env.NODE_ENV !== "production") globalForStore.store = store;
+globalForStore.store = store;
 export default store;

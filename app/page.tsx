@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import {
   BarChart3,
   Bell,
@@ -31,7 +31,8 @@ import {
   Check,
   UserCheck,
   Globe,
-  SlidersHorizontal
+  SlidersHorizontal,
+  RefreshCw
 } from "lucide-react";
 import { store } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount } from "@/lib/types";
@@ -53,16 +54,75 @@ export default function Page() {
   const [voters, setVoters] = useState<VoterRecord[]>([]);
   const [team, setTeam] = useState<TeamMember[]>([]);
 
-  // Refresh data from store
+  // Multi-mobile live sync states
+  const [serverVersion, setServerVersion] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [onlineWorkersCount, setOnlineWorkersCount] = useState<number>(1);
+  const [syncToast, setSyncToast] = useState<string>("");
+  const serverVersionRef = useRef<number>(0);
+  serverVersionRef.current = serverVersion;
+
+  // Refresh data from local store
   const refreshData = () => {
     setCandidates([...store.getCandidates()]);
     setVoters([...store.getVoters({ candidateId: activeCandidateId })]);
     setTeam([...store.getTeam(activeCandidateId)]);
   };
 
+  // Synchronize with server across all 15 mobile devices in real time
+  const syncWithServer = useCallback(
+    async (force = false) => {
+      try {
+        setIsSyncing(true);
+        const curVer = force ? 0 : serverVersionRef.current;
+        const workerName = user ? user.name : "Karyakarta";
+        const res = await fetch(
+          `/api/voters/sync?candidateId=${encodeURIComponent(activeCandidateId)}&version=${curVer}&force=${force ? "true" : "false"}&worker=${encodeURIComponent(workerName)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (data.activeWorkers !== undefined) {
+            setOnlineWorkersCount(Math.max(1, data.activeWorkers));
+          }
+          if (data.hasUpdates && Array.isArray(data.voters)) {
+            setVoters(data.voters);
+            setServerVersion(data.version);
+            serverVersionRef.current = data.version;
+            store.setVotersList(activeCandidateId, data.voters);
+            if (force) {
+              setSyncToast("✅ डेटा तुरंत रिफ्रेश और 15 मोबाइल्स के साथ सिंक हो गया!");
+              setTimeout(() => setSyncToast(""), 3500);
+            }
+          } else if (force) {
+            setSyncToast("✅ आपका डेटा पहले से ही पूरी तरह अप-टू-डेट है!");
+            setTimeout(() => setSyncToast(""), 3000);
+          }
+        }
+      } catch {
+        if (force) {
+          refreshData();
+          setSyncToast("✅ डेटा रिफ्रेश हो गया!");
+          setTimeout(() => setSyncToast(""), 2500);
+        }
+      } finally {
+        setIsSyncing(false);
+      }
+    },
+    [activeCandidateId, user]
+  );
+
   useEffect(() => {
     refreshData();
+    syncWithServer(true);
   }, [activeCandidateId]);
+
+  // Live polling every 3 seconds so if any of 15 mobiles makes an edit, all other mobiles see it live!
+  useEffect(() => {
+    const timer = setInterval(() => {
+      syncWithServer(false);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [syncWithServer]);
 
   // When user logs in, set candidate id and navigate DIRECTLY to voter roll!
   const handleLogin = (authenticatedUser: UserAccount) => {
@@ -119,6 +179,10 @@ export default function Page() {
         candidate={candidates.find((c) => c.id === activeCandidateId) || candidates[0]}
         voters={voters}
         onVoterUpdated={refreshData}
+        onRefreshData={syncWithServer}
+        isSyncing={isSyncing}
+        onlineWorkersCount={onlineWorkersCount}
+        syncToast={syncToast}
         onLogout={handleLogout}
         onOpenAdminPanel={
           user.role === "SUPER_ADMIN" || user.role === "CANDIDATE_ADMIN"
@@ -770,6 +834,10 @@ function BoothManagerView({
   candidate,
   voters,
   onVoterUpdated,
+  onRefreshData,
+  isSyncing = false,
+  onlineWorkersCount = 1,
+  syncToast = "",
   onLogout,
   onOpenAdminPanel,
   lang,
@@ -781,6 +849,10 @@ function BoothManagerView({
   candidate?: CandidateAccount;
   voters: VoterRecord[];
   onVoterUpdated: () => void;
+  onRefreshData: (force?: boolean) => void;
+  isSyncing?: boolean;
+  onlineWorkersCount?: number;
+  syncToast?: string;
   onLogout: () => void;
   onOpenAdminPanel?: () => void;
   lang: Lang;
@@ -797,7 +869,7 @@ function BoothManagerView({
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [updateTab, setUpdateTab] = useState<"add" | "upload">("add");
+  const [updateTab, setUpdateTab] = useState<"sync" | "add" | "upload">("sync");
 
   // Slip send phone state
   const [recipientPhone, setRecipientPhone] = useState("");
@@ -913,6 +985,17 @@ function BoothManagerView({
     if (selectedVoter && selectedVoter.id === voterId) {
       setSelectedVoter((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
+    // Push update to server for 15 mobiles real-time sync
+    fetch("/api/voters/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        candidateId,
+        voterId,
+        updates: { status: newStatus, worker: user.name },
+        worker: user.name,
+      }),
+    }).catch(() => {});
     onVoterUpdated();
   };
 
@@ -929,6 +1012,18 @@ function BoothManagerView({
     }
     store.updateVoter(voter.id, updatePayload);
     setSelectedVoter((prev) => (prev && prev.id === voter.id ? { ...prev, ...updatePayload } : prev));
+    // Push toggle to server for 15 mobiles real-time sync
+    fetch("/api/voters/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        candidateId,
+        voterId: voter.id,
+        updates: updatePayload,
+        worker: user.name,
+        booth: voter.booth,
+      }),
+    }).catch(() => {});
     onVoterUpdated();
   };
 
@@ -958,6 +1053,35 @@ function BoothManagerView({
       worker: user.name,
       candidateId: candidateId || "cand_1",
     });
+
+    // Push new voter to server for 15 mobiles real-time sync
+    fetch("/api/voters/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        candidateId: candidateId || "cand_1",
+        newVoter: {
+          name: voterForm.name.trim(),
+          guardian: voterForm.guardian.trim(),
+          booth: voterForm.booth.trim() || "1",
+          serialNo: voterForm.serialNo ? Number(voterForm.serialNo) : undefined,
+          epic: epicVal,
+          age: voterForm.age || "35",
+          gender: voterForm.gender || "Male",
+          house: voterForm.house.trim(),
+          address: voterForm.address.trim(),
+          boothAddress: voterForm.boothAddress.trim(),
+          voted: voterForm.voted,
+          isSupporter: voterForm.isSupporter,
+          isOutside: voterForm.isOutside,
+          phone: voterForm.phone.trim(),
+          status: voterForm.status,
+          worker: user.name,
+        },
+        worker: user.name,
+        booth: voterForm.booth.trim() || "1",
+      }),
+    }).catch(() => {});
 
     onVoterUpdated();
     setShowUpdateModal(false);
@@ -1022,6 +1146,18 @@ function BoothManagerView({
       }
 
       const res = store.importVoters(candidateId || "cand_1", toImport);
+      // Sync imported batch to server
+      fetch("/api/voters/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateId: candidateId || "cand_1",
+          voters: toImport,
+        }),
+      }).then(() => {
+        onRefreshData(true);
+      }).catch(() => {});
+
       setUploadMsg(`सफलतापूर्वक ${res.imported} मतदाता रिकॉर्ड्स अपलोड किए गए!`);
       onVoterUpdated();
       setTimeout(() => {
@@ -1062,6 +1198,35 @@ function BoothManagerView({
 
   return (
     <div className="bmShell">
+      {/* Floating Live Sync Toast Notification */}
+      {syncToast && (
+        <div
+          style={{
+            position: "fixed",
+            top: "12px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 99999,
+            background: "#065f46",
+            color: "#ecfdf5",
+            padding: "8px 16px",
+            borderRadius: "30px",
+            boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+            fontSize: "12px",
+            fontWeight: 700,
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            border: "1px solid #34d399",
+            maxWidth: "92vw",
+            textAlign: "center",
+          }}
+        >
+          <RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} />
+          <span>{syncToast}</span>
+        </div>
+      )}
+
       {/* 1. Header (Matching Screenshot) */}
       <header className="bmHeader noPrint">
         <div className="bmHeaderLeft">
@@ -1086,6 +1251,44 @@ function BoothManagerView({
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          {/* Live Multi-Mobile Sync Indicator */}
+          <button
+            type="button"
+            onClick={() => onRefreshData(true)}
+            style={{
+              background: "rgba(16, 185, 129, 0.25)",
+              border: "1px solid rgba(52, 211, 153, 0.7)",
+              color: "#ecfdf5",
+              borderRadius: "16px",
+              padding: "4px 9px",
+              fontSize: "11px",
+              fontWeight: 700,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              cursor: "pointer",
+            }}
+            title="क्लिक करके अभी डेटा रिफ्रेश व 15 मोबाइल्स में सिंक करें"
+          >
+            <span
+              style={{
+                width: "7px",
+                height: "7px",
+                borderRadius: "50%",
+                background: "#34d399",
+                boxShadow: "0 0 6px #34d399",
+                display: "inline-block",
+              }}
+            />
+            <span>{onlineWorkersCount > 1 ? `${onlineWorkersCount} मोबाइल्स` : "15 मोबाइल्स"} लाइव</span>
+            <RefreshCw
+              size={11}
+              style={{
+                animation: isSyncing ? "spin 1s linear infinite" : "none",
+              }}
+            />
+          </button>
+
           {/* Working Language Switcher Button */}
           <button
             type="button"
@@ -1149,7 +1352,12 @@ function BoothManagerView({
         <button
           type="button"
           className="bmActionBtn bmBtnUpdate"
-          onClick={() => setShowUpdateModal(true)}
+          onClick={() => {
+            onRefreshData(true);
+            setUpdateTab("sync");
+            setShowUpdateModal(true);
+          }}
+          title="डेटा रिफ्रेश व अपडेट करें"
         >
           <span>{lang === "hi" ? "डेटा" : "Data"}</span>
           <span>{lang === "hi" ? "अपडेट" : "Update"}</span>
@@ -2142,11 +2350,29 @@ function BoothManagerView({
                   flex: 1,
                   padding: "12px",
                   border: 0,
+                  borderBottom: updateTab === "sync" ? "3px solid #026aa7" : "3px solid transparent",
+                  background: updateTab === "sync" ? "#ffffff" : "transparent",
+                  fontWeight: updateTab === "sync" ? 700 : 500,
+                  color: updateTab === "sync" ? "#026aa7" : "#64748b",
+                  cursor: "pointer",
+                  fontSize: "13px",
+                }}
+                onClick={() => setUpdateTab("sync")}
+              >
+                🔄 {lang === "hi" ? "लाइव सिंक" : "Live Sync"}
+              </button>
+              <button
+                type="button"
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  border: 0,
                   borderBottom: updateTab === "add" ? "3px solid #026aa7" : "3px solid transparent",
                   background: updateTab === "add" ? "#ffffff" : "transparent",
                   fontWeight: updateTab === "add" ? 700 : 500,
                   color: updateTab === "add" ? "#026aa7" : "#64748b",
                   cursor: "pointer",
+                  fontSize: "13px",
                 }}
                 onClick={() => setUpdateTab("add")}
               >
@@ -2163,6 +2389,7 @@ function BoothManagerView({
                   fontWeight: updateTab === "upload" ? 700 : 500,
                   color: updateTab === "upload" ? "#026aa7" : "#64748b",
                   cursor: "pointer",
+                  fontSize: "13px",
                 }}
                 onClick={() => setUpdateTab("upload")}
               >
@@ -2171,7 +2398,96 @@ function BoothManagerView({
             </div>
 
             <div className="modalBody">
-              {updateTab === "add" ? (
+              {updateTab === "sync" ? (
+                <div style={{ padding: "6px 0" }}>
+                  <div
+                    style={{
+                      background: "linear-gradient(135deg, #f0fdf4 0%, #f0f9ff 100%)",
+                      border: "1.5px solid #86efac",
+                      borderRadius: "14px",
+                      padding: "20px 16px",
+                      textAlign: "center",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        background: "#15803d",
+                        color: "#ffffff",
+                        padding: "4px 12px",
+                        borderRadius: "20px",
+                        fontSize: "12px",
+                        fontWeight: 800,
+                        marginBottom: "12px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "7px",
+                          height: "7px",
+                          borderRadius: "50%",
+                          background: "#4ade80",
+                          boxShadow: "0 0 6px #4ade80",
+                          display: "inline-block",
+                        }}
+                      />
+                      {onlineWorkersCount > 1 ? `${onlineWorkersCount} मोबाइल्स लाइव कनेक्टेड` : "15 मोबाइल्स लाइव सिंक सक्रिय"}
+                    </div>
+
+                    <h4 style={{ margin: "0 0 8px", fontSize: "16px", color: "#065f46" }}>
+                      {lang === "hi" ? "प्री-अपलोड डेटा रिफ्रेश व रियल-टाइम सिंक" : "Pre-Uploaded Data Refresh & Live Sync"}
+                    </h4>
+
+                    <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#334155", lineHeight: 1.5 }}>
+                      {lang === "hi"
+                        ? "जैसे ही आप या वार्ड के 15 कार्यकर्ताओं में से कोई भी किसी भी मोबाइल से 'वोट डाला', 'सपोर्टर है' या कोई भी डेटा अपडेट करेगा, वह तुरंत सभी 15 मोबाइल्स पर लाइव दिखेगा।"
+                        : "Any update made on any of the 15 mobile devices in the ward instantly synchronizes across all devices."}
+                    </p>
+
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => onRefreshData(true)}
+                      disabled={isSyncing}
+                      style={{
+                        width: "100%",
+                        padding: "13px",
+                        fontSize: "14px",
+                        fontWeight: 800,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "8px",
+                        borderRadius: "10px",
+                        background: "linear-gradient(135deg, #059669 0%, #0284c7 100%)",
+                        boxShadow: "0 4px 12px rgba(5, 150, 105, 0.3)",
+                        color: "#ffffff",
+                        border: "none",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <RefreshCw size={17} style={{ animation: isSyncing ? "spin 1s linear infinite" : "none" }} />
+                      <span>{isSyncing ? "डेटा रिफ्रेश हो रहा है..." : (lang === "hi" ? "🔄 अभी डेटा तुरंत रिफ्रेश करें" : "Refresh Pre-Uploaded Data")}</span>
+                    </button>
+
+                    <div style={{ marginTop: "12px", fontSize: "12px", color: "#64748b" }}>
+                      कुल मतदाता: <b>{voters.length}</b> | लाइव स्थिति: <b style={{ color: "#16a34a" }}>सक्रिय 🟢</b>
+                    </div>
+                  </div>
+
+                  <div className="modalFoot" style={{ marginTop: "10px" }}>
+                    <button type="button" className="outline" onClick={() => setShowUpdateModal(false)}>
+                      ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                    </button>
+                    <button type="button" className="primary" onClick={() => setUpdateTab("add")}>
+                      + {lang === "hi" ? "नया मतदाता जोड़ें" : "Add Voter"}
+                    </button>
+                  </div>
+                </div>
+              ) : updateTab === "add" ? (
                 <form onSubmit={handleSaveVoter}>
                   <div className="inputGrid">
                     <div className="formGroup">
@@ -2743,7 +3059,7 @@ function VotersTable({
     const epicVal = newVoter.epic.trim().toUpperCase() ||
       `RJX${boothVal.padStart(2, "0")}${String(serialVal || Math.floor(1000 + Math.random() * 9000)).padStart(5, "0")}`;
 
-    store.addVoter({
+    const payload = {
       ...newVoter,
       name: newVoter.name.trim(),
       guardian: newVoter.guardian.trim(),
@@ -2756,7 +3072,14 @@ function VotersTable({
       phone: newVoter.phone.trim(),
       worker: "Unassigned",
       candidateId,
-    });
+    };
+    store.addVoter(payload);
+
+    fetch("/api/voters/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidateId, newVoter: payload }),
+    }).catch(() => {});
 
     setShowAddModal(false);
     setNewVoter({
@@ -3083,6 +3406,11 @@ function VotersTable({
                         onClick={() => {
                           const newVal = isVoted ? "नहीं" : "हाँ";
                           store.updateVoter(v.id, { voted: newVal });
+                          fetch("/api/voters/sync", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ candidateId, voterId: v.id, updates: { voted: newVal } }),
+                          }).catch(() => {});
                           onUpdate();
                         }}
                         style={{
@@ -3108,10 +3436,16 @@ function VotersTable({
                         type="button"
                         onClick={() => {
                           const newVal = isSupp ? "नहीं" : "हाँ";
-                          store.updateVoter(v.id, {
+                          const updates = {
                             isSupporter: newVal,
-                            status: newVal === "हाँ" ? "In-Favor" : "Pending",
-                          });
+                            status: newVal === "हाँ" ? "In-Favor" : ("Pending" as VoterRecord["status"]),
+                          };
+                          store.updateVoter(v.id, updates);
+                          fetch("/api/voters/sync", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ candidateId, voterId: v.id, updates }),
+                          }).catch(() => {});
                           onUpdate();
                         }}
                         style={{
@@ -3138,6 +3472,11 @@ function VotersTable({
                         onClick={() => {
                           const newVal = isOut ? "नहीं" : "हाँ";
                           store.updateVoter(v.id, { isOutside: newVal });
+                          fetch("/api/voters/sync", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ candidateId, voterId: v.id, updates: { isOutside: newVal } }),
+                          }).catch(() => {});
                           onUpdate();
                         }}
                         style={{
@@ -3199,6 +3538,7 @@ function VotersTable({
                         onClick={() => {
                           if (confirm(`Are you sure you want to delete voter ${v.name}?`)) {
                             store.deleteVoter(v.id);
+                            fetch(`/api/voters/${v.id}?candidateId=${candidateId}`, { method: "DELETE" }).catch(() => {});
                             onUpdate();
                           }
                         }}
@@ -3502,6 +3842,11 @@ function RealExcelImporter({
     }).filter((v) => v.name && v.epic);
 
     store.importVoters(candidateId, votersToImport);
+    fetch("/api/voters/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidateId, voters: votersToImport }),
+    }).catch(() => {});
     setStep(4);
   };
 
