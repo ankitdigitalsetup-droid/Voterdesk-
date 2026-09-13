@@ -1,5 +1,5 @@
 import { CandidateAccount, TeamMember, UserAccount, VoterRecord } from "./types";
-import { matchesVoter } from "./transliterate";
+import { matchesVoter, singleFieldMatches } from "./transliterate";
 
 // In-Memory global store for high-speed response & instant demo capability
 class DataStore {
@@ -441,6 +441,23 @@ class DataStore {
       phone: "9829022222",
       candidateId: "cand_1",
       notes: "Will vote with entire family (4 voters)."
+    },
+    {
+      id: "v_23",
+      name: "गौरव शर्मा",
+      epic: "RJX1001025",
+      guardian: "संतोष शर्मा",
+      age: "28",
+      gender: "Male",
+      house: "64",
+      address: "वार्ड 34, शास्त्री नगर",
+      booth: "1",
+      serialNo: 28,
+      status: "In-Favor",
+      worker: "Amit Joshi",
+      phone: "9829088888",
+      candidateId: "cand_1",
+      notes: "युवा कार्यकर्ता, पक्का समर्थक"
     }
   ];
 
@@ -491,7 +508,16 @@ class DataStore {
   }
 
   // Voters
-  getVoters(params: { candidateId?: string; booth?: string; status?: string; query?: string }) {
+  getVoters(params: {
+    candidateId?: string;
+    booth?: string;
+    status?: string;
+    query?: string;
+    name?: string;
+    father?: string;
+    address?: string;
+    epic?: string;
+  }) {
     let list = this.voters;
     if (params.candidateId) {
       list = list.filter((v) => v.candidateId === params.candidateId);
@@ -501,6 +527,22 @@ class DataStore {
     }
     if (params.status && params.status !== "ALL") {
       list = list.filter((v) => v.status.toLowerCase() === params.status?.toLowerCase());
+    }
+    if (params.name) {
+      list = list.filter((v) => singleFieldMatches(v.name, params.name!));
+    }
+    if (params.father) {
+      list = list.filter((v) => v.guardian && singleFieldMatches(v.guardian, params.father!));
+    }
+    if (params.address) {
+      list = list.filter(
+        (v) =>
+          (v.house && singleFieldMatches(v.house, params.address!)) ||
+          (v.address && singleFieldMatches(v.address, params.address!))
+      );
+    }
+    if (params.epic) {
+      list = list.filter((v) => v.epic && singleFieldMatches(v.epic, params.epic!));
     }
     if (params.query) {
       list = list.filter((v) => matchesVoter(v, params.query!));

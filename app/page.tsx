@@ -30,13 +30,14 @@ import {
   Layers,
   Check,
   UserCheck,
-  Globe
+  Globe,
+  SlidersHorizontal
 } from "lucide-react";
 import { store } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
-import { matchesVoter } from "@/lib/transliterate";
+import { matchesVoter, singleFieldMatches } from "@/lib/transliterate";
 
 export default function Page() {
   const [user, setUser] = useState<UserAccount | null>(null);
@@ -787,7 +788,7 @@ function BoothManagerView({
   t: (typeof translations)["hi"];
 }) {
   const [search, setSearch] = useState("");
-  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [showSearchBar, setShowSearchBar] = useState(true);
   const [partFilter, setPartFilter] = useState("ALL");
   const [selectedVoter, setSelectedVoter] = useState<VoterRecord | null>(null);
 
@@ -820,6 +821,26 @@ function BoothManagerView({
   const [uploadMsg, setUploadMsg] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Advanced Multi-Column Search states (Name, Father/Husband, Address, EPIC)
+  const [showAdvSearch, setShowAdvSearch] = useState(false);
+  const [advName, setAdvName] = useState("");
+  const [advFather, setAdvFather] = useState("");
+  const [advAddress, setAdvAddress] = useState("");
+  const [advEpic, setAdvEpic] = useState("");
+
+  const activeAdvFiltersCount =
+    (advName.trim() ? 1 : 0) +
+    (advFather.trim() ? 1 : 0) +
+    (advAddress.trim() ? 1 : 0) +
+    (advEpic.trim() ? 1 : 0);
+
+  const clearAdvSearch = () => {
+    setAdvName("");
+    setAdvFather("");
+    setAdvAddress("");
+    setAdvEpic("");
+  };
+
   // Booths / Parts list
   const allParts = useMemo(() => {
     const set = new Set<string>();
@@ -835,12 +856,42 @@ function BoothManagerView({
       }
       if (partFilter !== "ALL" && v.booth !== partFilter) return false;
 
+      // 1. Advanced Search: Voter Name column
+      if (advName.trim() && !singleFieldMatches(v.name, advName)) {
+        return false;
+      }
+
+      // 2. Advanced Search: Father / Husband column
+      if (advFather.trim() && (!v.guardian || !singleFieldMatches(v.guardian, advFather))) {
+        return false;
+      }
+
+      // 3. Advanced Search: House / Address column
+      if (advAddress.trim()) {
+        const matchHouse = v.house && singleFieldMatches(v.house, advAddress);
+        const matchAddr = v.address && singleFieldMatches(v.address, advAddress);
+        if (!matchHouse && !matchAddr) return false;
+      }
+
+      // 4. Advanced Search: EPIC No. column
+      if (advEpic.trim() && (!v.epic || !singleFieldMatches(v.epic, advEpic))) {
+        return false;
+      }
+
+      // General Search query bar
       if (search.trim()) {
         return matchesVoter(v, search);
       }
       return true;
     });
-  }, [voters, user, partFilter, search]);
+  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic]);
+
+  // Auto-select and show details drawer when search pinpoints a single voter
+  useEffect(() => {
+    if (filteredVoters.length === 1 && (activeAdvFiltersCount >= 2 || (activeAdvFiltersCount >= 1 && search.trim()))) {
+      setSelectedVoter(filteredVoters[0]);
+    }
+  }, [filteredVoters, activeAdvFiltersCount, search]);
 
   const activeVoterForSlip = selectedVoter || filteredVoters[0] || voters[0];
 
@@ -1092,97 +1143,401 @@ function BoothManagerView({
       </div>
 
       {/* 3. Search & Filter Bar (Toggled when Search clicked) */}
+      {/* 3. Search & Filter Bar (Toggled when Search clicked) */}
       {showSearchBar && (
-        <div
-          className="noPrint"
-          style={{
-            background: "#f1f5f9",
-            padding: "10px 12px",
-            borderBottom: "1px solid #cbd5e1",
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-          }}
-        >
-          <div style={{ flex: 1, position: "relative" }}>
-            <Search
-              size={15}
-              style={{ position: "absolute", left: "10px", top: "11px", color: "#64748b" }}
-            />
-            <input
-              type="text"
-              placeholder={lang === "hi" ? "नाम, सरनेम, पिता/पति, पता या EPIC (e.g. Rakesh, Sharma, 1001001)..." : "Search Name, Surname, Father, Address, EPIC (e.g. Rakesh, Sharma, 1001001)..."}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{
-                width: "100%",
-                height: "36px",
-                paddingLeft: "32px",
-                paddingRight: "28px",
-                borderRadius: "8px",
-                border: "1px solid #cbd5e1",
-                fontSize: "13px",
-                background: "#ffffff",
-                outline: "none",
-              }}
-              autoFocus
-            />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch("")}
-                style={{
-                  position: "absolute",
-                  right: "8px",
-                  top: "9px",
-                  border: 0,
-                  background: "transparent",
-                  color: "#94a3b8",
-                  cursor: "pointer",
-                }}
-              >
-                <X size={16} />
-              </button>
-            )}
-          </div>
-
-          {allParts.length > 1 && (
-            <select
-              value={partFilter}
-              onChange={(e) => setPartFilter(e.target.value)}
-              style={{
-                height: "36px",
-                borderRadius: "8px",
-                border: "1px solid #cbd5e1",
-                padding: "0 8px",
-                background: "#ffffff",
-                fontSize: "12px",
-                fontWeight: 600,
-              }}
-            >
-              <option value="ALL">{lang === "hi" ? "सभी भाग" : "All Parts"}</option>
-              {allParts.map((p) => (
-                <option key={p} value={p}>
-                  {lang === "hi" ? `भाग ${p}` : `Part ${p}`}
-                </option>
-              ))}
-            </select>
-          )}
-
-          <span
+        <>
+          <div
+            className="noPrint"
             style={{
-              fontSize: "11px",
-              fontWeight: 700,
-              color: "#475467",
-              background: "#e2e8f0",
-              padding: "4px 8px",
-              borderRadius: "6px",
-              whiteSpace: "nowrap",
+              background: "#f1f5f9",
+              padding: "10px 12px",
+              borderBottom: "1px solid #cbd5e1",
+              display: "flex",
+              gap: "8px",
+              alignItems: "center",
+              flexWrap: "wrap",
             }}
           >
-            {filteredVoters.length} {lang === "hi" ? "मतदाता" : "voters"}
-          </span>
-        </div>
+            <div style={{ flex: "1 1 200px", position: "relative" }}>
+              <Search
+                size={15}
+                style={{ position: "absolute", left: "10px", top: "11px", color: "#64748b" }}
+              />
+              <input
+                type="text"
+                placeholder={lang === "hi" ? "नाम, सरनेम, पिता/पति, पता या EPIC (e.g. Rakesh, Sharma, 1001001)..." : "Search Name, Surname, Father, Address, EPIC (e.g. Rakesh, Sharma, 1001001)..."}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                style={{
+                  width: "100%",
+                  height: "36px",
+                  paddingLeft: "32px",
+                  paddingRight: "28px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "13px",
+                  background: "#ffffff",
+                  outline: "none",
+                }}
+                autoFocus
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  style={{
+                    position: "absolute",
+                    right: "8px",
+                    top: "9px",
+                    border: 0,
+                    background: "transparent",
+                    color: "#94a3b8",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            {/* Advanced Search Button right beside Search Input */}
+            <button
+              type="button"
+              onClick={() => setShowAdvSearch((prev) => !prev)}
+              style={{
+                height: "36px",
+                padding: "0 10px",
+                borderRadius: "8px",
+                border: showAdvSearch || activeAdvFiltersCount > 0 ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                background: showAdvSearch || activeAdvFiltersCount > 0 ? "#e0f2fe" : "#ffffff",
+                color: showAdvSearch || activeAdvFiltersCount > 0 ? "#0369a1" : "#334155",
+                fontSize: "12px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                boxShadow: showAdvSearch ? "0 0 0 2px rgba(2, 132, 199, 0.18)" : "none",
+                transition: "all 0.15s ease",
+              }}
+              title={lang === "hi" ? "एडवांस्ड सर्च (नाम, पिता, पता, पहचान पत्र अलग-अलग कॉलम में खोजें)" : "Advanced Search"}
+            >
+              <SlidersHorizontal size={14} />
+              <span>{lang === "hi" ? "एडवांस्ड सर्च" : "Adv Search"}</span>
+              {activeAdvFiltersCount > 0 && (
+                <span
+                  style={{
+                    background: "#0284c7",
+                    color: "#ffffff",
+                    fontSize: "10px",
+                    fontWeight: 800,
+                    borderRadius: "50%",
+                    width: "17px",
+                    height: "17px",
+                    display: "grid",
+                    placeItems: "center",
+                  }}
+                >
+                  {activeAdvFiltersCount}
+                </span>
+              )}
+            </button>
+
+            {allParts.length > 1 && (
+              <select
+                value={partFilter}
+                onChange={(e) => setPartFilter(e.target.value)}
+                style={{
+                  height: "36px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  padding: "0 8px",
+                  background: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                }}
+              >
+                <option value="ALL">{lang === "hi" ? "सभी भाग" : "All Parts"}</option>
+                {allParts.map((p) => (
+                  <option key={p} value={p}>
+                    {lang === "hi" ? `भाग ${p}` : `Part ${p}`}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <span
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                color: "#475467",
+                background: "#e2e8f0",
+                padding: "4px 8px",
+                borderRadius: "6px",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {filteredVoters.length} {lang === "hi" ? "मतदाता" : "voters"}
+            </span>
+          </div>
+
+          {/* Advanced Multi-Column Search Drawer / Panel */}
+          {showAdvSearch && (
+            <div
+              className="noPrint"
+              style={{
+                background: "#ffffff",
+                borderBottom: "2px solid #38bdf8",
+                boxShadow: "0 4px 14px rgba(0, 0, 0, 0.08)",
+                padding: "12px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <SlidersHorizontal size={15} color="#0284c7" />
+                  <b style={{ fontSize: "13px", color: "#0f172a" }}>
+                    {lang === "hi" ? "एडवांस्ड सर्च (अलग-अलग कॉलम में खोजें)" : "Advanced Search by Columns"}
+                  </b>
+                  {activeAdvFiltersCount > 0 && (
+                    <span style={{ fontSize: "11px", color: "#0369a1", background: "#e0f2fe", padding: "2px 7px", borderRadius: "5px", fontWeight: 700 }}>
+                      {activeAdvFiltersCount} {lang === "hi" ? "सक्रिय फ़िल्टर" : "Active"}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  {activeAdvFiltersCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearAdvSearch}
+                      style={{
+                        border: 0,
+                        background: "#fee2e2",
+                        color: "#b91c1c",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        padding: "4px 9px",
+                        borderRadius: "6px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕ {lang === "hi" ? "सभी हटाएं (Clear)" : "Clear All"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvSearch(false)}
+                    style={{
+                      border: 0,
+                      background: "#f1f5f9",
+                      color: "#64748b",
+                      borderRadius: "50%",
+                      width: "26px",
+                      height: "26px",
+                      display: "grid",
+                      placeItems: "center",
+                      cursor: "pointer",
+                    }}
+                    title={lang === "hi" ? "बंद करें" : "Close"}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              </div>
+
+              {/* 4 Separate Columns as requested by user */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                  gap: "10px",
+                }}
+              >
+                {/* 1. Voter Name Column */}
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    👤 {lang === "hi" ? "मतदाता का नाम (Name)" : "Voter Name"}
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      value={advName}
+                      onChange={(e) => setAdvName(e.target.value)}
+                      placeholder={lang === "hi" ? "उदा: Gau, Gaurav, गौरव..." : "e.g. Gau, Gaurav..."}
+                      style={{
+                        width: "100%",
+                        height: "34px",
+                        padding: "0 26px 0 9px",
+                        borderRadius: "6px",
+                        border: advName ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                        fontSize: "12px",
+                        background: advName ? "#f0f9ff" : "#ffffff",
+                        outline: "none",
+                      }}
+                    />
+                    {advName && (
+                      <button
+                        type="button"
+                        onClick={() => setAdvName("")}
+                        style={{
+                          position: "absolute",
+                          right: "6px",
+                          top: "9px",
+                          border: 0,
+                          background: "transparent",
+                          color: "#94a3b8",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2. Father / Husband Name Column */}
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    👨‍👧 {lang === "hi" ? "पिता/पति का नाम (Father/Husband)" : "Father / Husband"}
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      value={advFather}
+                      onChange={(e) => setAdvFather(e.target.value)}
+                      placeholder={lang === "hi" ? "उदा: San, Santosh, संतोष..." : "e.g. San, Santosh..."}
+                      style={{
+                        width: "100%",
+                        height: "34px",
+                        padding: "0 26px 0 9px",
+                        borderRadius: "6px",
+                        border: advFather ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                        fontSize: "12px",
+                        background: advFather ? "#f0f9ff" : "#ffffff",
+                        outline: "none",
+                      }}
+                    />
+                    {advFather && (
+                      <button
+                        type="button"
+                        onClick={() => setAdvFather("")}
+                        style={{
+                          position: "absolute",
+                          right: "6px",
+                          top: "9px",
+                          border: 0,
+                          background: "transparent",
+                          color: "#94a3b8",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 3. Address / House Column */}
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    🏠 {lang === "hi" ? "मकान नं. / पता (Address/House)" : "Address / House No."}
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      value={advAddress}
+                      onChange={(e) => setAdvAddress(e.target.value)}
+                      placeholder={lang === "hi" ? "उदा: 12, 64, शांति नगर..." : "e.g. 12, 64, Ward 34..."}
+                      style={{
+                        width: "100%",
+                        height: "34px",
+                        padding: "0 26px 0 9px",
+                        borderRadius: "6px",
+                        border: advAddress ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                        fontSize: "12px",
+                        background: advAddress ? "#f0f9ff" : "#ffffff",
+                        outline: "none",
+                      }}
+                    />
+                    {advAddress && (
+                      <button
+                        type="button"
+                        onClick={() => setAdvAddress("")}
+                        style={{
+                          position: "absolute",
+                          right: "6px",
+                          top: "9px",
+                          border: 0,
+                          background: "transparent",
+                          color: "#94a3b8",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4. EPIC No Column */}
+                <div>
+                  <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
+                    🆔 {lang === "hi" ? "पहचान पत्र क्र. (EPIC No.)" : "Voter ID (EPIC)"}
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      type="text"
+                      value={advEpic}
+                      onChange={(e) => setAdvEpic(e.target.value)}
+                      placeholder={lang === "hi" ? "उदा: RJX..., 1001025..." : "e.g. RJX..., 1001025..."}
+                      style={{
+                        width: "100%",
+                        height: "34px",
+                        padding: "0 26px 0 9px",
+                        borderRadius: "6px",
+                        border: advEpic ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                        fontSize: "12px",
+                        background: advEpic ? "#f0f9ff" : "#ffffff",
+                        outline: "none",
+                      }}
+                    />
+                    {advEpic && (
+                      <button
+                        type="button"
+                        onClick={() => setAdvEpic("")}
+                        style={{
+                          position: "absolute",
+                          right: "6px",
+                          top: "9px",
+                          border: 0,
+                          background: "transparent",
+                          color: "#94a3b8",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Helper tip with live match count */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11.5px", color: "#64748b", borderTop: "1px dashed #e2e8f0", paddingTop: "8px" }}>
+                <span>
+                  💡 <b>{lang === "hi" ? "सुझाव:" : "Tip:"}</b> {lang === "hi" ? "नाम में 'Gau' और पिता के कॉलम में 'San' लिखते ही सटीक मतदाता तुरंत सामने आ जाएगा।" : "Typing 'Gau' in Name and 'San' in Father immediately pinpoints the voter."}
+                </span>
+                <span style={{ fontWeight: 700, color: "#0369a1", background: "#f0f9ff", padding: "2px 8px", borderRadius: "6px" }}>
+                  {filteredVoters.length} {lang === "hi" ? "मतदाता मिले" : "voters found"}
+                </span>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* 4. Tabular Voter Roll (Exact Layout from Screenshot) */}
@@ -2045,6 +2400,18 @@ function VotersTable({
     status: "Pending" as VoterRecord["status"],
   });
 
+  // Advanced Search states
+  const [showAdv, setShowAdv] = useState(false);
+  const [advName, setAdvName] = useState("");
+  const [advFather, setAdvFather] = useState("");
+  const [advAddress, setAdvAddress] = useState("");
+  const [advEpic, setAdvEpic] = useState("");
+  const activeAdvCount =
+    (advName.trim() ? 1 : 0) +
+    (advFather.trim() ? 1 : 0) +
+    (advAddress.trim() ? 1 : 0) +
+    (advEpic.trim() ? 1 : 0);
+
   const booths = useMemo(() => {
     const set = new Set<string>();
     voters.forEach((v) => set.add(v.booth));
@@ -2055,12 +2422,29 @@ function VotersTable({
     return voters.filter((v) => {
       if (boothFilter !== "ALL" && v.booth !== boothFilter) return false;
       if (statusFilter !== "ALL" && v.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
+
+      // 1. Voter Name
+      if (advName.trim() && !singleFieldMatches(v.name, advName)) return false;
+
+      // 2. Father / Husband
+      if (advFather.trim() && (!v.guardian || !singleFieldMatches(v.guardian, advFather))) return false;
+
+      // 3. Address / House
+      if (advAddress.trim()) {
+        const matchHouse = v.house && singleFieldMatches(v.house, advAddress);
+        const matchAddr = v.address && singleFieldMatches(v.address, advAddress);
+        if (!matchHouse && !matchAddr) return false;
+      }
+
+      // 4. EPIC
+      if (advEpic.trim() && (!v.epic || !singleFieldMatches(v.epic, advEpic))) return false;
+
       if (q.trim()) {
         return matchesVoter(v, q);
       }
       return true;
     });
-  }, [voters, boothFilter, statusFilter, q]);
+  }, [voters, boothFilter, statusFilter, q, advName, advFather, advAddress, advEpic]);
 
   const handleAddVoter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2130,8 +2514,8 @@ function VotersTable({
       </Title>
 
       <Panel>
-        <div className="tableTools">
-          <div>
+        <div className="tableTools" style={{ flexWrap: "wrap", gap: "8px" }}>
+          <div style={{ flex: "1 1 220px", display: "flex", alignItems: "center" }}>
             <Search />
             <input
               placeholder="Search name, surname, father/husband, address or EPIC (खोजें)..."
@@ -2139,6 +2523,47 @@ function VotersTable({
               onChange={(e) => setQ(e.target.value)}
             />
           </div>
+
+          {/* Advanced Search button in VotersTable */}
+          <button
+            type="button"
+            onClick={() => setShowAdv((prev) => !prev)}
+            style={{
+              height: "42px",
+              padding: "0 12px",
+              borderRadius: "9px",
+              border: showAdv || activeAdvCount > 0 ? "1.5px solid #0284c7" : "1px solid #d8dde5",
+              background: showAdv || activeAdvCount > 0 ? "#e0f2fe" : "#ffffff",
+              color: showAdv || activeAdvCount > 0 ? "#0369a1" : "#475467",
+              fontSize: "13px",
+              fontWeight: 700,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <SlidersHorizontal size={15} />
+            <span>Adv Search</span>
+            {activeAdvCount > 0 && (
+              <span
+                style={{
+                  background: "#0284c7",
+                  color: "#ffffff",
+                  fontSize: "10px",
+                  fontWeight: 800,
+                  borderRadius: "50%",
+                  width: "18px",
+                  height: "18px",
+                  display: "grid",
+                  placeItems: "center",
+                }}
+              >
+                {activeAdvCount}
+              </span>
+            )}
+          </button>
 
           <select
             style={{ border: "1px solid #d8dde5", borderRadius: "9px", padding: "0 12px", height: "42px", background: "white", fontSize: "13px" }}
@@ -2165,6 +2590,114 @@ function VotersTable({
             <option value="Opposed">Opposed</option>
           </select>
         </div>
+
+        {/* Collapsible 4-column Advanced Search in VotersTable */}
+        {showAdv && (
+          <div
+            style={{
+              background: "#f8fafc",
+              border: "1px solid #bae6fd",
+              borderRadius: "10px",
+              padding: "12px 14px",
+              margin: "0 0 16px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <SlidersHorizontal size={14} color="#0284c7" />
+                <b style={{ fontSize: "12.5px", color: "#0f172a" }}>
+                  Advanced Multi-Column Filter (नाम, पिता, पता, EPIC अलग-अलग)
+                </b>
+              </div>
+              {activeAdvCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdvName("");
+                    setAdvFather("");
+                    setAdvAddress("");
+                    setAdvEpic("");
+                  }}
+                  style={{
+                    border: 0,
+                    background: "#fee2e2",
+                    color: "#b91c1c",
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    padding: "3px 8px",
+                    borderRadius: "5px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                gap: "10px",
+              }}
+            >
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
+                  👤 Voter Name (उदा: Gau, Gaurav)
+                </label>
+                <input
+                  type="text"
+                  value={advName}
+                  onChange={(e) => setAdvName(e.target.value)}
+                  placeholder="e.g. Gau, Gaurav..."
+                  style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
+                  👨‍👧 Father / Husband (उदा: San, Santosh)
+                </label>
+                <input
+                  type="text"
+                  value={advFather}
+                  onChange={(e) => setAdvFather(e.target.value)}
+                  placeholder="e.g. San, Santosh..."
+                  style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
+                  🏠 Address / House (उदा: 12, 64)
+                </label>
+                <input
+                  type="text"
+                  value={advAddress}
+                  onChange={(e) => setAdvAddress(e.target.value)}
+                  placeholder="e.g. 12, 64..."
+                  style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
+                  🆔 EPIC Number (उदा: RJX..., 1001025)
+                </label>
+                <input
+                  type="text"
+                  value={advEpic}
+                  onChange={(e) => setAdvEpic(e.target.value)}
+                  placeholder="e.g. RJX..., 1001025..."
+                  style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="tableWrap">
           <table>
