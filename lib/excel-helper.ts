@@ -49,6 +49,7 @@ export function detectFieldMapping(columns: string[]) {
     house: "",
     booth: "",
     serialNo: "",
+    address: "",
     phone: "",
   };
 
@@ -79,6 +80,10 @@ export function detectFieldMapping(columns: string[]) {
     // House No
     if (!mapping.house && (c.includes("house") || c.includes("h.no") || c.includes("मकान") || c.includes("गृह"))) {
       mapping.house = col;
+    }
+    // Address / Colony / Mohalla (पता / मोहल्ला / कॉलोनी / गली)
+    if (!mapping.address && (c.includes("address") || c.includes("पता") || c.includes("colony") || c.includes("कॉलोनी") || c.includes("mohalla") || c.includes("मोहल्ला") || c.includes("street") || c.includes("गाँव") || c.includes("ग्राम"))) {
+      mapping.address = col;
     }
     // Booth / Part
     if (!mapping.booth && (c.includes("part") || c.includes("booth") || c.includes("भाग") || c.includes("बूथ") || c.includes("ward") || c.includes("वार्ड"))) {

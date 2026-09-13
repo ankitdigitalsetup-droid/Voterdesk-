@@ -947,7 +947,7 @@ function BoothManagerView({
       `👨‍👧 *पिता/पति:* ${v.guardian || "—"}%0A` +
       `🔢 *भाग सं. (Part No):* ${v.booth} | *क्र सं. (Sr No):* ${v.serialNo || "—"}%0A` +
       `🆔 *पहचान पत्र (EPIC):* ${v.epic}%0A` +
-      `🏠 *मकान नं.:* ${v.house || "—"}%0A` +
+      `🏠 *मकान नं.:* ${v.house || "—"}${v.address ? ` (${v.address})` : ""}%0A` +
       `📍 *मतदान केंद्र:* ${t.pollingStationName}%0A` +
       `----------------------------------------%0A` +
       `🗳️ कृपया अपना अमूल्य मत देकर भारी मतों से विजयी बनाएं! 🙏`;
@@ -1111,7 +1111,7 @@ function BoothManagerView({
             />
             <input
               type="text"
-              placeholder={lang === "hi" ? "अंग्रेजी या हिंदी में नाम खोजें (जैसे: Rakesh, Mangal, पांचू)..." : "Search in English or Hindi (e.g. Rakesh, Mangal, Panchu)..."}
+              placeholder={lang === "hi" ? "नाम, सरनेम, पिता/पति, पता या EPIC (e.g. Rakesh, Sharma, 1001001)..." : "Search Name, Surname, Father, Address, EPIC (e.g. Rakesh, Sharma, 1001001)..."}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{
@@ -1264,6 +1264,7 @@ function BoothManagerView({
               </div>
               <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#475467" }}>
                 {t.fatherHusband}: <b>{selectedVoter.guardian || "—"}</b> • {t.houseNo}: <b>{selectedVoter.house || "—"}</b> • EPIC: <b>{selectedVoter.epic}</b>
+                {selectedVoter.address ? <> • {lang === "hi" ? "पता" : "Address"}: <b>{selectedVoter.address}</b></> : null}
               </p>
             </div>
 
@@ -1472,6 +1473,12 @@ function BoothManagerView({
                     <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.houseNo}</span>
                     <b>{activeVoterForSlip.house || "—"}</b>
                   </div>
+                  {activeVoterForSlip.address && (
+                    <div style={{ gridColumn: "span 2" }}>
+                      <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{lang === "hi" ? "पता / वार्ड" : "Address / Ward"}</span>
+                      <b>{activeVoterForSlip.address}</b>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed #cbd5e1", fontSize: "12px", color: "#475467" }}>
@@ -2127,7 +2134,7 @@ function VotersTable({
           <div>
             <Search />
             <input
-              placeholder="Search name, EPIC, guardian, house or phone..."
+              placeholder="Search name, surname, father/husband, address or EPIC (खोजें)..."
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />

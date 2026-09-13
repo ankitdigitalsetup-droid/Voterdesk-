@@ -35,6 +35,7 @@ export interface VoterRecord {
   status: "Pending" | "Contacted" | "In-Favor" | "Doubtful" | "Opposed" | "Slip-Given";
   worker: string;
   phone?: string;
+  address?: string;
   notes?: string;
   candidateId: string;
 }

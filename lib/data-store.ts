@@ -387,6 +387,7 @@ class DataStore {
       age: "42",
       gender: "Male",
       house: "52",
+      address: "वार्ड 34, शांति नगर",
       booth: "1",
       serialNo: 26,
       status: "Contacted",
@@ -426,7 +427,7 @@ class DataStore {
       notes: "Pakka supporter. Requested voter slip early."
     },
     {
-      id: "v_20",
+      id: "v_22",
       name: "Sunita Devi",
       epic: "RJX1075231",
       guardian: "Mahesh Kumar",

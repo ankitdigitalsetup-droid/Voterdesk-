@@ -165,48 +165,68 @@ export function cleanPhonetic(s: string): string {
     .replace(/w/g, "v")
     .replace(/z/g, "j")
     .replace(/sh/g, "s")
-    .replace(/kh/g, "k")
-    .replace(/gh/g, "g")
-    .replace(/ch/g, "c")
-    .replace(/c/g, "k")
-    .replace(/q/g, "k")
     .replace(/ph/g, "f")
     .replace(/bh/g, "b")
     .replace(/dh/g, "d")
     .replace(/th/g, "t")
     .replace(/jh/g, "j")
+    .replace(/kh/g, "k")
+    .replace(/gh/g, "g")
+    .replace(/q/g, "k")
+    // Keep 'ch' distinct so 'chand' does not become 'kand'
     .replace(/a(?=[bcdfghjklmnpqrstvwxyz])/g, "") // flexible short vowels e.g. kamla / kamala
-    .replace(/(.)\1+/g, "$1"); // collapse double letters: tt->t, mm->m, ll->l, bb->b, jj->j
+    .replace(/(.)\1+/g, "$1"); // collapse double letters
+}
+
+export function normalizeAlphaNum(s: string | number | undefined | null): string {
+  return String(s || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+}
+
+export function isAlphaWord(str: string): boolean {
+  return /^[\p{L}\s]+$/u.test(str);
 }
 
 /**
- * Checks if targetText matches query using direct, transliterated, and phonetic comparisons.
+ * Checks if a single record field matches a query token using direct,
+ * alphanumeric, Devanagari transliteration, and phonetic matching.
  */
-export function matchesSearch(targetText: string | undefined | null, query: string): boolean {
-  if (!targetText || !query) return false;
-  const q = query.trim().toLowerCase();
+export function singleFieldMatches(fieldValue: string | number | undefined | null, queryToken: string): boolean {
+  if (!fieldValue || !queryToken) return false;
+  const f = String(fieldValue).trim();
+  const q = queryToken.trim().toLowerCase();
   if (!q) return true;
 
-  const t = targetText.toLowerCase();
+  const fLower = f.toLowerCase();
 
-  // 1. Direct substring match (e.g. Hindi query matches Hindi, or English matches English)
-  if (t.includes(q)) return true;
+  // 1. Direct substring
+  if (fLower.includes(q)) return true;
 
-  // 2. Devanagari to Roman transliteration match
-  const roman = devanagariToRoman(t);
-  if (roman.includes(q)) return true;
+  // 2. Alphanumeric match (for EPICs with spaces/slashes e.g. RJX 1001001 vs RJX1001001)
+  const fAlpha = normalizeAlphaNum(f);
+  const qAlpha = normalizeAlphaNum(q);
+  if (qAlpha && fAlpha.includes(qAlpha)) return true;
 
-  // 3. Normalized phonetic match
-  const pQuery = cleanPhonetic(q);
-  if (pQuery) {
-    const pRoman = cleanPhonetic(roman);
-    if (pRoman.includes(pQuery)) return true;
+  // If query token is purely letters/words, use bilingual transliteration and phonetic matching
+  if (isAlphaWord(q)) {
+    // 3. Devanagari to Roman transliteration
+    const roman = devanagariToRoman(f);
+    if (roman.includes(q)) return true;
 
-    // Word prefix matching
+    // Check individual words in name
     const romanWords = roman.split(/\s+/);
     for (const rw of romanWords) {
-      if (rw.startsWith(q) || cleanPhonetic(rw).startsWith(pQuery)) {
-        return true;
+      if (rw.startsWith(q) || rw === q) return true;
+    }
+
+    // 4. Phonetic matching
+    const pQ = cleanPhonetic(q);
+    if (pQ && pQ.length >= 2) {
+      const pRoman = cleanPhonetic(roman);
+      if (pRoman.includes(pQ)) return true;
+
+      for (const rw of romanWords) {
+        const pRw = cleanPhonetic(rw);
+        if (pRw.startsWith(pQ) || pRw === pQ) return true;
       }
     }
   }
@@ -215,24 +235,58 @@ export function matchesSearch(targetText: string | undefined | null, query: stri
 }
 
 /**
- * Searches a VoterRecord across Name, Guardian, EPIC, Booth, SerialNo, House, and Phone.
+ * Checks if targetText matches query using direct, transliterated, and phonetic comparisons.
+ */
+export function matchesSearch(targetText: string | undefined | null, query: string): boolean {
+  return singleFieldMatches(targetText, query);
+}
+
+/**
+ * Universal Multi-Field Search:
+ * Matches query across Name, Surname, Father's / Husband's Name,
+ * House No., Address/Colony, EPIC No. (Voter ID Card), Serial No., Booth, and Phone.
+ * If query contains multiple words (e.g. "Rakesh Sharma", "Mangal Chand", "Rekha Jabbar", "Zuber 19"),
+ * every word token must match at least one field of the voter record.
  */
 export function matchesVoter(voter: VoterRecord, query: string): boolean {
   if (!query || !query.trim()) return true;
-  const q = query.trim().toLowerCase();
+  const rawQuery = query.trim();
 
-  // Direct numeric or code matches
-  if (voter.epic && voter.epic.toLowerCase().includes(q)) return true;
-  if (voter.booth && voter.booth.toLowerCase().includes(q)) return true;
-  if (voter.house && voter.house.toLowerCase().includes(q)) return true;
-  if (voter.phone && voter.phone.includes(q)) return true;
-  if (voter.serialNo !== undefined && String(voter.serialNo).toLowerCase().includes(q)) return true;
+  // Split query into individual search tokens
+  const tokens = rawQuery.split(/\s+/).filter(Boolean);
 
-  // Bilingual phonetic match for Name
-  if (matchesSearch(voter.name, q)) return true;
+  // Every token must match at least ONE field of the voter record
+  return tokens.every((token) => {
+    const isShortPureDigits = /^\d{1,3}$/.test(token);
 
-  // Bilingual phonetic match for Father / Husband Name (Guardian)
-  if (voter.guardian && matchesSearch(voter.guardian, q)) return true;
+    // 1. Name & Surname (Hindi or Roman English)
+    if (singleFieldMatches(voter.name, token)) return true;
 
-  return false;
+    // 2. Father's / Husband's Name (Guardian)
+    if (voter.guardian && singleFieldMatches(voter.guardian, token)) return true;
+
+    // 3. Address / House No. / Colony / Mohalla
+    if (voter.house && singleFieldMatches(voter.house, token)) return true;
+    if (voter.address && singleFieldMatches(voter.address, token)) return true;
+
+    // 4. EPIC No. (Voter ID card - require >= 4 digits if purely numeric, or alphanumeric like RJX)
+    if (!isShortPureDigits && voter.epic && singleFieldMatches(voter.epic, token)) return true;
+
+    // 5. Serial No.
+    if (voter.serialNo !== undefined) {
+      const sStr = String(voter.serialNo);
+      if (sStr === token || (!isShortPureDigits && sStr.includes(token))) return true;
+    }
+
+    // 6. Booth / Part No.
+    if (voter.booth) {
+      if (voter.booth.toLowerCase() === token.toLowerCase()) return true;
+      if (!isShortPureDigits && voter.booth.toLowerCase().includes(token.toLowerCase())) return true;
+    }
+
+    // 7. Phone
+    if (!isShortPureDigits && voter.phone && voter.phone.includes(token)) return true;
+
+    return false;
+  });
 }
