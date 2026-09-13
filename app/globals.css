@@ -268,3 +268,185 @@
 .voterCardActions{display:flex;gap:8px;flex-wrap:wrap;padding-top:12px;border-top:1px dashed var(--line)}
 .voterCardActions button{padding:6px 11px;font-size:12px;border-radius:7px}
 
+/* Booth Manager Native-like Mobile Layout (Matching Screenshot) */
+.bmShell {
+  min-height: 100vh;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+}
+
+.bmHeader {
+  height: 56px;
+  background: #026aa7;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.bmHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.bmHeaderTitle {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.bmHeaderSub {
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #67e8f9;
+  text-transform: uppercase;
+  display: block;
+}
+
+.bmActionsBar {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  width: 100%;
+  position: sticky;
+  top: 56px;
+  z-index: 35;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+}
+
+.bmActionBtn {
+  border: 0;
+  height: 52px;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1.15;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 1px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+  user-select: none;
+}
+
+.bmActionBtn:active {
+  filter: brightness(0.85);
+}
+
+.bmBtnSlip { background: #5b72e5; }
+.bmBtnUpdate { background: #ea580c; }
+.bmBtnSearch { background: #00a651; }
+.bmBtnLocation { background: #5b67d6; }
+.bmBtnPrint { background: #ff9800; }
+.bmBtnLogout { background: #e50914; }
+
+.bmTableContainer {
+  width: 100%;
+  overflow-x: auto;
+  background: #ffffff;
+  flex: 1;
+}
+
+.bmTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.bmTable th {
+  background: #e2e8f0;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 4px;
+  text-align: center;
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1.5px solid #94a3b8;
+  white-space: nowrap;
+}
+
+.bmTable th.thLeft {
+  text-align: left;
+  padding-left: 8px;
+}
+
+.bmTable td {
+  padding: 9px 6px;
+  border-right: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+.bmTable tr:nth-child(even) {
+  background: #fdfdfd;
+}
+
+.bmTable tr:hover, .bmTable tr.selectedRow {
+  background: #e0f2fe !important;
+  cursor: pointer;
+}
+
+.bmTable td.colIndex {
+  text-align: center;
+  font-size: 11px;
+  color: #64748b;
+  width: 34px;
+}
+
+.bmTable td.colPart {
+  text-align: center;
+  font-weight: 600;
+  width: 50px;
+}
+
+.bmTable td.colSerial {
+  text-align: center;
+  font-weight: 700;
+  color: #0f172a;
+  width: 50px;
+}
+
+.bmTable td.colName {
+  font-weight: 700;
+  color: #0f172a;
+  padding-left: 8px;
+}
+
+.bmTable td.colGuardian {
+  color: #334155;
+  padding-left: 8px;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .printableArea, .printableArea * {
+    visibility: visible;
+  }
+  .printableArea {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  .noPrint {
+    display: none !important;
+  }
+}
+
+

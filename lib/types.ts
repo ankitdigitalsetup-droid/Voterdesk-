@@ -31,6 +31,7 @@ export interface VoterRecord {
   gender: string;
   house: string;
   booth: string;
+  serialNo?: number | string; // Serial number in voter roll (क्र सं.)
   status: "Pending" | "Contacted" | "In-Favor" | "Doubtful" | "Opposed" | "Slip-Given";
   worker: string;
   phone?: string;

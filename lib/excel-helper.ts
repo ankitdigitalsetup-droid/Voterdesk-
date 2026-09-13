@@ -48,6 +48,7 @@ export function detectFieldMapping(columns: string[]) {
     gender: "",
     house: "",
     booth: "",
+    serialNo: "",
     phone: "",
   };
 
@@ -83,6 +84,10 @@ export function detectFieldMapping(columns: string[]) {
     if (!mapping.booth && (c.includes("part") || c.includes("booth") || c.includes("भाग") || c.includes("बूथ") || c.includes("ward") || c.includes("वार्ड"))) {
       mapping.booth = col;
     }
+    // Serial No (क्र सं. / Serial No / S.No / Roll No / क्रम सं)
+    if (!mapping.serialNo && (c.includes("serial") || c.includes("sr") || c.includes("sl") || c.includes("s.no") || c.includes("क्र सं") || c.includes("क्रमांक") || c.includes("क्रम"))) {
+      mapping.serialNo = col;
+    }
     // Phone
     if (!mapping.phone && (c.includes("phone") || c.includes("mobile") || c.includes("contact") || c.includes("मोबाइल") || c.includes("फोन"))) {
       mapping.phone = col;
@@ -96,54 +101,48 @@ export function detectFieldMapping(columns: string[]) {
 export function downloadSampleExcelTemplate() {
   const sampleData = [
     {
-      "EPIC No.": "RJX1032847",
-      "Elector Name": "Ramesh Kumar Sharma",
-      "Relation Name": "Sohan Lal Sharma",
-      "Age": 46,
+      "Part / Booth No.": "1",
+      "Serial No. (क्र सं.)": 2,
+      "Elector Name": "मंगल चन्द",
+      "Relation Name": "पांचू राम",
+      "EPIC No.": "RJX1001001",
+      "Age": 48,
       "Gender": "Male",
-      "House No.": "42-A",
-      "Part / Booth No.": "12",
+      "House No.": "12",
       "Mobile": "9829011111",
     },
     {
-      "EPIC No.": "RJX1075231",
-      "Elector Name": "Sunita Devi",
-      "Relation Name": "Mahesh Kumar",
-      "Age": 39,
+      "Part / Booth No.": "1",
+      "Serial No. (क्र सं.)": 3,
+      "Elector Name": "ज़रीना",
+      "Relation Name": "मुनवर अली",
+      "EPIC No.": "RJX1001002",
+      "Age": 42,
       "Gender": "Female",
-      "House No.": "18",
-      "Part / Booth No.": "12",
+      "House No.": "14",
       "Mobile": "9829022222",
     },
     {
-      "EPIC No.": "RJX1186309",
-      "Elector Name": "Mohammad Arif",
-      "Relation Name": "Abdul Karim",
-      "Age": 52,
+      "Part / Booth No.": "1",
+      "Serial No. (क्र सं.)": 6,
+      "Elector Name": "तनवीर कुरेशी",
+      "Relation Name": "अब्दुल रशीद",
+      "EPIC No.": "RJX1001003",
+      "Age": 36,
       "Gender": "Male",
-      "House No.": "77-B",
-      "Part / Booth No.": "14",
+      "House No.": "16",
       "Mobile": "9829033333",
     },
     {
-      "EPIC No.": "RJX1208452",
-      "Elector Name": "Kavita Joshi",
-      "Relation Name": "Gopal Joshi",
+      "Part / Booth No.": "1",
+      "Serial No. (क्र सं.)": 10,
+      "Elector Name": "जुबेर खान",
+      "Relation Name": "अनवर खान",
+      "EPIC No.": "RJX1001004",
       "Age": 31,
-      "Gender": "Female",
-      "House No.": "103",
-      "Part / Booth No.": "15",
-      "Mobile": "9829044444",
-    },
-    {
-      "EPIC No.": "RJX1253098",
-      "Elector Name": "Deepak Verma",
-      "Relation Name": "Rajendra Verma",
-      "Age": 28,
       "Gender": "Male",
-      "House No.": "09-C",
-      "Part / Booth No.": "15",
-      "Mobile": "9829055555",
+      "House No.": "19",
+      "Mobile": "9829044444",
     },
   ];
 

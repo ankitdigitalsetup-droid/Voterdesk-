@@ -39,7 +39,7 @@ import { translations, Lang } from "@/lib/translations";
 
 export default function Page() {
   const [user, setUser] = useState<UserAccount | null>(null);
-  const [page, setPage] = useState<string>("dashboard");
+  const [page, setPage] = useState<string>("boothmanager");
   const [menu, setMenu] = useState(false);
   const [lang, setLang] = useState<Lang>("hi");
   const t = translations[lang];
@@ -62,7 +62,7 @@ export default function Page() {
     refreshData();
   }, [activeCandidateId]);
 
-  // When user logs in, set candidate id
+  // When user logs in, set candidate id and navigate DIRECTLY to voter roll!
   const handleLogin = (authenticatedUser: UserAccount) => {
     setUser(authenticatedUser);
     if (authenticatedUser.candidateId) {
@@ -70,16 +70,15 @@ export default function Page() {
     }
     if (authenticatedUser.role === "SUPER_ADMIN") {
       setPage("superadmin");
-    } else if (authenticatedUser.role === "KARYAKARTA") {
-      setPage("field");
     } else {
-      setPage("dashboard");
+      // Both Candidate Admin and Karyakarta land directly on Booth Manager voter roll!
+      setPage("boothmanager");
     }
   };
 
   const handleLogout = () => {
     setUser(null);
-    setPage("dashboard");
+    setPage("boothmanager");
   };
 
   useEffect(() => {
@@ -98,7 +97,7 @@ export default function Page() {
         candidates={candidates}
         onSelectCandidate={(candId) => {
           setActiveCandidateId(candId);
-          setPage("dashboard");
+          setPage("boothmanager");
         }}
         onCandidateCreated={refreshData}
         onLogout={handleLogout}
@@ -109,15 +108,21 @@ export default function Page() {
     );
   }
 
-  // Karyakarta / Volunteer Direct View
-  if (user.role === "KARYAKARTA" || page === "field") {
+  // Direct Booth Manager Voter Roll View (Default upon login for Candidate Admin & Karyakarta!)
+  if (page === "boothmanager" || user.role === "KARYAKARTA") {
     return (
-      <KaryakartaFieldView
+      <BoothManagerView
         user={user}
+        candidateId={activeCandidateId}
+        candidate={candidates.find((c) => c.id === activeCandidateId) || candidates[0]}
         voters={voters}
         onVoterUpdated={refreshData}
         onLogout={handleLogout}
-        onBackToAdmin={user.role === "SUPER_ADMIN" || user.role === "CANDIDATE_ADMIN" ? () => setPage("dashboard") : undefined}
+        onOpenAdminPanel={
+          user.role === "SUPER_ADMIN" || user.role === "CANDIDATE_ADMIN"
+            ? () => setPage("dashboard")
+            : undefined
+        }
         lang={lang}
         toggleLang={toggleLang}
         t={t}
@@ -129,6 +134,7 @@ export default function Page() {
   const currentCandidate = candidates.find((c) => c.id === activeCandidateId) || candidates[0];
 
   const candidateNav = [
+    ["boothmanager", t.boothManager, Vote],
     ["dashboard", t.navDashboard, Home],
     ["voters", t.navVoters, Users],
     ["import", t.navImport, FileSpreadsheet],
@@ -754,307 +760,1140 @@ function SuperAdminView({
 }
 
 // -------------------------------------------------------------
-// 3. KARYAKARTA / VOLUNTEER FIELD VIEW (BOOTH SPECIFIC)
+// 3. BOOTH MANAGER DIRECT VIEW (MATCHING USER SCREENSHOT)
 // -------------------------------------------------------------
-function KaryakartaFieldView({
+function BoothManagerView({
   user,
+  candidateId,
+  candidate,
   voters,
   onVoterUpdated,
   onLogout,
-  onBackToAdmin,
+  onOpenAdminPanel,
   lang,
   toggleLang,
   t,
 }: {
   user: UserAccount;
+  candidateId: string;
+  candidate?: CandidateAccount;
   voters: VoterRecord[];
   onVoterUpdated: () => void;
   onLogout: () => void;
-  onBackToAdmin?: () => void;
+  onOpenAdminPanel?: () => void;
   lang: Lang;
   toggleLang: () => void;
   t: (typeof translations)["hi"];
 }) {
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [showSearchBar, setShowSearchBar] = useState(false);
+  const [partFilter, setPartFilter] = useState("ALL");
   const [selectedVoter, setSelectedVoter] = useState<VoterRecord | null>(null);
 
-  // Filter voters: Only assigned booths for karyakarta
-  const assignedBooths = user.assignedBooths && user.assignedBooths.length > 0 ? user.assignedBooths : ["12", "13"];
+  // Modals state
+  const [showSlipModal, setShowSlipModal] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [updateTab, setUpdateTab] = useState<"add" | "upload">("add");
 
-  const boothVoters = useMemo(() => {
+  // Slip send phone state
+  const [recipientPhone, setRecipientPhone] = useState("");
+
+  // New Voter Form state
+  const [voterForm, setVoterForm] = useState({
+    name: "",
+    guardian: "",
+    booth: "1",
+    serialNo: "",
+    epic: "",
+    age: "35",
+    gender: "Male",
+    house: "",
+    phone: "",
+    status: "Pending" as VoterRecord["status"],
+  });
+
+  // Excel Upload state in modal
+  const [uploading, setUploading] = useState(false);
+  const [uploadMsg, setUploadMsg] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Booths / Parts list
+  const allParts = useMemo(() => {
+    const set = new Set<string>();
+    voters.forEach((v) => set.add(v.booth));
+    return Array.from(set).sort((a, b) => Number(a) - Number(b));
+  }, [voters]);
+
+  // Filtered voters list
+  const filteredVoters = useMemo(() => {
     return voters.filter((v) => {
-      // If user is Karyakarta, restrict to their booths
-      const inBooth = user.role === "KARYAKARTA" ? assignedBooths.includes(v.booth) : true;
-      if (!inBooth) return false;
+      if (user.role === "KARYAKARTA" && user.assignedBooths && user.assignedBooths.length > 0) {
+        if (!user.assignedBooths.includes(v.booth)) return false;
+      }
+      if (partFilter !== "ALL" && v.booth !== partFilter) return false;
 
-      if (statusFilter !== "ALL" && v.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
-
-      if (search) {
-        const q = search.toLowerCase();
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const sNo = v.serialNo !== undefined ? String(v.serialNo).toLowerCase() : "";
         return (
           v.name.toLowerCase().includes(q) ||
-          v.epic.toLowerCase().includes(q) ||
           (v.guardian && v.guardian.toLowerCase().includes(q)) ||
-          v.house.toLowerCase().includes(q)
+          v.epic.toLowerCase().includes(q) ||
+          sNo.includes(q) ||
+          v.house.toLowerCase().includes(q) ||
+          v.booth.toLowerCase().includes(q) ||
+          (v.phone && v.phone.includes(q))
         );
       }
       return true;
     });
-  }, [voters, assignedBooths, statusFilter, search, user.role]);
+  }, [voters, user, partFilter, search]);
+
+  const activeVoterForSlip = selectedVoter || filteredVoters[0] || voters[0];
+
+  useEffect(() => {
+    if (activeVoterForSlip && activeVoterForSlip.phone) {
+      setRecipientPhone(activeVoterForSlip.phone);
+    } else {
+      setRecipientPhone("");
+    }
+  }, [activeVoterForSlip]);
 
   const handleStatusChange = (voterId: string, newStatus: VoterRecord["status"]) => {
     store.updateVoter(voterId, { status: newStatus, worker: user.name });
+    if (selectedVoter && selectedVoter.id === voterId) {
+      setSelectedVoter((prev) => (prev ? { ...prev, status: newStatus } : null));
+    }
     onVoterUpdated();
   };
 
-  const totalAssigned = boothVoters.length;
-  const contacted = boothVoters.filter((v) => v.status !== "Pending").length;
-  const percentage = totalAssigned > 0 ? Math.round((contacted / totalAssigned) * 100) : 0;
+  const handleSaveVoter = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!voterForm.name.trim()) {
+      alert("कृपया मतदाता का नाम दर्ज करें");
+      return;
+    }
+    const epicVal = voterForm.epic.trim().toUpperCase() || "RJX" + Math.floor(1000000 + Math.random() * 9000000);
+    const added = store.addVoter({
+      name: voterForm.name.trim(),
+      guardian: voterForm.guardian.trim(),
+      booth: voterForm.booth.trim() || "1",
+      serialNo: voterForm.serialNo ? Number(voterForm.serialNo) : undefined,
+      epic: epicVal,
+      age: voterForm.age || "35",
+      gender: voterForm.gender || "Male",
+      house: voterForm.house.trim(),
+      phone: voterForm.phone.trim(),
+      status: voterForm.status,
+      worker: user.name,
+      candidateId: candidateId || "cand_1",
+    });
+
+    onVoterUpdated();
+    setShowUpdateModal(false);
+    setSelectedVoter(added);
+    setVoterForm({
+      name: "",
+      guardian: "",
+      booth: "1",
+      serialNo: "",
+      epic: "",
+      age: "35",
+      gender: "Male",
+      house: "",
+      phone: "",
+      status: "Pending",
+    });
+  };
+
+  const handleModalExcelUpload = async (file: File) => {
+    setUploading(true);
+    setUploadMsg("");
+    try {
+      const parsed = await parseExcelFile(file);
+      const mapping = detectFieldMapping(parsed.columns);
+      const toImport = parsed.rows.map((row) => ({
+        name: String(row[mapping.name] || "").trim(),
+        epic: String(row[mapping.epic] || "").trim().toUpperCase(),
+        guardian: String(row[mapping.guardian] || "").trim(),
+        age: String(row[mapping.age] || ""),
+        gender: String(row[mapping.gender] || "Male"),
+        house: String(row[mapping.house] || ""),
+        booth: String(row[mapping.booth] || "1"),
+        serialNo: mapping.serialNo ? row[mapping.serialNo] : undefined,
+        phone: String(row[mapping.phone] || ""),
+        status: "Pending" as VoterRecord["status"],
+        worker: "Unassigned",
+      })).filter((v) => v.name && v.epic);
+
+      if (toImport.length === 0) {
+        throw new Error("फ़ाइल में कोई वैध मतदाता रिकॉर्ड नहीं मिले।");
+      }
+
+      const res = store.importVoters(candidateId || "cand_1", toImport);
+      setUploadMsg(`सफलतापूर्वक ${res.imported} मतदाता रिकॉर्ड्स अपलोड किए गए!`);
+      onVoterUpdated();
+      setTimeout(() => {
+        setShowUpdateModal(false);
+        setUploadMsg("");
+      }, 1500);
+    } catch (err: unknown) {
+      setUploadMsg(err instanceof Error ? err.message : "फ़ाइल अपलोड विफल रही।");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const generateWhatsAppSlipText = (v: VoterRecord) => {
+    const candName = candidate ? candidate.name : "अभय कुमार";
+    const candParty = candidate ? candidate.party : "निर्दलीय";
+    return `🇮🇳 *मतदाता पर्ची (OFFICIAL VOTER SLIP)* 🇮🇳%0A` +
+      `*उम्मीदवार:* ${candName} (${candParty})%0A` +
+      `----------------------------------------%0A` +
+      `👤 *मतदाता:* ${v.name}%0A` +
+      `👨‍👧 *पिता/पति:* ${v.guardian || "—"}%0A` +
+      `🔢 *भाग सं. (Part No):* ${v.booth} | *क्र सं. (Sr No):* ${v.serialNo || "—"}%0A` +
+      `🆔 *पहचान पत्र (EPIC):* ${v.epic}%0A` +
+      `🏠 *मकान नं.:* ${v.house || "—"}%0A` +
+      `📍 *मतदान केंद्र:* ${t.pollingStationName}%0A` +
+      `----------------------------------------%0A` +
+      `🗳️ कृपया अपना अमूल्य मत देकर भारी मतों से विजयी बनाएं! 🙏`;
+  };
+
+  const handleSendWhatsApp = (v: VoterRecord) => {
+    const cleanNumber = recipientPhone.replace(/\D/g, "");
+    const text = generateWhatsAppSlipText(v);
+    const url = cleanNumber
+      ? `https://api.whatsapp.com/send?phone=${cleanNumber}&text=${text}`
+      : `https://api.whatsapp.com/send?text=${text}`;
+    window.open(url, "_blank");
+  };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f1f5f9", paddingBottom: "40px" }}>
-      {/* Mobile Top Header with High-Contrast Buttons & Language Toggle */}
-      <header style={{ height: "60px", background: "#0b224e", color: "white", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", position: "sticky", top: 0, zIndex: 30 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", minWidth: 0 }}>
-          <Logo />
-          <div style={{ minWidth: 0 }}>
-            <b style={{ fontSize: "15px", display: "block", whiteSpace: "nowrap" }}>{t.fieldPortal}</b>
-            <span style={{ display: "block", fontSize: "10px", color: "#a9c0e6", whiteSpace: "nowrap" }}>{t.fieldSub}</span>
+    <div className="bmShell">
+      {/* 1. Header (Matching Screenshot) */}
+      <header className="bmHeader noPrint">
+        <div className="bmHeaderLeft">
+          <div
+            style={{
+              width: "36px",
+              height: "36px",
+              borderRadius: "10px",
+              background: "rgba(255, 255, 255, 0.15)",
+              border: "1px solid rgba(255, 255, 255, 0.3)",
+              display: "grid",
+              placeItems: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ShieldCheck size={22} color="#ffffff" />
+          </div>
+          <div>
+            <b className="bmHeaderTitle">{t.bmTitle}</b>
+            <span className="bmHeaderSub">{t.bmSub}</span>
           </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          {/* Active Working Language Switcher Button */}
+          {/* Working Language Switcher Button */}
           <button
             type="button"
+            onClick={toggleLang}
             style={{
-              background: "rgba(255, 255, 255, 0.16)",
+              background: "rgba(255, 255, 255, 0.18)",
               color: "#ffffff",
-              border: "1px solid rgba(255, 255, 255, 0.35)",
+              border: "1px solid rgba(255, 255, 255, 0.4)",
               borderRadius: "8px",
-              padding: "6px 10px",
+              padding: "5px 9px",
               fontSize: "12px",
-              fontWeight: 700,
+              fontWeight: 800,
               display: "inline-flex",
               alignItems: "center",
               gap: "4px",
-              cursor: "pointer"
+              cursor: "pointer",
             }}
-            onClick={toggleLang}
-            title="Switch Language"
+            title="Switch Language / भाषा बदलें"
           >
             <Globe size={13} />
             <span>{t.langToggle}</span>
           </button>
 
-          {/* Back to Admin (if permitted) */}
-          {onBackToAdmin && (
+          {/* Admin Panel Button (for Candidate Admin / Super Admin) */}
+          {onOpenAdminPanel && (
             <button
               type="button"
+              onClick={onOpenAdminPanel}
               style={{
-                background: "rgba(255, 255, 255, 0.16)",
+                background: "rgba(255, 255, 255, 0.18)",
                 color: "#ffffff",
-                border: "1px solid rgba(255, 255, 255, 0.35)",
+                border: "1px solid rgba(255, 255, 255, 0.4)",
                 borderRadius: "8px",
-                padding: "6px 10px",
+                padding: "5px 9px",
                 fontSize: "12px",
-                fontWeight: 600,
-                display: "inline-flex",
-                alignItems: "center",
-                cursor: "pointer"
+                fontWeight: 700,
+                cursor: "pointer",
               }}
-              onClick={onBackToAdmin}
+              title={t.adminPanel}
             >
-              <span>{t.backToAdmin}</span>
+              <span>{t.adminPanel}</span>
             </button>
           )}
-
-          {/* Logout Button */}
-          <button
-            type="button"
-            style={{
-              background: "rgba(255, 255, 255, 0.16)",
-              color: "#ffffff",
-              border: "1px solid rgba(255, 255, 255, 0.35)",
-              borderRadius: "8px",
-              padding: "6px 10px",
-              fontSize: "12px",
-              display: "inline-flex",
-              alignItems: "center",
-              cursor: "pointer"
-            }}
-            onClick={onLogout}
-            title={t.logout}
-          >
-            <LogOut size={15} />
-          </button>
         </div>
       </header>
 
-      <div className="fieldContainer" style={{ padding: "16px" }}>
-        {/* Booth Assignment Banner */}
-        <div className="fieldBoothBanner">
-          <div>
-            <span style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "1px", color: "#93c5fd" }}>
-              {t.workerLabel}: {user.name}
-            </span>
-            <h2 style={{ margin: "4px 0 6px", fontSize: "20px" }}>
-              {t.assignedBooth} {assignedBooths.join(", ")}
-            </h2>
-            <p style={{ margin: 0, fontSize: "12px", color: "#cbd5e1" }}>
-              {contacted} / {totalAssigned} {t.votersContactedOf} ({percentage}%)
-            </p>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <b style={{ fontSize: "28px" }}>{percentage}%</b>
-          </div>
-        </div>
+      {/* 2. Top Action Navigation Bar (Exact 6 colored buttons from screenshot) */}
+      <div className="bmActionsBar noPrint">
+        <button
+          type="button"
+          className="bmActionBtn bmBtnSlip"
+          onClick={() => {
+            setSelectedVoter(selectedVoter || filteredVoters[0] || voters[0]);
+            setShowSlipModal(true);
+          }}
+        >
+          <span>{lang === "hi" ? "स्लिप" : "Slip"}</span>
+          <span>{lang === "hi" ? "मैसेज" : "Message"}</span>
+        </button>
 
-        {/* Search and Filters */}
-        <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-          <div style={{ flex: 1, position: "relative" }}>
-            <Search size={16} style={{ position: "absolute", left: "12px", top: "13px", color: "#94a3b8" }} />
-            <input
-              style={{ width: "100%", height: "42px", paddingLeft: "36px", borderRadius: "10px", border: "1px solid #cbd5e1", outline: "none", fontSize: "14px", background: "#fff" }}
-              placeholder={t.karyakartaSearch}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <select
-            style={{ height: "42px", borderRadius: "10px", border: "1px solid #cbd5e1", padding: "0 10px", background: "#fff", fontSize: "13px" }}
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="ALL">{t.allStatus}</option>
-            <option value="Pending">{t.stPending}</option>
-            <option value="Contacted">{t.stContacted}</option>
-            <option value="In-Favor">{t.stInFavor}</option>
-            <option value="Slip-Given">{t.stSlipGiven}</option>
-          </select>
-        </div>
+        <button
+          type="button"
+          className="bmActionBtn bmBtnUpdate"
+          onClick={() => setShowUpdateModal(true)}
+        >
+          <span>{lang === "hi" ? "डेटा" : "Data"}</span>
+          <span>{lang === "hi" ? "अपडेट" : "Update"}</span>
+        </button>
 
-        {/* Voter List Cards */}
-        <div className="voterCardList">
-          {boothVoters.map((v) => (
-            <div key={v.id} className="voterCard">
-              <div className="voterCardHead">
-                <div>
-                  <b style={{ fontSize: "16px", color: "#0f172a" }}>{v.name}</b>
-                  <span style={{ display: "block", fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
-                    {t.fatherHusband}: {v.guardian || "—"}
-                  </span>
-                </div>
-                <span className={`status ${v.status.toLowerCase()}`}>{v.status}</span>
-              </div>
+        <button
+          type="button"
+          className="bmActionBtn bmBtnSearch"
+          onClick={() => setShowSearchBar((prev) => !prev)}
+        >
+          <span>{t.btnSearch}</span>
+        </button>
 
-              <div className="voterCardMeta">
-                <span><b>EPIC:</b> {v.epic}</span>
-                <span><b>{t.houseNo}:</b> {v.house}</span>
-                <span><b>{t.ageGender}:</b> {v.age} / {v.gender}</span>
-                <span><b>{t.booth}:</b> {v.booth}</span>
-                {v.phone && <span><b>Phone:</b> {v.phone}</span>}
-              </div>
+        <button
+          type="button"
+          className="bmActionBtn bmBtnLocation"
+          onClick={() => setShowLocationModal(true)}
+        >
+          <span>{t.btnLocation}</span>
+        </button>
 
-              {/* 1-Tap Quick Action Buttons */}
-              <div className="voterCardActions">
-                <button
-                  className="outline"
-                  style={{ background: v.status === "In-Favor" ? "#dcfce7" : "#fff", borderColor: "#86efac", color: "#15803d" }}
-                  onClick={() => handleStatusChange(v.id, "In-Favor")}
-                >
-                  <Check size={14} /> {t.btnInFavor}
-                </button>
-                <button
-                  className="outline"
-                  style={{ background: v.status === "Contacted" ? "#e0f2fe" : "#fff", borderColor: "#7dd3fc", color: "#0369a1" }}
-                  onClick={() => handleStatusChange(v.id, "Contacted")}
-                >
-                  {t.btnContacted}
-                </button>
-                <button
-                  className="outline"
-                  style={{ background: v.status === "Slip-Given" ? "#e0e7ff" : "#fff", borderColor: "#c7d2fe", color: "#4338ca" }}
-                  onClick={() => handleStatusChange(v.id, "Slip-Given")}
-                >
-                  {t.btnSlipGiven}
-                </button>
-                <button
-                  className="outline"
-                  onClick={() => setSelectedVoter(v)}
-                >
-                  {t.btnDetailsSlip}
-                </button>
-              </div>
-            </div>
-          ))}
+        <button
+          type="button"
+          className="bmActionBtn bmBtnPrint"
+          onClick={() => setShowPrintModal(true)}
+        >
+          <span>{t.btnPrint}</span>
+        </button>
 
-          {boothVoters.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b" }}>
-              No voters found matching your search in Booth {assignedBooths.join(", ")}.
-            </div>
-          )}
-        </div>
+        <button
+          type="button"
+          className="bmActionBtn bmBtnLogout"
+          onClick={onLogout}
+        >
+          <span>{lang === "hi" ? "लॉग" : "Log"}</span>
+          <span>{lang === "hi" ? "आउट" : "Out"}</span>
+        </button>
       </div>
 
-      {/* Voter Slip / Details Modal */}
+      {/* 3. Search & Filter Bar (Toggled when Search clicked) */}
+      {showSearchBar && (
+        <div
+          className="noPrint"
+          style={{
+            background: "#f1f5f9",
+            padding: "10px 12px",
+            borderBottom: "1px solid #cbd5e1",
+            display: "flex",
+            gap: "8px",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ flex: 1, position: "relative" }}>
+            <Search
+              size={15}
+              style={{ position: "absolute", left: "10px", top: "11px", color: "#64748b" }}
+            />
+            <input
+              type="text"
+              placeholder={lang === "hi" ? "नाम, क्र सं., भाग, पिता/पति खोजें..." : "Search name, sr no, part, guardian..."}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{
+                width: "100%",
+                height: "36px",
+                paddingLeft: "32px",
+                paddingRight: "28px",
+                borderRadius: "8px",
+                border: "1px solid #cbd5e1",
+                fontSize: "13px",
+                background: "#ffffff",
+                outline: "none",
+              }}
+              autoFocus
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  top: "9px",
+                  border: 0,
+                  background: "transparent",
+                  color: "#94a3b8",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+
+          {allParts.length > 1 && (
+            <select
+              value={partFilter}
+              onChange={(e) => setPartFilter(e.target.value)}
+              style={{
+                height: "36px",
+                borderRadius: "8px",
+                border: "1px solid #cbd5e1",
+                padding: "0 8px",
+                background: "#ffffff",
+                fontSize: "12px",
+                fontWeight: 600,
+              }}
+            >
+              <option value="ALL">{lang === "hi" ? "सभी भाग" : "All Parts"}</option>
+              {allParts.map((p) => (
+                <option key={p} value={p}>
+                  {lang === "hi" ? `भाग ${p}` : `Part ${p}`}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              color: "#475467",
+              background: "#e2e8f0",
+              padding: "4px 8px",
+              borderRadius: "6px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {filteredVoters.length} {lang === "hi" ? "मतदाता" : "voters"}
+          </span>
+        </div>
+      )}
+
+      {/* 4. Tabular Voter Roll (Exact Layout from Screenshot) */}
+      <div className="bmTableContainer printableArea">
+        <table className="bmTable">
+          <thead>
+            <tr>
+              <th style={{ width: "36px" }}>{t.colIndex}</th>
+              <th style={{ width: "52px" }}>{t.colPart}</th>
+              <th style={{ width: "52px" }}>{t.colSerial}</th>
+              <th className="thLeft" style={{ minWidth: "120px" }}>{t.colName}</th>
+              <th className="thLeft" style={{ minWidth: "130px" }}>{t.colGuardian}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredVoters.length === 0 ? (
+              <tr>
+                <td colSpan={5} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                  {t.noVotersMatch}
+                </td>
+              </tr>
+            ) : (
+              filteredVoters.map((v, idx) => {
+                const isSelected = selectedVoter?.id === v.id;
+                return (
+                  <tr
+                    key={v.id}
+                    className={isSelected ? "selectedRow" : ""}
+                    onClick={() => setSelectedVoter(isSelected ? null : v)}
+                  >
+                    <td className="colIndex">{idx + 1}</td>
+                    <td className="colPart">{v.booth}</td>
+                    <td className="colSerial">{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
+                    <td className="colName">{v.name}</td>
+                    <td className="colGuardian">{v.guardian || "—"}</td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 5. Selected Voter Quick Action Drawer / Bottom Sheet */}
       {selectedVoter && (
-        <div className="modalOverlay" onClick={() => setSelectedVoter(null)}>
-          <div className="modalBox" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="noPrint"
+          style={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: "#ffffff",
+            borderTop: "2px solid #026aa7",
+            boxShadow: "0 -4px 20px rgba(0, 0, 0, 0.15)",
+            padding: "12px 16px",
+            zIndex: 50,
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <b style={{ fontSize: "16px", color: "#0f172a" }}>{selectedVoter.name}</b>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    background: "#e0f2fe",
+                    color: "#0369a1",
+                    padding: "2px 7px",
+                    borderRadius: "6px",
+                  }}
+                >
+                  {lang === "hi" ? `भाग: ${selectedVoter.booth} • क्र: ${selectedVoter.serialNo || "—"}` : `Part: ${selectedVoter.booth} • Sr: ${selectedVoter.serialNo || "—"}`}
+                </span>
+                <span className={`status ${selectedVoter.status.toLowerCase()}`}>
+                  {selectedVoter.status}
+                </span>
+              </div>
+              <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#475467" }}>
+                {t.fatherHusband}: <b>{selectedVoter.guardian || "—"}</b> • {t.houseNo}: <b>{selectedVoter.house || "—"}</b> • EPIC: <b>{selectedVoter.epic}</b>
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSelectedVoter(null)}
+              style={{
+                border: 0,
+                background: "#f1f5f9",
+                borderRadius: "50%",
+                width: "28px",
+                height: "28px",
+                display: "grid",
+                placeItems: "center",
+                cursor: "pointer",
+                color: "#64748b",
+              }}
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Quick Status Buttons */}
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", margin: "8px 0" }}>
+            <button
+              type="button"
+              style={{
+                background: selectedVoter.status === "In-Favor" ? "#15803d" : "#dcfce7",
+                color: selectedVoter.status === "In-Favor" ? "#ffffff" : "#15803d",
+                border: "1px solid #86efac",
+                borderRadius: "6px",
+                padding: "5px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+              }}
+              onClick={() => handleStatusChange(selectedVoter.id, "In-Favor")}
+            >
+              ✓ {t.btnInFavor}
+            </button>
+
+            <button
+              type="button"
+              style={{
+                background: selectedVoter.status === "Contacted" ? "#0369a1" : "#e0f2fe",
+                color: selectedVoter.status === "Contacted" ? "#ffffff" : "#0369a1",
+                border: "1px solid #7dd3fc",
+                borderRadius: "6px",
+                padding: "5px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+              }}
+              onClick={() => handleStatusChange(selectedVoter.id, "Contacted")}
+            >
+              📞 {t.btnContacted}
+            </button>
+
+            <button
+              type="button"
+              style={{
+                background: selectedVoter.status === "Slip-Given" ? "#4338ca" : "#e0e7ff",
+                color: selectedVoter.status === "Slip-Given" ? "#ffffff" : "#4338ca",
+                border: "1px solid #c7d2fe",
+                borderRadius: "6px",
+                padding: "5px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+              }}
+              onClick={() => handleStatusChange(selectedVoter.id, "Slip-Given")}
+            >
+              🎫 {t.btnSlipGiven}
+            </button>
+
+            <button
+              type="button"
+              style={{
+                background: selectedVoter.status === "Doubtful" ? "#b45309" : "#fef3c7",
+                color: selectedVoter.status === "Doubtful" ? "#ffffff" : "#b45309",
+                border: "1px solid #fde68a",
+                borderRadius: "6px",
+                padding: "5px 9px",
+                fontSize: "11px",
+                fontWeight: 700,
+              }}
+              onClick={() => handleStatusChange(selectedVoter.id, "Doubtful")}
+            >
+              ❓ {t.stDoubtful}
+            </button>
+          </div>
+
+          {/* Action Row */}
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+            <button
+              type="button"
+              style={{
+                flex: 1,
+                background: "#25d366",
+                color: "#ffffff",
+                border: 0,
+                borderRadius: "8px",
+                padding: "8px 12px",
+                fontSize: "12px",
+                fontWeight: 700,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                setShowSlipModal(true);
+              }}
+            >
+              <Share2 size={14} />
+              <span>{t.sendSlipOnWhatsApp}</span>
+            </button>
+
+            <button
+              type="button"
+              style={{
+                background: "#f1f5f9",
+                color: "#1e293b",
+                border: "1px solid #cbd5e1",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                fontSize: "12px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+              onClick={() => {
+                setVoterForm({
+                  name: selectedVoter.name,
+                  guardian: selectedVoter.guardian || "",
+                  booth: selectedVoter.booth,
+                  serialNo: selectedVoter.serialNo ? String(selectedVoter.serialNo) : "",
+                  epic: selectedVoter.epic,
+                  age: selectedVoter.age,
+                  gender: selectedVoter.gender,
+                  house: selectedVoter.house,
+                  phone: selectedVoter.phone || "",
+                  status: selectedVoter.status,
+                });
+                setShowUpdateModal(true);
+              }}
+            >
+              ✏️ {lang === "hi" ? "एडिट" : "Edit"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Modal: Slip Message (स्लिप मैसेज / WhatsApp Slip) */}
+      {showSlipModal && activeVoterForSlip && (
+        <div className="modalOverlay noPrint">
+          <div className="modalBox">
             <div className="modalHead">
-              <h3>Voter Information & Voting Slip</h3>
-              <button onClick={() => setSelectedVoter(null)}><X /></button>
+              <h3>{t.officialVoterSlip}</h3>
+              <button onClick={() => setShowSlipModal(false)}>
+                <X size={18} />
+              </button>
             </div>
             <div className="modalBody">
-              <div style={{ border: "2px solid #0f2f67", borderRadius: "12px", padding: "16px", background: "#f8fafc", marginBottom: "18px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #cbd5e1", paddingBottom: "10px", marginBottom: "10px" }}>
-                  <b style={{ color: "var(--blue)" }}>OFFICIAL VOTER SLIP</b>
-                  <span>Booth No: <b>{selectedVoter.booth}</b></span>
+              {/* Official Slip Preview Card */}
+              <div
+                style={{
+                  border: "2px solid #026aa7",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  background: "#f8fafc",
+                  marginBottom: "16px",
+                }}
+              >
+                <div style={{ textAlign: "center", borderBottom: "1px solid #cbd5e1", paddingBottom: "10px", marginBottom: "12px" }}>
+                  <span style={{ fontSize: "11px", fontWeight: 800, color: "#026aa7", letterSpacing: "1px" }}>
+                    OFFICIAL VOTER SLIP / मतदाता पर्ची
+                  </span>
+                  <h4 style={{ margin: "4px 0 2px", fontSize: "16px", color: "#0f172a" }}>
+                    {candidate?.name || "अभय कुमार"}
+                  </h4>
+                  <small style={{ color: "#64748b", fontSize: "11px" }}>
+                    {candidate?.party || "निर्दलीय"} • {candidate?.electionName || "Bhilwara Municipal 2026"}
+                  </small>
                 </div>
-                <h2 style={{ margin: "6px 0", fontSize: "20px" }}>{selectedVoter.name}</h2>
-                <p style={{ margin: "4px 0", fontSize: "13px" }}><b>Father/Husband:</b> {selectedVoter.guardian}</p>
-                <p style={{ margin: "4px 0", fontSize: "13px" }}><b>EPIC (Voter ID):</b> <span style={{ fontFamily: "monospace", fontWeight: 700 }}>{selectedVoter.epic}</span></p>
-                <p style={{ margin: "4px 0", fontSize: "13px" }}><b>House Number:</b> {selectedVoter.house}</p>
-                <p style={{ margin: "4px 0", fontSize: "13px" }}><b>Age / Gender:</b> {selectedVoter.age} / {selectedVoter.gender}</p>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", fontSize: "12.5px" }}>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.colName}</span>
+                    <b style={{ color: "#0f172a" }}>{activeVoterForSlip.name}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.colGuardian}</span>
+                    <b>{activeVoterForSlip.guardian || "—"}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.colPart}</span>
+                    <b style={{ color: "#026aa7" }}>{activeVoterForSlip.booth}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.colSerial}</span>
+                    <b style={{ color: "#026aa7" }}>{activeVoterForSlip.serialNo || "—"}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.epicNumber}</span>
+                    <b>{activeVoterForSlip.epic}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.houseNo}</span>
+                    <b>{activeVoterForSlip.house || "—"}</b>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px dashed #cbd5e1", fontSize: "12px", color: "#475467" }}>
+                  📍 <b>{t.pollingStation}:</b> {t.pollingStationName}
+                </div>
               </div>
 
+              {/* Recipient Phone Input */}
               <div className="formGroup">
-                <label>Update Mobile Number</label>
+                <label>{t.updateMobile}</label>
                 <div style={{ display: "flex", gap: "8px" }}>
                   <input
-                    placeholder="Enter voter phone..."
-                    defaultValue={selectedVoter.phone || ""}
-                    id="modalPhoneInput"
+                    type="tel"
+                    placeholder="98290XXXXX"
+                    value={recipientPhone}
+                    onChange={(e) => setRecipientPhone(e.target.value)}
+                    style={{ flex: 1, padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                   />
                   <button
-                    className="primary"
-                    onClick={() => {
-                      const input = document.getElementById("modalPhoneInput") as HTMLInputElement;
-                      if (input) {
-                        store.updateVoter(selectedVoter.id, { phone: input.value });
-                        onVoterUpdated();
-                        setSelectedVoter({ ...selectedVoter, phone: input.value });
-                      }
+                    type="button"
+                    style={{
+                      background: "#25d366",
+                      color: "#fff",
+                      border: 0,
+                      borderRadius: "8px",
+                      padding: "0 16px",
+                      fontWeight: 700,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      cursor: "pointer",
                     }}
+                    onClick={() => handleSendWhatsApp(activeVoterForSlip)}
                   >
-                    Save
+                    <Share2 size={16} /> WhatsApp
                   </button>
                 </div>
               </div>
 
-              <div className="formFoot" style={{ marginTop: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px" }}>
                 <button
+                  type="button"
                   className="outline"
+                  onClick={() => setShowSlipModal(false)}
+                >
+                  ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={() => window.print()}
+                >
+                  <Printer size={16} /> {t.printSlip}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 7. Modal: Data Update (डेटा अपडेट - Add Voter / Excel Upload) */}
+      {showUpdateModal && (
+        <div className="modalOverlay noPrint">
+          <div className="modalBox" style={{ maxWidth: "560px" }}>
+            <div className="modalHead">
+              <h3>{t.btnDataUpdate}</h3>
+              <button onClick={() => setShowUpdateModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: "flex", borderBottom: "1px solid #cbd5e1", background: "#f8fafc" }}>
+              <button
+                type="button"
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  border: 0,
+                  borderBottom: updateTab === "add" ? "3px solid #026aa7" : "3px solid transparent",
+                  background: updateTab === "add" ? "#ffffff" : "transparent",
+                  fontWeight: updateTab === "add" ? 700 : 500,
+                  color: updateTab === "add" ? "#026aa7" : "#64748b",
+                  cursor: "pointer",
+                }}
+                onClick={() => setUpdateTab("add")}
+              >
+                + {t.quickAddVoter}
+              </button>
+              <button
+                type="button"
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  border: 0,
+                  borderBottom: updateTab === "upload" ? "3px solid #026aa7" : "3px solid transparent",
+                  background: updateTab === "upload" ? "#ffffff" : "transparent",
+                  fontWeight: updateTab === "upload" ? 700 : 500,
+                  color: updateTab === "upload" ? "#026aa7" : "#64748b",
+                  cursor: "pointer",
+                }}
+                onClick={() => setUpdateTab("upload")}
+              >
+                📁 {t.quickUploadExcel}
+              </button>
+            </div>
+
+            <div className="modalBody">
+              {updateTab === "add" ? (
+                <form onSubmit={handleSaveVoter}>
+                  <div className="inputGrid">
+                    <div className="formGroup">
+                      <label>{t.colName} *</label>
+                      <input
+                        required
+                        value={voterForm.name}
+                        onChange={(e) => setVoterForm({ ...voterForm, name: e.target.value })}
+                        placeholder="जैसे: मंगल चन्द"
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>{t.colGuardian}</label>
+                      <input
+                        value={voterForm.guardian}
+                        onChange={(e) => setVoterForm({ ...voterForm, guardian: e.target.value })}
+                        placeholder="जैसे: पांचू राम"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="inputGrid">
+                    <div className="formGroup">
+                      <label>{t.colPart} *</label>
+                      <input
+                        required
+                        value={voterForm.booth}
+                        onChange={(e) => setVoterForm({ ...voterForm, booth: e.target.value })}
+                        placeholder="1"
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>{t.colSerial}</label>
+                      <input
+                        type="number"
+                        value={voterForm.serialNo}
+                        onChange={(e) => setVoterForm({ ...voterForm, serialNo: e.target.value })}
+                        placeholder="जैसे: 2"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="inputGrid">
+                    <div className="formGroup">
+                      <label>{t.epicNumber}</label>
+                      <input
+                        value={voterForm.epic}
+                        onChange={(e) => setVoterForm({ ...voterForm, epic: e.target.value })}
+                        placeholder="RJX1001001"
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>{t.houseNo}</label>
+                      <input
+                        value={voterForm.house}
+                        onChange={(e) => setVoterForm({ ...voterForm, house: e.target.value })}
+                        placeholder="12"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="inputGrid">
+                    <div className="formGroup">
+                      <label>{t.updateMobile}</label>
+                      <input
+                        type="tel"
+                        value={voterForm.phone}
+                        onChange={(e) => setVoterForm({ ...voterForm, phone: e.target.value })}
+                        placeholder="98290XXXXX"
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>{t.status}</label>
+                      <select
+                        value={voterForm.status}
+                        onChange={(e) => setVoterForm({ ...voterForm, status: e.target.value as VoterRecord["status"] })}
+                      >
+                        <option value="Pending">{t.stPending}</option>
+                        <option value="Contacted">{t.stContacted}</option>
+                        <option value="In-Favor">{t.stInFavor}</option>
+                        <option value="Slip-Given">{t.stSlipGiven}</option>
+                        <option value="Doubtful">{t.stDoubtful}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="formFoot">
+                    <button type="button" className="outline" onClick={() => setShowUpdateModal(false)}>
+                      ✕ {lang === "hi" ? "रद्द करें" : "Cancel"}
+                    </button>
+                    <button type="submit" className="primary">
+                      ✓ {lang === "hi" ? "डेटा सुरक्षित करें" : "Save Voter"}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div>
+                  <div
+                    style={{
+                      border: "2px dashed #026aa7",
+                      borderRadius: "12px",
+                      padding: "30px 16px",
+                      textAlign: "center",
+                      background: "#f0f9ff",
+                      cursor: "pointer",
+                      marginBottom: "16px",
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      style={{ display: "none" }}
+                      accept=".xlsx, .xls, .csv"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleModalExcelUpload(f);
+                      }}
+                    />
+                    <FileSpreadsheet size={40} color="#026aa7" style={{ margin: "0 auto 10px" }} />
+                    <h4 style={{ margin: "0 0 6px", fontSize: "15px", color: "#0f172a" }}>
+                      {uploading ? t.readingFile : t.chooseFileBtn}
+                    </h4>
+                    <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+                      {t.dragDropText}
+                    </p>
+                    <small style={{ display: "block", color: "#94a3b8", fontSize: "10px", marginTop: "8px" }}>
+                      {t.fileSupported}
+                    </small>
+                  </div>
+
+                  {uploadMsg && (
+                    <div
+                      style={{
+                        padding: "10px",
+                        borderRadius: "8px",
+                        background: uploadMsg.includes("सफलता") ? "#dcfce7" : "#fee2e2",
+                        color: uploadMsg.includes("सफलता") ? "#15803d" : "#b91c1c",
+                        fontSize: "12px",
+                        fontWeight: 700,
+                        textAlign: "center",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      {uploadMsg}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <button type="button" className="outline" onClick={downloadSampleExcelTemplate}>
+                      <Download size={14} /> {t.downloadTemplate}
+                    </button>
+                    <button type="button" className="outline" onClick={() => setShowUpdateModal(false)}>
+                      ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 8. Modal: Location (लोकेशन - Polling Station Details) */}
+      {showLocationModal && (
+        <div className="modalOverlay noPrint">
+          <div className="modalBox">
+            <div className="modalHead">
+              <h3>📍 {t.pollingStation}</h3>
+              <button onClick={() => setShowLocationModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modalBody">
+              <div
+                style={{
+                  background: "#f0f9ff",
+                  border: "1px solid #bae6fd",
+                  borderRadius: "12px",
+                  padding: "16px",
+                  marginBottom: "16px",
+                }}
+              >
+                <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7", textTransform: "uppercase" }}>
+                  POLLING STATION / मतदान केंद्र
+                </span>
+                <h4 style={{ margin: "6px 0 4px", fontSize: "16px", color: "#0f172a" }}>
+                  {t.pollingStationName}
+                </h4>
+                <p style={{ margin: "0 0 10px", fontSize: "13px", color: "#475467" }}>
+                  {t.pollingStationAddress}
+                </p>
+                <div style={{ fontSize: "12px", color: "#0369a1", fontWeight: 600 }}>
+                  🕒 {t.pollingTime}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "16px", fontSize: "13px", color: "#334155" }}>
+                <p style={{ margin: "0 0 6px" }}>
+                  👤 <b>बूथ प्रभारी (Supervisor):</b> Amit Joshi (+91 98290 12345)
+                </p>
+                <p style={{ margin: "0 0 6px" }}>
+                  🗳️ <b>भाग / बूथ संख्या:</b> {partFilter === "ALL" ? "1 (वार्ड 34)" : `भाग सं. ${partFilter}`}
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button
+                  type="button"
+                  className="primary"
+                  style={{ flex: 1 }}
                   onClick={() => {
-                    const text = `*VoterDesk Matdata Parchi*%0A*Naam:* ${selectedVoter.name}%0A*EPIC:* ${selectedVoter.epic}%0A*Booth:* ${selectedVoter.booth}%0A*House:* ${selectedVoter.house}%0AKripya apna vote avashya dalein!`;
-                    window.open(`https://wa.me/?text=${text}`, "_blank");
+                    window.open("https://maps.google.com/?q=Govt+Senior+Secondary+School+Bhilwara", "_blank");
                   }}
                 >
-                  <Share2 size={16} /> Share on WhatsApp
+                  🗺️ {t.openInMaps}
                 </button>
-                <button className="primary" onClick={() => window.print()}>
-                  <Printer size={16} /> Print Slip
+                <button
+                  type="button"
+                  className="outline"
+                  onClick={() => setShowLocationModal(false)}
+                >
+                  ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 9. Modal: Print (प्रिंट) */}
+      {showPrintModal && (
+        <div className="modalOverlay noPrint">
+          <div className="modalBox">
+            <div className="modalHead">
+              <h3>🖨️ {t.btnPrint}</h3>
+              <button onClick={() => setShowPrintModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modalBody">
+              <div style={{ display: "grid", gap: "12px", marginBottom: "20px" }}>
+                <button
+                  type="button"
+                  style={{
+                    padding: "16px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "10px",
+                    background: "#ffffff",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                  onClick={() => {
+                    setShowPrintModal(false);
+                    setTimeout(() => window.print(), 200);
+                  }}
+                >
+                  <FileSpreadsheet size={24} color="#026aa7" />
+                  <div>
+                    <b style={{ fontSize: "14px", display: "block", color: "#0f172a" }}>
+                      {t.printVoterRoll}
+                    </b>
+                    <small style={{ color: "#64748b", fontSize: "11px" }}>
+                      वर्तमान में दिख रहे {filteredVoters.length} मतदाताओं की पूरी नामावली तालिका प्रिंट करें
+                    </small>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  style={{
+                    padding: "16px",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "10px",
+                    background: "#ffffff",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                  onClick={() => {
+                    setShowPrintModal(false);
+                    setShowSlipModal(true);
+                  }}
+                >
+                  <Printer size={24} color="#ea580c" />
+                  <div>
+                    <b style={{ fontSize: "14px", display: "block", color: "#0f172a" }}>
+                      {t.printVoterSlip}
+                    </b>
+                    <small style={{ color: "#64748b", fontSize: "11px" }}>
+                      {selectedVoter ? `मतदाता ${selectedVoter.name} की पर्ची प्रिंट करें` : "मतदाता पर्ची का प्रारूप प्रिंट करें"}
+                    </small>
+                  </div>
+                </button>
+              </div>
+
+              <div style={{ textAlign: "right" }}>
+                <button type="button" className="outline" onClick={() => setShowPrintModal(false)}>
+                  ✕ {lang === "hi" ? "बंद करें" : "Close"}
                 </button>
               </div>
             </div>
