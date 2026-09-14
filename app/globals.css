@@ -768,6 +768,50 @@
   box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
 }
 
+.bmPhoneRow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+
+.bmPhoneInput {
+  flex: 1;
+  margin-bottom: 0 !important;
+}
+
+.bmPhoneUpdateBtn {
+  background: #0284c7;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 0 16px;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.25);
+  transition: all 0.15s ease;
+  min-width: 82px;
+}
+
+.bmPhoneUpdateBtn:hover {
+  background: #0369a1;
+}
+
+.bmPhoneUpdateBtn:active {
+  transform: scale(0.96);
+}
+
+.bmPhoneUpdateBtn.saved {
+  background: #16a34a !important;
+  box-shadow: 0 2px 4px rgba(22, 163, 74, 0.3);
+}
+
 .bmBtnPrintWide {
   width: 100%;
   background: #0062cc;

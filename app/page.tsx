@@ -969,6 +969,8 @@ function BoothManagerView({
   // Voter Action Modal (Image 1: 7-Buttons Hub) & Sub-Screens
   const [activeActionVoter, setActiveActionVoter] = useState<VoterRecord | null>(null);
   const [activeVoterPhone, setActiveVoterPhone] = useState("");
+  const [isPhoneUpdating, setIsPhoneUpdating] = useState(false);
+  const [phoneUpdatedSuccess, setPhoneUpdatedSuccess] = useState(false);
   const [activeVoterSlipMsg, setActiveVoterSlipMsg] = useState("");
   const [showPrintSlipScreen, setShowPrintSlipScreen] = useState(false);
   const [selectedPrinter, setSelectedPrinter] = useState("Select Printer");
@@ -1070,29 +1072,63 @@ function BoothManagerView({
     setActiveActionVoter(v);
     setActiveVoterPhone(v.phone || "");
     setActiveVoterSlipMsg(v.slipMessage || customSlipMsg || "");
+    setIsPhoneUpdating(false);
+    setPhoneUpdatedSuccess(false);
   };
 
-  const handleUpdateActionPhone = (newPhone: string) => {
-    setActiveVoterPhone(newPhone);
+  const handleSavePhoneUpdate = async () => {
     if (!activeActionVoter) return;
-    const updated = store.updateVoter(activeActionVoter.id, { phone: newPhone });
-    if (updated) {
-      setActiveActionVoter((prev) => (prev ? { ...prev, phone: newPhone } : null));
-      if (selectedVoter && selectedVoter.id === activeActionVoter.id) {
-        setSelectedVoter((prev) => (prev ? { ...prev, phone: newPhone } : null));
+    const cleanPhone = activeVoterPhone.trim();
+    setIsPhoneUpdating(true);
+
+    try {
+      // 1. Update in-memory & disk data store
+      const updated = store.updateVoter(activeActionVoter.id, { phone: cleanPhone });
+      if (updated) {
+        // Update local modal state
+        setActiveActionVoter((prev) => (prev ? { ...prev, phone: cleanPhone } : null));
+        // Update bottom drawer selected voter if open
+        if (selectedVoter && selectedVoter.id === activeActionVoter.id) {
+          setSelectedVoter((prev) => (prev ? { ...prev, phone: cleanPhone } : null));
+        }
+
+        // 2. Broadcast update to all 15 mobile devices via sync API
+        await fetch("/api/voters/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            candidateId,
+            voterId: activeActionVoter.id,
+            updates: { phone: cleanPhone },
+            worker: user.name,
+            booth: activeActionVoter.booth,
+          }),
+        }).catch(() => {});
+
+        // 3. Update single voter endpoint
+        await fetch(`/api/voters/${activeActionVoter.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: cleanPhone }),
+        }).catch(() => {});
+
+        // 4. Trigger UI re-render and global refresh
+        onVoterUpdated();
+        onRefreshData(true);
+
+        // 5. Visual success feedback
+        setPhoneUpdatedSuccess(true);
+        setLocalToast("✅ मोबाइल नंबर सफलतापूर्वक अपडेट हो गया!");
+        setTimeout(() => {
+          setPhoneUpdatedSuccess(false);
+          setLocalToast("");
+        }, 3000);
       }
-      fetch("/api/voters/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          candidateId,
-          voterId: activeActionVoter.id,
-          updates: { phone: newPhone },
-          worker: user.name,
-          booth: activeActionVoter.booth,
-        }),
-      }).catch(() => {});
-      onVoterUpdated();
+    } catch {
+      setLocalToast("⚠️ नंबर अपडेट करने में समस्या आई");
+      setTimeout(() => setLocalToast(""), 3000);
+    } finally {
+      setIsPhoneUpdating(false);
     }
   };
 
@@ -2591,14 +2627,31 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
             <h3 className="bmVoterActionTitle">मैसेज</h3>
 
-            {/* Mobile Number: editable live and pushes sync */}
-            <input
-              type="tel"
-              className="bmVoterActionInput"
-              value={activeVoterPhone}
-              onChange={(e) => handleUpdateActionPhone(e.target.value)}
-              placeholder="मोबाइल नंबर दर्ज करें"
-            />
+            {/* Mobile Number with Update Button */}
+            <div className="bmPhoneRow">
+              <input
+                type="tel"
+                className="bmVoterActionInput bmPhoneInput"
+                value={activeVoterPhone}
+                onChange={(e) => {
+                  setActiveVoterPhone(e.target.value);
+                  setPhoneUpdatedSuccess(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSavePhoneUpdate();
+                }}
+                placeholder="मोबाइल नंबर दर्ज करें"
+              />
+              <button
+                type="button"
+                className={`bmPhoneUpdateBtn ${phoneUpdatedSuccess ? "saved" : ""}`}
+                onClick={handleSavePhoneUpdate}
+                disabled={isPhoneUpdating}
+                title="नंबर अपडेट करें और सभी जगह सिंक करें"
+              >
+                {isPhoneUpdating ? "..." : phoneUpdatedSuccess ? "✓ अपडेटेड" : (lang === "hi" ? "अपडेट" : "Update")}
+              </button>
+            </div>
 
             {/* Slip Message: editable per voter */}
             <input
