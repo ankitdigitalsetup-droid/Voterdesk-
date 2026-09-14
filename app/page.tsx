@@ -1150,24 +1150,18 @@ function BoothManagerView({
     setShowPrintSlipScreen(true);
   };
 
-  // 2. मैसेज (SMS Intent)
+  // 2. मैसेज (Normal SMS Intent - Opens blank message composer without pre-filled text)
   const handleSendActionSMS = () => {
     if (!activeActionVoter) return;
     const ph = (activeVoterPhone || activeActionVoter.phone || "").replace(/[^0-9]/g, "");
-    const body = `क्रम सं : ${activeActionVoter.serialNo || "—"}     भाग सं : ${activeActionVoter.booth}
-नाम : ${activeActionVoter.name}
-पिता/पति : ${activeActionVoter.guardian || "—"}
-उम्र : ${activeActionVoter.age || "—"}     मकान नंबर : ${activeActionVoter.house || "—"}
-वोटर ID : ${activeActionVoter.epic}
-बुथ पता : ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
-${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
     if (!ph) {
       setLocalToast("⚠️ कृपया पहले ऊपर मोबाइल नंबर दर्ज करें!");
       setTimeout(() => setLocalToast(""), 3000);
       return;
     }
-    window.open(`sms:${ph}?body=${encodeURIComponent(body)}`, "_self");
+    // Opens phone's default SMS app in a blank composer for this recipient
+    window.location.href = `sms:${ph}`;
   };
 
   // 3. कॉल (Direct Tel Intent)
