@@ -42,6 +42,23 @@ export interface VoterRecord {
   boothAddress?: string; // Booth Address (मतदान केंद्र पता)
   notes?: string;
   candidateId: string;
+  slipMessage?: string; // स्लिप मैसेज (Custom message per voter)
+  survey?: {
+    supporter?: string; // समर्थक (हाँ/नहीं/संशयित)
+    casteCategory?: string; // वर्ग
+    casteSub?: string; // जाति चुनें
+    casteCustom?: string; // जाति लिखें
+    whatsapp?: string; // व्हाट्सएप नं
+    education?: string; // शिक्षा
+    livelihood?: string; // आजीविका
+    livelihoodDetail?: string; // आजीविका विवरण
+    outsideState?: string; // बाहरी पता - राज्य
+    outsideDistrict?: string; // बाहरी पता - जिला
+    outsideAddress?: string; // बाहरी पता - पता
+    officeBearer?: string; // पदाधिकारी
+    detail1?: string; // अन्य विवरण 1
+    detail2?: string; // अन्य विवरण 2
+  };
 }
 
 export interface TeamMember {

@@ -825,6 +825,101 @@ function SuperAdminView({
   );
 }
 
+// Indian States list for Survey Form (Images 4 & 5)
+const indianStates = [
+  "Andaman and Nicobar Islands",
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chandigarh",
+  "Chhattisgarh",
+  "Dadra and Nagar Haveli and Daman and Diu",
+  "Delhi",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jammu and Kashmir",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Ladakh",
+  "Lakshadweep",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Puducherry",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal"
+];
+
+// Districts list for Rajasthan / Survey Form
+const rajasthanDistricts = [
+  "Ajmer",
+  "Alwar",
+  "Anupgarh",
+  "Balotra",
+  "Banswara",
+  "Baran",
+  "Barmer",
+  "Beawar",
+  "Bharatpur",
+  "Bhilwara",
+  "Bikaner",
+  "Bundi",
+  "Chittorgarh",
+  "Churu",
+  "Dausa",
+  "Deeg",
+  "Dholpur",
+  "Didwana-Kuchaman",
+  "Dudu",
+  "Dungarpur",
+  "Gangapur City",
+  "Hanumangarh",
+  "Jaipur",
+  "Jaipur Rural",
+  "Jaisalmer",
+  "Jalore",
+  "Jhalawar",
+  "Jhunjhunu",
+  "Jodhpur",
+  "Jodhpur Rural",
+  "Karauli",
+  "Kekri",
+  "Khairthal-Tijara",
+  "Kota",
+  "Kotputli-Behror",
+  "Nagaur",
+  "Neem Ka Thana",
+  "Pali",
+  "Phalodi",
+  "Pratapgarh",
+  "Rajsamand",
+  "Salumbar",
+  "Sanchore",
+  "Sawai Madhopur",
+  "Shahpura",
+  "Sikar",
+  "Sirohi",
+  "Sri Ganganagar",
+  "Tonk",
+  "Udaipur",
+  "Other"
+];
+
 // -------------------------------------------------------------
 // 3. BOOTH MANAGER DIRECT VIEW (MATCHING USER SCREENSHOT)
 // -------------------------------------------------------------
@@ -870,6 +965,32 @@ function BoothManagerView({
   const [showLocationModal, setShowLocationModal] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [updateTab, setUpdateTab] = useState<"sync" | "add" | "upload">("sync");
+
+  // Voter Action Modal (Image 1: 7-Buttons Hub) & Sub-Screens
+  const [activeActionVoter, setActiveActionVoter] = useState<VoterRecord | null>(null);
+  const [activeVoterPhone, setActiveVoterPhone] = useState("");
+  const [activeVoterSlipMsg, setActiveVoterSlipMsg] = useState("");
+  const [showPrintSlipScreen, setShowPrintSlipScreen] = useState(false);
+  const [selectedPrinter, setSelectedPrinter] = useState("Select Printer");
+  const [showWhatsAppSlipScreen, setShowWhatsAppSlipScreen] = useState(false);
+  const [showSurveyScreen, setShowSurveyScreen] = useState(false);
+  const [surveyFormData, setSurveyFormData] = useState({
+    supporter: "",
+    casteCategory: "",
+    casteSub: "",
+    casteCustom: "",
+    whatsapp: "",
+    education: "",
+    livelihood: "",
+    livelihoodDetail: "",
+    outsideState: "Andaman and Nicobar Islands",
+    outsideDistrict: "-Select-",
+    outsideAddress: "",
+    officeBearer: "",
+    detail1: "",
+    detail2: "",
+  });
+  const [familyFilter, setFamilyFilter] = useState<{ house: string; booth: string } | null>(null);
 
   // Voter Slip Custom Message (1:1 with user screenshot)
   const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
@@ -942,6 +1063,188 @@ function BoothManagerView({
     setAdvEpic("");
   };
 
+  // -------------------------------------------------------------
+  // HANDLERS FOR VOTER ACTION HUB & SUB-SCREENS (IMAGES 1, 2, 3, 4/5)
+  // -------------------------------------------------------------
+  const handleOpenVoterAction = (v: VoterRecord) => {
+    setActiveActionVoter(v);
+    setActiveVoterPhone(v.phone || "");
+    setActiveVoterSlipMsg(v.slipMessage || customSlipMsg || "");
+  };
+
+  const handleUpdateActionPhone = (newPhone: string) => {
+    setActiveVoterPhone(newPhone);
+    if (!activeActionVoter) return;
+    const updated = store.updateVoter(activeActionVoter.id, { phone: newPhone });
+    if (updated) {
+      setActiveActionVoter((prev) => (prev ? { ...prev, phone: newPhone } : null));
+      if (selectedVoter && selectedVoter.id === activeActionVoter.id) {
+        setSelectedVoter((prev) => (prev ? { ...prev, phone: newPhone } : null));
+      }
+      fetch("/api/voters/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateId,
+          voterId: activeActionVoter.id,
+          updates: { phone: newPhone },
+          worker: user.name,
+          booth: activeActionVoter.booth,
+        }),
+      }).catch(() => {});
+      onVoterUpdated();
+    }
+  };
+
+  const handleUpdateActionSlipMsg = (newMsg: string) => {
+    setActiveVoterSlipMsg(newMsg);
+    if (!activeActionVoter) return;
+    const updated = store.updateVoter(activeActionVoter.id, { slipMessage: newMsg });
+    if (updated) {
+      setActiveActionVoter((prev) => (prev ? { ...prev, slipMessage: newMsg } : null));
+      if (selectedVoter && selectedVoter.id === activeActionVoter.id) {
+        setSelectedVoter((prev) => (prev ? { ...prev, slipMessage: newMsg } : null));
+      }
+      onVoterUpdated();
+    }
+  };
+
+  // 1. प्रिंट वोटर स्लिप
+  const handleOpenPrintSlip = () => {
+    setShowPrintSlipScreen(true);
+  };
+
+  // 2. मैसेज (SMS Intent)
+  const handleSendActionSMS = () => {
+    if (!activeActionVoter) return;
+    const ph = (activeVoterPhone || activeActionVoter.phone || "").replace(/[^0-9]/g, "");
+    const body = `क्रम सं : ${activeActionVoter.serialNo || "—"}     भाग सं : ${activeActionVoter.booth}
+नाम : ${activeActionVoter.name}
+पिता/पति : ${activeActionVoter.guardian || "—"}
+उम्र : ${activeActionVoter.age || "—"}     मकान नंबर : ${activeActionVoter.house || "—"}
+वोटर ID : ${activeActionVoter.epic}
+बुथ पता : ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
+${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
+
+    if (!ph) {
+      setLocalToast("⚠️ कृपया पहले ऊपर मोबाइल नंबर दर्ज करें!");
+      setTimeout(() => setLocalToast(""), 3000);
+      return;
+    }
+    window.open(`sms:${ph}?body=${encodeURIComponent(body)}`, "_self");
+  };
+
+  // 3. कॉल (Direct Tel Intent)
+  const handleCallAction = () => {
+    if (!activeActionVoter) return;
+    const ph = (activeVoterPhone || activeActionVoter.phone || "").replace(/[^0-9]/g, "");
+    if (!ph) {
+      setLocalToast("⚠️ कॉल करने के लिए कृपया ऊपर मोबाइल नंबर दर्ज करें!");
+      setTimeout(() => setLocalToast(""), 3000);
+      return;
+    }
+    window.location.href = `tel:${ph}`;
+  };
+
+  // 4. वोटर स्लिप (Formatted Slip Copy & Share)
+  const handleShareVoterSlip = async () => {
+    if (!activeActionVoter) return;
+    const slipText = `क्रम सं : ${activeActionVoter.serialNo || "—"}     भाग सं : ${activeActionVoter.booth}
+नाम : ${activeActionVoter.name}
+पिता/पति : ${activeActionVoter.guardian || "—"}
+उम्र : ${activeActionVoter.age || "—"}     मकान नंबर : ${activeActionVoter.house || "—"}
+वोटर ID : ${activeActionVoter.epic}
+बुथ पता : ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
+${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
+
+    if (navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(slipText);
+        setLocalToast("📋 वोटर स्लिप कॉपी हो गई!");
+        setTimeout(() => setLocalToast(""), 3000);
+      } catch {}
+    }
+
+    const ph = (activeVoterPhone || activeActionVoter.phone || "").replace(/[^0-9]/g, "");
+    if (ph) {
+      window.open(`sms:${ph}?body=${encodeURIComponent(slipText)}`, "_self");
+    } else if (navigator.share) {
+      try {
+        await navigator.share({ title: `वोटर स्लिप - ${activeActionVoter.name}`, text: slipText });
+      } catch {}
+    }
+  };
+
+  // 5. फैमिली लिस्ट (Filter by same House & Booth)
+  const handleFilterFamily = () => {
+    if (!activeActionVoter) return;
+    setFamilyFilter({ house: activeActionVoter.house || "", booth: activeActionVoter.booth });
+    setActiveActionVoter(null);
+    setLocalToast(`👨‍👩‍👧‍👦 मकान नं. ${activeActionVoter.house || "—"} के सभी परिवारजन फ़िल्टर हो गए!`);
+    setTimeout(() => setLocalToast(""), 3500);
+  };
+
+  // 6. व्हाट्सएप (Open Image 3 screen)
+  const handleOpenWhatsAppSlip = () => {
+    setShowWhatsAppSlipScreen(true);
+  };
+
+  // 7. सर्वे (Open Survey screen)
+  const handleOpenSurvey = () => {
+    if (!activeActionVoter) return;
+    const surv = activeActionVoter.survey || {};
+    setSurveyFormData({
+      supporter: surv.supporter || (activeActionVoter.isSupporter === "हाँ" ? "हाँ" : ""),
+      casteCategory: surv.casteCategory || "",
+      casteSub: surv.casteSub || "",
+      casteCustom: surv.casteCustom || "",
+      whatsapp: surv.whatsapp || activeVoterPhone || activeActionVoter.phone || "",
+      education: surv.education || "",
+      livelihood: surv.livelihood || "",
+      livelihoodDetail: surv.livelihoodDetail || "",
+      outsideState: surv.outsideState || "Andaman and Nicobar Islands",
+      outsideDistrict: surv.outsideDistrict || "-Select-",
+      outsideAddress: surv.outsideAddress || "",
+      officeBearer: surv.officeBearer || "",
+      detail1: surv.detail1 || "",
+      detail2: surv.detail2 || "",
+    });
+    setShowSurveyScreen(true);
+  };
+
+  // Submit Survey Form
+  const handleSubmitSurvey = () => {
+    if (!activeActionVoter) return;
+    const updates: Partial<VoterRecord> = {
+      survey: surveyFormData,
+      isSupporter: surveyFormData.supporter === "हाँ" ? "हाँ" : surveyFormData.supporter === "नहीं" ? "नहीं" : activeActionVoter.isSupporter,
+      isOutside: (surveyFormData.outsideAddress || (surveyFormData.outsideDistrict && surveyFormData.outsideDistrict !== "-Select-")) ? "हाँ" : activeActionVoter.isOutside,
+      phone: surveyFormData.whatsapp || activeActionVoter.phone,
+    };
+    const updated = store.updateVoter(activeActionVoter.id, updates);
+    if (updated) {
+      setActiveActionVoter((prev) => (prev ? { ...prev, ...updates } : null));
+      if (selectedVoter && selectedVoter.id === activeActionVoter.id) {
+        setSelectedVoter((prev) => (prev ? { ...prev, ...updates } : null));
+      }
+      fetch("/api/voters/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          candidateId,
+          voterId: activeActionVoter.id,
+          updates,
+          worker: user.name,
+          booth: activeActionVoter.booth,
+        }),
+      }).catch(() => {});
+      onVoterUpdated();
+    }
+    setShowSurveyScreen(false);
+    setLocalToast("✅ सर्वे डेटा सफलतापूर्वक सुरक्षित हो गया!");
+    setTimeout(() => setLocalToast(""), 3000);
+  };
+
   // Booths / Parts list
   const allParts = useMemo(() => {
     const set = new Set<string>();
@@ -956,6 +1259,12 @@ function BoothManagerView({
         if (!user.assignedBooths.includes(v.booth)) return false;
       }
       if (partFilter !== "ALL" && v.booth !== partFilter) return false;
+
+      // Family List Filter (When red Family List button is clicked)
+      if (familyFilter) {
+        if (v.booth !== familyFilter.booth) return false;
+        if (familyFilter.house && v.house !== familyFilter.house) return false;
+      }
 
       // 1. Advanced Search: Voter Name column
       if (advName.trim() && !singleFieldMatches(v.name, advName)) {
@@ -985,7 +1294,7 @@ function BoothManagerView({
       }
       return true;
     });
-  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic]);
+  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic, familyFilter]);
 
   // Auto-select and show details drawer when search pinpoints a single voter
   useEffect(() => {
@@ -1768,6 +2077,45 @@ function BoothManagerView({
         </>
       )}
 
+      {/* Active Family List Filter Badge */}
+      {familyFilter && (
+        <div style={{
+          background: "#fee2e2",
+          border: "1.5px solid #f87171",
+          color: "#991b1b",
+          padding: "10px 14px",
+          borderRadius: "8px",
+          margin: "0 10px 12px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: "13.5px",
+          fontWeight: 600,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
+        }}>
+          <span>
+            👨‍👩‍👧‍👦 {lang === "hi" ? "फैमिली लिस्ट फ़िल्टर सक्रिय:" : "Family List Active:"}{" "}
+            भाग {familyFilter.booth}, मकान नं {familyFilter.house || "—"} ({filteredVoters.length} {lang === "hi" ? "सदस्य" : "members"})
+          </span>
+          <button
+            type="button"
+            onClick={() => setFamilyFilter(null)}
+            style={{
+              background: "#dc2626",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              padding: "4px 10px",
+              fontSize: "12px",
+              fontWeight: 700,
+              cursor: "pointer"
+            }}
+          >
+            ✕ {lang === "hi" ? "फ़िल्टर हटाएं" : "Clear Filter"}
+          </button>
+        </div>
+      )}
+
       {/* 4. Tabular Voter Roll (Exact Layout from Screenshot) */}
       <div className="bmTableContainer printableArea">
         <table className="bmTable">
@@ -1804,7 +2152,11 @@ function BoothManagerView({
                   <tr
                     key={v.id}
                     className={isSelected ? "selectedRow" : ""}
-                    onClick={() => setSelectedVoter(isSelected ? null : v)}
+                    onClick={() => {
+                      setSelectedVoter(v);
+                      handleOpenVoterAction(v);
+                    }}
+                    title={lang === "hi" ? "मैसेज व एक्शन मेन्यू खोलने के लिए क्लिक करें" : "Click to open action menu"}
                   >
                     {/* 1. भाग संख्या */}
                     <td className="colPart">{v.booth}</td>
@@ -1813,8 +2165,8 @@ function BoothManagerView({
                     <td className="colSerial">{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
 
                     {/* 3. नाम */}
-                    <td className="colName">
-                      <b style={{ color: "#0f172a" }}>{v.name}</b>
+                    <td className="colName" style={{ cursor: "pointer" }}>
+                      <b style={{ color: "#0062cc" }}>{v.name}</b>
                     </td>
 
                     {/* 4. पिता/पति */}
@@ -2214,6 +2566,525 @@ function BoothManagerView({
                 सेव करें
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          1. NEW MODAL: मैसेज (VOTER ACTION POPUP - 100% 1:1 WITH IMAGE 1)
+          ===================================================================== */}
+      {activeActionVoter && (
+        <div
+          className="bmVoterActionOverlay noPrint"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setActiveActionVoter(null);
+          }}
+        >
+          <div className="bmVoterActionCard">
+            <button
+              className="bmVoterActionCloseBtn"
+              onClick={() => setActiveActionVoter(null)}
+              title="बंद करें"
+            >
+              ✕
+            </button>
+
+            <h3 className="bmVoterActionTitle">मैसेज</h3>
+
+            {/* Mobile Number: editable live and pushes sync */}
+            <input
+              type="tel"
+              className="bmVoterActionInput"
+              value={activeVoterPhone}
+              onChange={(e) => handleUpdateActionPhone(e.target.value)}
+              placeholder="मोबाइल नंबर दर्ज करें"
+            />
+
+            {/* Slip Message: editable per voter */}
+            <input
+              type="text"
+              className="bmVoterActionInput"
+              value={activeVoterSlipMsg}
+              onChange={(e) => handleUpdateActionSlipMsg(e.target.value)}
+              placeholder="स्लिप मैसेज"
+            />
+
+            {/* Wide Full-Width Blue Button: प्रिंट वोटर स्लिप */}
+            <button
+              type="button"
+              className="bmBtnPrintWide"
+              onClick={handleOpenPrintSlip}
+            >
+              प्रिंट वोटर स्लिप
+            </button>
+
+            {/* Row 2: मैसेज, कॉल, वोटर स्लिप */}
+            <div className="bmBtnGrid3">
+              <button
+                type="button"
+                className="bmActionPill bmBtnMessage"
+                onClick={handleSendActionSMS}
+              >
+                मैसेज
+              </button>
+              <button
+                type="button"
+                className="bmActionPill bmBtnCall"
+                onClick={handleCallAction}
+              >
+                कॉल
+              </button>
+              <button
+                type="button"
+                className="bmActionPill bmBtnVoterSlip"
+                onClick={handleShareVoterSlip}
+              >
+                वोटर स्लिप
+              </button>
+            </div>
+
+            {/* Row 3: फैमिली लिस्ट, व्हाट्सएप, सर्वे */}
+            <div className="bmBtnGrid3">
+              <button
+                type="button"
+                className="bmActionPill bmBtnFamily"
+                onClick={handleFilterFamily}
+              >
+                फैमिली लिस्ट
+              </button>
+              <button
+                type="button"
+                className="bmActionPill bmBtnWhatsApp"
+                onClick={handleOpenWhatsAppSlip}
+              >
+                व्हाट्सएप
+              </button>
+              <button
+                type="button"
+                className="bmActionPill bmBtnSurvey"
+                onClick={handleOpenSurvey}
+              >
+                सर्वे
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          2. NEW SCREEN: PRINT VOTER SLIP (100% 1:1 WITH IMAGE 2)
+          ===================================================================== */}
+      {showPrintSlipScreen && activeActionVoter && (
+        <div className="bmFullscreenModalOverlay noPrint">
+          <div className="bmHeaderBlue">
+            <button
+              className="bmBackBtn"
+              onClick={() => setShowPrintSlipScreen(false)}
+              title="वापस जाएं"
+            >
+              ←
+            </button>
+            <h2 className="bmHeaderTitle">Print Voter Slip</h2>
+          </div>
+
+          <div className="bmScreenContent">
+            {/* Printer Selector Card */}
+            <div className="bmPrinterCard">
+              <div className="bmPrinterLabel">Printer</div>
+              <select
+                className="bmPrinterSelect"
+                value={selectedPrinter}
+                onChange={(e) => setSelectedPrinter(e.target.value)}
+              >
+                <option value="Select Printer">Select Printer</option>
+                <option value="Thermal POS 58mm">Thermal POS 58mm (Bluetooth)</option>
+                <option value="Thermal POS 80mm">Thermal POS 80mm (Bluetooth/USB)</option>
+                <option value="System Default">System Default / Browser Print</option>
+              </select>
+            </div>
+
+            {/* Add New Printer Link */}
+            <a
+              className="bmAddPrinterLink"
+              onClick={() => {
+                const p = prompt("नया प्रिंटर नाम या ब्लूटूथ डिवाइस का नाम दर्ज करें:", "Thermal Bluetooth Printer");
+                if (p) {
+                  setSelectedPrinter(p);
+                  setLocalToast(`प्रिंटर सेट किया गया: ${p}`);
+                  setTimeout(() => setLocalToast(""), 3000);
+                }
+              }}
+            >
+              Add New Printer
+            </a>
+
+            {/* Dotted Voter Slip Card */}
+            <div className="bmDottedSlipCard">
+              <div className="bmSlipRow">
+                <span><b>क्रम सं : {activeActionVoter.serialNo || "—"}</b></span>
+                <span><b>भाग सं : {activeActionVoter.booth || "—"}</b></span>
+              </div>
+              <div className="bmSlipField">
+                <b>नाम : {activeActionVoter.name}</b>
+              </div>
+              <div className="bmSlipField">
+                <b>पिता/पति : {activeActionVoter.guardian || "—"}</b>
+              </div>
+              <div className="bmSlipRow">
+                <span><b>उम्र : {activeActionVoter.age || "—"}</b></span>
+                <span><b>मकान नंबर : {activeActionVoter.house || "—"}</b></span>
+              </div>
+              <div className="bmSlipField">
+                <b>वोटर ID : {activeActionVoter.epic}</b>
+              </div>
+              <div className="bmSlipField" style={{ marginTop: "4px" }}>
+                <b>बुथ पता : {activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}</b>
+              </div>
+            </div>
+
+            {/* Bottom Print Button */}
+            <button
+              type="button"
+              className="bmBottomPrintBtn"
+              onClick={() => {
+                window.print();
+              }}
+            >
+              Print
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          3. NEW SCREEN: वोटर स्लिप (WHATSAPP VIEW - 100% 1:1 WITH IMAGE 3)
+          ===================================================================== */}
+      {showWhatsAppSlipScreen && activeActionVoter && (
+        <div className="bmFullscreenModalOverlay noPrint">
+          <div className="bmHeaderBlue">
+            <button
+              className="bmBackBtn"
+              onClick={() => setShowWhatsAppSlipScreen(false)}
+              title="वापस जाएं"
+            >
+              ←
+            </button>
+            <h2 className="bmHeaderTitle">वोटर स्लिप</h2>
+          </div>
+
+          <div className="bmScreenContent">
+            {/* Candidate Election Poster Graphic Banner */}
+            <img
+              src="/images/campaign-poster.jpg"
+              alt="Campaign Poster"
+              className="bmPosterImg"
+            />
+
+            {/* Custom campaign message text */}
+            <div className="bmCustomMsgText">
+              {activeVoterSlipMsg || `vote for ${candidate?.name || "bb"}`}
+            </div>
+
+            {/* Dotted Voter Slip Card */}
+            <div className="bmDottedSlipCard">
+              <div className="bmSlipRow">
+                <span><b>क्रम सं :</b> {activeActionVoter.serialNo || "—"}</span>
+                <span><b>भाग सं :</b> {activeActionVoter.booth || "—"}</span>
+              </div>
+              <div className="bmSlipField">
+                <span><b>नाम :</b> {activeActionVoter.name}</span>
+              </div>
+              <div className="bmSlipField">
+                <span><b>पिता/पति :</b> {activeActionVoter.guardian || "—"}</span>
+              </div>
+              <div className="bmSlipField">
+                <span><b>वोटर ID :</b> {activeActionVoter.epic}</span>
+              </div>
+              <div className="bmSlipRow">
+                <span><b>उम्र :</b> {activeActionVoter.age || "—"}</span>
+                <span><b>मकान नंबर :</b> {activeActionVoter.house || "—"}</span>
+              </div>
+              <div className="bmSlipField" style={{ marginTop: "4px" }}>
+                <span><b>बुथ पता :</b> {activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}</span>
+              </div>
+            </div>
+
+            {/* Full width green Send button */}
+            <button
+              type="button"
+              className="bmGreenSendBtn"
+              onClick={() => {
+                const ph = (activeVoterPhone || activeActionVoter.phone || "").replace(/[^0-9]/g, "");
+                const text = `*वोटर स्लिप / VOTER SLIP*
+${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
+
+*क्रम सं :* ${activeActionVoter.serialNo || "—"}     *भाग सं :* ${activeActionVoter.booth}
+*नाम :* ${activeActionVoter.name}
+*पिता/पति :* ${activeActionVoter.guardian || "—"}
+*वोटर ID :* ${activeActionVoter.epic}
+*उम्र :* ${activeActionVoter.age || "—"}     *मकान नंबर :* ${activeActionVoter.house || "—"}
+*बुथ पता :* ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}`;
+
+                if (ph) {
+                  const cleanPh = ph.length === 10 ? `91${ph}` : ph;
+                  window.open(`https://wa.me/${cleanPh}?text=${encodeURIComponent(text)}`, "_blank");
+                } else {
+                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+                }
+              }}
+            >
+              Send <span style={{ fontSize: "19px" }}>➤</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          4. NEW SCREEN: सर्वे फॉर्म (100% 1:1 WITH IMAGES 4 & 5)
+          ===================================================================== */}
+      {showSurveyScreen && activeActionVoter && (
+        <div className="bmFullscreenModalOverlay noPrint">
+          <div className="bmHeaderBlue">
+            <button
+              className="bmBackBtn"
+              onClick={() => setShowSurveyScreen(false)}
+              title="वापस जाएं"
+            >
+              ←
+            </button>
+            <h2 className="bmHeaderTitle">सर्वे फॉर्म</h2>
+          </div>
+
+          <div className="bmScreenContent">
+            {/* Voter Header Badge */}
+            <div style={{ background: "#e0f2fe", padding: "10px 14px", borderRadius: "8px", marginBottom: "16px", color: "#0369a1", fontSize: "14px", fontWeight: 600 }}>
+              👤 <b>{activeActionVoter.name}</b> (भाग सं: {activeActionVoter.booth}, क्र सं: {activeActionVoter.serialNo || "—"}, मकान: {activeActionVoter.house || "—"})
+            </div>
+
+            {/* 1. समर्थक */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">समर्थक</label>
+              <select
+                className="bmSurveySelectInput"
+                value={surveyFormData.supporter || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, supporter: e.target.value })}
+              >
+                <option value="">-- चुनें--</option>
+                <option value="हाँ">हाँ</option>
+                <option value="नहीं">नहीं</option>
+                <option value="संशयित">संशयित</option>
+                <option value="तटस्थ">तटस्थ</option>
+              </select>
+            </div>
+
+            {/* 2. जाति */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">जाति</label>
+              <select
+                className="bmSurveySelectInput"
+                value={surveyFormData.casteCategory || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, casteCategory: e.target.value })}
+              >
+                <option value="">-- चुनें --</option>
+                <option value="सामान्य">सामान्य</option>
+                <option value="ओबीसी">ओबीसी</option>
+                <option value="एससी">एससी</option>
+                <option value="एसटी">एसटी</option>
+                <option value="अल्पसंख्यक">अल्पसंख्यक</option>
+                <option value="अन्य">अन्य</option>
+              </select>
+
+              <select
+                className="bmSurveySelectInput"
+                value={surveyFormData.casteSub || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, casteSub: e.target.value })}
+              >
+                <option value="">-- जाति चुनें --</option>
+                <option value="ब्राह्मण">ब्राह्मण</option>
+                <option value="राजपूत">राजपूत</option>
+                <option value="जाट">जाट</option>
+                <option value="गुर्जर">गुर्जर</option>
+                <option value="सैनी">सैनी</option>
+                <option value="माली">माली</option>
+                <option value="मीणा">मीणा</option>
+                <option value="बैरवा">बैरवा</option>
+                <option value="मुस्लिम">मुस्लिम</option>
+                <option value="जैन">जैन</option>
+                <option value="अग्रवाल">अग्रवाल</option>
+                <option value="कुमावत">कुमावत</option>
+                <option value="प्रजापत">प्रजापत</option>
+                <option value="यादव">यादव</option>
+                <option value="जांगिड़">जांगिड़</option>
+                <option value="सोनी">सोनी</option>
+                <option value="रैगर">रैगर</option>
+                <option value="मेघवाल">मेघवाल</option>
+                <option value="अन्य">अन्य</option>
+              </select>
+
+              <div style={{ marginTop: "4px" }}>
+                <label style={{ fontSize: "13.5px", color: "#334155", fontWeight: 600, display: "block", marginBottom: "4px" }}>
+                  जाति लिखें
+                </label>
+                <input
+                  type="text"
+                  className="bmSurveyTextInput"
+                  placeholder="जाति"
+                  value={surveyFormData.casteCustom || ""}
+                  onChange={(e) => setSurveyFormData({ ...surveyFormData, casteCustom: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* 3. व्हाट्सएप नं */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">व्हाट्सएप नं</label>
+              <input
+                type="tel"
+                className="bmSurveyTextInput"
+                placeholder="Type..."
+                value={surveyFormData.whatsapp || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, whatsapp: e.target.value })}
+              />
+            </div>
+
+            {/* 4. शिक्षा */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">शिक्षा</label>
+              <select
+                className="bmSurveySelectInput"
+                value={surveyFormData.education || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, education: e.target.value })}
+              >
+                <option value="">-- चुनें --</option>
+                <option value="अनपढ़">अनपढ़</option>
+                <option value="5वीं">5वीं</option>
+                <option value="8वीं">8वीं</option>
+                <option value="10वीं">10वीं</option>
+                <option value="12वीं">12वीं</option>
+                <option value="स्नातक">स्नातक</option>
+                <option value="परास्नातक">परास्नातक</option>
+                <option value="डिप्लोमा">डिप्लोमा</option>
+                <option value="अन्य">अन्य</option>
+              </select>
+            </div>
+
+            {/* 5. आजीविका */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">आजीविका</label>
+              <select
+                className="bmSurveySelectInput"
+                value={surveyFormData.livelihood || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, livelihood: e.target.value })}
+              >
+                <option value="">-- चुनें --</option>
+                <option value="सरकारी सेवा">सरकारी सेवा</option>
+                <option value="निजी सेवा">निजी सेवा</option>
+                <option value="व्यापार">व्यापार</option>
+                <option value="मजदूरी">मजदूरी</option>
+                <option value="कृषि">कृषि</option>
+                <option value="गृहणी">गृहणी</option>
+                <option value="छात्र">छात्र</option>
+                <option value="बेरोजगार">बेरोजगार</option>
+                <option value="अन्य">अन्य</option>
+              </select>
+              <input
+                type="text"
+                className="bmSurveyTextInput"
+                placeholder="आजीविका विवरण"
+                value={surveyFormData.livelihoodDetail || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, livelihoodDetail: e.target.value })}
+              />
+            </div>
+
+            {/* 6. बाहरी पता */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">बाहरी पता</label>
+              <div className="bmOutsideBox">
+                <label className="bmOutsideInnerLabel">राज्य</label>
+                <select
+                  className="bmSurveySelectInput"
+                  value={surveyFormData.outsideState || "Andaman and Nicobar Islands"}
+                  onChange={(e) => setSurveyFormData({ ...surveyFormData, outsideState: e.target.value })}
+                >
+                  {indianStates.map((st) => (
+                    <option key={st} value={st}>{st}</option>
+                  ))}
+                </select>
+
+                <label className="bmOutsideInnerLabel" style={{ marginTop: "6px" }}>जिला</label>
+                <select
+                  className="bmSurveySelectInput"
+                  value={surveyFormData.outsideDistrict || "-Select-"}
+                  onChange={(e) => setSurveyFormData({ ...surveyFormData, outsideDistrict: e.target.value })}
+                >
+                  <option value="-Select-">-Select-</option>
+                  {rajasthanDistricts.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+
+                <label className="bmOutsideInnerLabel" style={{ marginTop: "6px" }}>पता</label>
+                <input
+                  type="text"
+                  className="bmSurveyTextInput"
+                  placeholder="पता"
+                  value={surveyFormData.outsideAddress || ""}
+                  onChange={(e) => setSurveyFormData({ ...surveyFormData, outsideAddress: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {/* 7. पदाधिकारी */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">पदाधिकारी</label>
+              <select
+                className="bmSurveySelectInput"
+                value={surveyFormData.officeBearer || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, officeBearer: e.target.value })}
+              >
+                <option value="">-- चुनें --</option>
+                <option value="हाँ">हाँ</option>
+                <option value="नहीं">नहीं</option>
+                <option value="अध्यक्ष">अध्यक्ष</option>
+                <option value="उपाध्यक्ष">उपाध्यक्ष</option>
+                <option value="महामंत्री">महामंत्री</option>
+                <option value="सचिव">सचिव</option>
+                <option value="कोषाध्यक्ष">कोषाध्यक्ष</option>
+                <option value="बूथ अध्यक्ष">बूथ अध्यक्ष</option>
+                <option value="पन्ना प्रमुख">पन्ना प्रमुख</option>
+                <option value="वार्ड प्रमुख">वार्ड प्रमुख</option>
+                <option value="सदस्य">सदस्य</option>
+                <option value="अन्य">अन्य</option>
+              </select>
+            </div>
+
+            {/* 8. अन्य विवरण */}
+            <div className="bmSurveyFormGroup">
+              <label className="bmSurveyFormLabel">अन्य विवरण</label>
+              <input
+                type="text"
+                className="bmSurveyTextInput"
+                placeholder="विवरण 1"
+                value={surveyFormData.detail1 || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, detail1: e.target.value })}
+              />
+              <input
+                type="text"
+                className="bmSurveyTextInput"
+                placeholder="विवरण 2"
+                value={surveyFormData.detail2 || ""}
+                onChange={(e) => setSurveyFormData({ ...surveyFormData, detail2: e.target.value })}
+              />
+            </div>
+
+            {/* सबमिट बटन */}
+            <button
+              type="button"
+              className="bmSubmitBlueBtn"
+              onClick={handleSubmitSurvey}
+            >
+              सबमिट
+            </button>
           </div>
         </div>
       )}

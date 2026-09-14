@@ -689,4 +689,417 @@
   }
 }
 
+/* =========================================================================
+   VOTER ACTION MODAL (Image 1: 100% 1:1 Screenshot Reproduction)
+   ========================================================================= */
+.bmVoterActionOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.bmVoterActionCard {
+  width: 100%;
+  max-width: 360px;
+  background: #f0f9ff;
+  border: 2.5px dashed #0284c7;
+  border-radius: 18px;
+  padding: 22px 18px 20px;
+  box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.3);
+  position: relative;
+  animation: bmModalPop 0.18s ease-out;
+}
+
+@keyframes bmModalPop {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.bmVoterActionCloseBtn {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  background: #e0f2fe;
+  color: #0369a1;
+  border: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bmVoterActionTitle {
+  text-align: center;
+  font-size: 23px;
+  font-weight: 800;
+  color: #0066cc;
+  margin: 0 0 16px;
+  letter-spacing: 0.5px;
+}
+
+.bmVoterActionInput {
+  width: 100%;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: 15px;
+  color: #0f172a;
+  outline: none;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.bmVoterActionInput:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+}
+
+.bmBtnPrintWide {
+  width: 100%;
+  background: #0062cc;
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 98, 204, 0.3);
+  transition: transform 0.1s, background 0.15s;
+}
+
+.bmBtnPrintWide:hover {
+  background: #0052a3;
+}
+
+.bmBtnPrintWide:active {
+  transform: scale(0.98);
+}
+
+.bmBtnGrid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bmActionPill {
+  border: none;
+  border-radius: 9999px;
+  padding: 11px 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  cursor: pointer;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  box-shadow: 0 3px 5px rgba(0, 0, 0, 0.15);
+  transition: transform 0.1s, opacity 0.15s;
+}
+
+.bmActionPill:active {
+  transform: scale(0.96);
+}
+
+.bmBtnMessage {
+  background: #0066cc;
+}
+.bmBtnMessage:hover {
+  background: #0055aa;
+}
+
+.bmBtnCall {
+  background: #00b0f0;
+}
+.bmBtnCall:hover {
+  background: #0099d4;
+}
+
+.bmBtnVoterSlip {
+  background: #e67e00;
+}
+.bmBtnVoterSlip:hover {
+  background: #cc6f00;
+}
+
+.bmBtnFamily {
+  background: #ff1e1e;
+}
+.bmBtnFamily:hover {
+  background: #e01515;
+}
+
+.bmBtnWhatsApp {
+  background: #00a82d;
+}
+.bmBtnWhatsApp:hover {
+  background: #009127;
+}
+
+.bmBtnSurvey {
+  background: #005bb5;
+}
+.bmBtnSurvey:hover {
+  background: #004b94;
+}
+
+/* =========================================================================
+   FULL-SCREEN MOBILE VIEWS: PRINT SLIP, WHATSAPP SLIP, SURVEY FORM
+   ========================================================================= */
+.bmFullscreenModalOverlay {
+  position: fixed;
+  inset: 0;
+  background: #f8fafc;
+  z-index: 1100;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.bmHeaderBlue {
+  background: #0062cc;
+  color: #ffffff;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.bmBackBtn {
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px;
+}
+
+.bmHeaderTitle {
+  font-size: 19px;
+  font-weight: 700;
+  color: #ffffff;
+  margin: 0;
+}
+
+.bmScreenContent {
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 16px 14px 40px;
+  box-sizing: border-box;
+}
+
+/* Print Screen Specifics */
+.bmPrinterCard {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.bmPrinterLabel {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.bmPrinterSelect {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #0284c7;
+  font-size: 14.5px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+}
+
+.bmAddPrinterLink {
+  display: block;
+  text-align: center;
+  color: #0062cc;
+  font-size: 14.5px;
+  font-weight: 600;
+  margin: 18px 0 26px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bmDottedSlipCard {
+  background: #ffffff;
+  border: 2px dashed #0284c7;
+  border-radius: 12px;
+  padding: 16px 14px;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #0f172a;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.bmSlipRow {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.bmSlipField {
+  margin-bottom: 2px;
+}
+
+.bmBottomPrintBtn {
+  display: block;
+  width: 220px;
+  margin: 36px auto 20px;
+  background: #0062cc;
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: 0 4px 6px -1px rgba(0, 98, 204, 0.3);
+}
+
+.bmBottomPrintBtn:hover {
+  background: #0052a3;
+}
+
+/* WhatsApp Screen Specifics */
+.bmPosterImg {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  display: block;
+  margin-bottom: 12px;
+}
+
+.bmCustomMsgText {
+  font-size: 15px;
+  color: #1e293b;
+  margin: 8px 4px 12px;
+  font-weight: 500;
+}
+
+.bmGreenSendBtn {
+  width: 100%;
+  background: #00a82d;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  margin-top: 24px;
+  box-shadow: 0 4px 6px -1px rgba(0, 168, 45, 0.3);
+}
+
+.bmGreenSendBtn:hover {
+  background: #009127;
+}
+
+/* Survey Form Specifics */
+.bmSurveyFormGroup {
+  margin-bottom: 16px;
+}
+
+.bmSurveyFormLabel {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.bmSurveySelectInput, .bmSurveyTextInput {
+  width: 100%;
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14.5px;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease;
+  margin-bottom: 8px;
+}
+
+.bmSurveySelectInput:focus, .bmSurveyTextInput:focus {
+  border-color: #0062cc;
+  box-shadow: 0 0 0 3px rgba(0, 98, 204, 0.15);
+}
+
+.bmOutsideBox {
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+  margin-bottom: 8px;
+}
+
+.bmOutsideInnerLabel {
+  font-size: 12px;
+  font-weight: 700;
+  color: #475569;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.bmSubmitBlueBtn {
+  display: block;
+  width: 220px;
+  margin: 30px auto 16px;
+  background: #0062cc;
+  color: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  box-shadow: 0 4px 6px -1px rgba(0, 98, 204, 0.3);
+}
+
+.bmSubmitBlueBtn:hover {
+  background: #0052a3;
+}
+
+
 
