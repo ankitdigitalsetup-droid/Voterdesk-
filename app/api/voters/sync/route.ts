@@ -50,12 +50,22 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { candidateId, voterId, updates, newVoter, worker, booth } = body;
+    const { candidateId, voterId, updates, newVoter, worker, booth, location } = body;
 
     const cId = candidateId || "cand_1";
 
     if (worker) {
       store.recordHeartbeat(worker, booth);
+      if (location && location.lat && location.lng) {
+        store.recordWorkerLocation({
+          workerName: worker,
+          candidateId: cId,
+          lat: location.lat,
+          lng: location.lng,
+          accuracy: location.accuracy,
+          assignedBooths: booth ? [booth] : undefined,
+        });
+      }
     }
 
     // 1. Single voter patch (e.g. voted, isSupporter, isOutside, phone)

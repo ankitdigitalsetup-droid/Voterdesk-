@@ -61,6 +61,22 @@ export interface VoterRecord {
   };
 }
 
+export interface WorkerLocation {
+  workerId: string;
+  name: string;
+  phone: string;
+  roleTitle: string;
+  assignedBooths: string[];
+  candidateId: string;
+  lat: number;
+  lng: number;
+  accuracy?: number;
+  address?: string;
+  lastUpdated: number;
+  isOnline: boolean;
+  battery?: number;
+}
+
 export interface TeamMember {
   id: string;
   name: string;
@@ -70,4 +86,5 @@ export interface TeamMember {
   status: "Active" | "Inactive";
   candidateId: string;
   contactedCount: number;
+  location?: WorkerLocation;
 }

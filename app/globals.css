@@ -1145,5 +1145,352 @@
   background: #0052a3;
 }
 
+/* =========================================================================
+   KARYAKARTA LIVE GPS LOCATION TRACKER (Google Live Location)
+   ========================================================================= */
+.bmTrackerOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 12px;
+}
+
+.bmTrackerBox {
+  width: 100%;
+  max-width: 620px;
+  max-height: 92vh;
+  background: #ffffff;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  animation: bmModalPop 0.2s ease-out;
+}
+
+.bmTrackerHeader {
+  background: #0062cc;
+  color: #ffffff;
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bmTrackerTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bmTrackerTitle {
+  margin: 0;
+  font-size: 17.5px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.bmTrackerSub {
+  font-size: 11.5px;
+  opacity: 0.9;
+  margin-top: 2px;
+}
+
+.bmTrackerCloseBtn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: #ffffff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.bmTrackerCloseBtn:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.bmTrackerTabBar {
+  display: flex;
+  background: #f1f5f9;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 4px 8px;
+  gap: 6px;
+}
+
+.bmTrackerTabBtn {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  font-size: 13.5px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.bmTrackerTabBtn.active {
+  background: #ffffff;
+  color: #0062cc;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.bmTrackerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+  background: #f8fafc;
+}
+
+.bmGpsBroadcastBanner {
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 12.5px;
+  color: #065f46;
+}
+
+.bmGpsRefreshBtn {
+  background: #059669;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bmTrackerStatsBar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.bmTrackerStatBadge {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.bmMapContainer {
+  background: #ffffff;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  position: relative;
+}
+
+.bmMapIframe {
+  width: 100%;
+  height: 200px;
+  border: none;
+  display: block;
+}
+
+.bmMapActionOverlay {
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12.5px;
+}
+
+.bmOpenAllMapsBtn {
+  background: #0062cc;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+
+.bmWorkerLocationCard {
+  background: #ffffff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.1s, border-color 0.15s;
+}
+
+.bmWorkerLocationCard:hover {
+  border-color: #0284c7;
+}
+
+.bmWorkerCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.bmWorkerNameCol {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bmWorkerAvatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0284c7;
+  font-size: 16px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.bmLivePulseDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #22c55e;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  border: 2px solid #ffffff;
+  animation: bmPulse 1.8s infinite;
+}
+
+@keyframes bmPulse {
+  0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7); }
+  70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+.bmLiveStatusBadge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bmLiveStatusBadge.online {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.bmLiveStatusBadge.offline {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.bmWorkerAddressBox {
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.5;
+}
+
+.bmWorkerActionRow {
+  display: grid;
+  grid-template-columns: 1.3fr 1.1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.bmWorkerBtn {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+.bmWorkerBtn:active {
+  transform: scale(0.96);
+}
+
+.bmBtnMapTrack {
+  background: #0062cc;
+  color: #ffffff;
+}
+
+.bmBtnDirections {
+  background: #059669;
+  color: #ffffff;
+}
+
+.bmBtnWorkerCall {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+.bmBtnWorkerWA {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+@media (max-width: 480px) {
+  .bmWorkerActionRow {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+}
+
+
 
 

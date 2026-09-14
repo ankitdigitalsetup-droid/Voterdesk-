@@ -35,7 +35,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { store } from "@/lib/data-store";
-import { VoterRecord, CandidateAccount, TeamMember, UserAccount } from "@/lib/types";
+import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches } from "@/lib/transliterate";
@@ -1064,6 +1064,102 @@ function BoothManagerView({
     setAdvAddress("");
     setAdvEpic("");
   };
+
+  // -------------------------------------------------------------
+  // LIVE KARYAKARTA GPS LOCATION TRACKER STATES & LOGIC
+  // -------------------------------------------------------------
+  const [workerLocations, setWorkerLocations] = useState<WorkerLocation[]>([]);
+  const [isFetchingLocations, setIsFetchingLocations] = useState<boolean>(false);
+  const [locationTab, setLocationTab] = useState<"workers" | "booth">("workers");
+  const [focusedWorkerId, setFocusedWorkerId] = useState<string | null>(null);
+  const [myGps, setMyGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsStatusText, setGpsStatusText] = useState<string>("जीपीएस सक्रिय किया जा रहा है...");
+
+  // Broadcast current worker/user GPS to server
+  const broadcastMyGps = useCallback(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setGpsStatusText("जीपीएस उपलब्ध नहीं है");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        setMyGps({ lat: latitude, lng: longitude });
+        setGpsStatusText(`लाइव सक्रिय (±${Math.round(accuracy)}m)`);
+        try {
+          await fetch("/api/team/location", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              workerName: user.name || "कार्यकर्ता (Active)",
+              workerId: user.id || "worker_current",
+              phone: user.phone || "+91 98290 12345",
+              roleTitle: user.role === "CANDIDATE_ADMIN" ? "कैंडिडेट (प्रत्याशी)" : "बूथ कार्यकर्ता",
+              assignedBooths: [partFilter === "ALL" ? "1" : partFilter],
+              candidateId: candidateId || "cand_1",
+              lat: latitude,
+              lng: longitude,
+              accuracy: Math.round(accuracy),
+            }),
+          });
+        } catch (err) {
+          console.error("GPS broadcast error:", err);
+        }
+      },
+      (err) => {
+        if (err.code === 1) {
+          setGpsStatusText("जीपीएस अनुमति नहीं दी गई (डिफ़ॉल्ट वार्ड लोकेशन सक्रिय)");
+        } else {
+          setGpsStatusText("जीपीएस सिग्नल खोजा जा रहा है...");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  }, [user.id, user.name, user.phone, user.role, candidateId, partFilter]);
+
+  // Fetch all worker locations for this candidate
+  const fetchWorkerLocations = useCallback(async () => {
+    setIsFetchingLocations(true);
+    try {
+      const res = await fetch(`/api/team/location?candidateId=${candidateId || "cand_1"}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.locations)) {
+          setWorkerLocations(data.locations);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching worker locations:", err);
+    } finally {
+      setIsFetchingLocations(false);
+    }
+  }, [candidateId]);
+
+  // Initial broadcast and background watch
+  useEffect(() => {
+    broadcastMyGps();
+    if (typeof window !== "undefined" && navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setMyGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setGpsStatusText(`लाइव सक्रिय (±${Math.round(pos.coords.accuracy)}m)`);
+        },
+        () => {},
+        { enableHighAccuracy: true, timeout: 20000, maximumAge: 30000 }
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    }
+  }, [broadcastMyGps]);
+
+  // When location modal is open, fetch immediately and poll every 8 seconds
+  useEffect(() => {
+    if (showLocationModal) {
+      fetchWorkerLocations();
+      broadcastMyGps();
+      const interval = setInterval(fetchWorkerLocations, 8000);
+      return () => clearInterval(interval);
+    }
+  }, [showLocationModal, fetchWorkerLocations, broadcastMyGps]);
 
   // -------------------------------------------------------------
   // HANDLERS FOR VOTER ACTION HUB & SUB-SCREENS (IMAGES 1, 2, 3, 4/5)
@@ -3632,68 +3728,399 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
         </div>
       )}
 
-      {/* 8. Modal: Location (लोकेशन - Polling Station Details) */}
+      {/* 8. Modal: Location (लोकेशन - Live Karyakarta GPS Tracker & Polling Station) */}
       {showLocationModal && (
-        <div className="modalOverlay noPrint">
-          <div className="modalBox">
-            <div className="modalHead">
-              <h3>📍 {t.pollingStation}</h3>
-              <button onClick={() => setShowLocationModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
-            <div className="modalBody">
-              <div
-                style={{
-                  background: "#f0f9ff",
-                  border: "1px solid #bae6fd",
-                  borderRadius: "12px",
-                  padding: "16px",
-                  marginBottom: "16px",
-                }}
-              >
-                <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7", textTransform: "uppercase" }}>
-                  POLLING STATION / मतदान केंद्र
-                </span>
-                <h4 style={{ margin: "6px 0 4px", fontSize: "16px", color: "#0f172a" }}>
-                  {t.pollingStationName}
-                </h4>
-                <p style={{ margin: "0 0 10px", fontSize: "13px", color: "#475467" }}>
-                  {t.pollingStationAddress}
-                </p>
-                <div style={{ fontSize: "12px", color: "#0369a1", fontWeight: 600 }}>
-                  🕒 {t.pollingTime}
+        <div className="bmTrackerOverlay noPrint">
+          <div className="bmTrackerBox">
+            {/* Header */}
+            <div className="bmTrackerHeader">
+              <div className="bmTrackerTitleGroup">
+                <div style={{ fontSize: "24px", lineHeight: 1 }}>📍</div>
+                <div>
+                  <h3 className="bmTrackerTitle">
+                    {lang === "hi" ? "कार्यकर्ता लाइव लोकेशन ट्रैकर" : "Live Karyakarta GPS Tracker"}
+                  </h3>
+                  <div className="bmTrackerSub">
+                    {lang === "hi"
+                      ? "गूगल लाइव लोकेशन • सभी कार्यकर्ताओं की वास्तविक स्थिति"
+                      : "Google Live Location • Real-Time Karyakarta Tracking"}
+                  </div>
                 </div>
               </div>
-
-              <div style={{ marginBottom: "16px", fontSize: "13px", color: "#334155" }}>
-                <p style={{ margin: "0 0 6px" }}>
-                  👤 <b>बूथ प्रभारी (Supervisor):</b> Amit Joshi (+91 98290 12345)
-                </p>
-                <p style={{ margin: "0 0 6px" }}>
-                  🗳️ <b>भाग / बूथ संख्या:</b> {partFilter === "ALL" ? "1 (वार्ड 34)" : `भाग सं. ${partFilter}`}
-                </p>
-              </div>
-
-              <div style={{ display: "flex", gap: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <button
                   type="button"
-                  className="primary"
-                  style={{ flex: 1 }}
-                  onClick={() => {
-                    window.open("https://maps.google.com/?q=Govt+Senior+Secondary+School+Bhilwara", "_blank");
+                  onClick={fetchWorkerLocations}
+                  title={lang === "hi" ? "लोकेशन रिफ्रेश करें" : "Refresh Locations"}
+                  style={{
+                    background: "rgba(255, 255, 255, 0.2)",
+                    border: "none",
+                    color: "#ffffff",
+                    width: "32px",
+                    height: "32px",
+                    borderRadius: "50%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
                   }}
                 >
-                  🗺️ {t.openInMaps}
+                  <RefreshCw size={15} className={isFetchingLocations ? "spin" : ""} />
                 </button>
                 <button
                   type="button"
-                  className="outline"
+                  className="bmTrackerCloseBtn"
                   onClick={() => setShowLocationModal(false)}
                 >
-                  ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                  <X size={18} />
                 </button>
               </div>
+            </div>
+
+            {/* Tab Bar */}
+            <div className="bmTrackerTabBar">
+              <button
+                type="button"
+                className={`bmTrackerTabBtn ${locationTab === "workers" ? "active" : ""}`}
+                onClick={() => setLocationTab("workers")}
+              >
+                👥 {lang === "hi" ? `कार्यकर्ता लोकेशन (${workerLocations.length})` : `Workers GPS (${workerLocations.length})`}
+              </button>
+              <button
+                type="button"
+                className={`bmTrackerTabBtn ${locationTab === "booth" ? "active" : ""}`}
+                onClick={() => setLocationTab("booth")}
+              >
+                🏛️ {lang === "hi" ? "मतदान केंद्र / बूथ पता" : "Polling Station"}
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="bmTrackerBody">
+              {locationTab === "workers" ? (
+                <>
+                  {/* GPS Broadcast Bar */}
+                  <div className="bmGpsBroadcastBanner">
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span className="bmLivePulseDot" style={{ position: "static", display: "inline-block" }}></span>
+                      <span>
+                        <b>{lang === "hi" ? "आपकी जीपीएस स्थिति" : "Your GPS"}:</b> {gpsStatusText}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="bmGpsRefreshBtn"
+                      onClick={broadcastMyGps}
+                    >
+                      <RefreshCw size={11} /> {lang === "hi" ? "अपडेट करें" : "Broadcast"}
+                    </button>
+                  </div>
+
+                  {/* Stats Bar */}
+                  <div className="bmTrackerStatsBar">
+                    <div className="bmTrackerStatBadge">
+                      <span>👥</span>
+                      <span>{lang === "hi" ? "कुल कार्यकर्ता" : "Workers"}: <b>{workerLocations.length}</b></span>
+                    </div>
+                    <div className="bmTrackerStatBadge" style={{ borderColor: "#86efac", background: "#f0fdf4" }}>
+                      <span>🟢</span>
+                      <span>{lang === "hi" ? "लाइव ऑनलाइन" : "Online"}: <b style={{ color: "#15803d" }}>{workerLocations.filter((w) => w.isOnline).length}</b></span>
+                    </div>
+                    <div className="bmTrackerStatBadge">
+                      <span>🗳️</span>
+                      <span>{lang === "hi" ? "बूथ" : "Booth"}: <b>{partFilter === "ALL" ? "सभी (वार्ड 34)" : `बूथ ${partFilter}`}</b></span>
+                    </div>
+                  </div>
+
+                  {/* Embedded Google Map Preview */}
+                  {(() => {
+                    const activeWorker =
+                      workerLocations.find((w) => w.workerId === focusedWorkerId) ||
+                      workerLocations[0];
+                    const centerLat = activeWorker ? activeWorker.lat : (myGps?.lat ?? 25.3485);
+                    const centerLng = activeWorker ? activeWorker.lng : (myGps?.lng ?? 74.6342);
+                    const activeName = activeWorker ? activeWorker.name : "कार्यकर्ता";
+
+                    return (
+                      <div className="bmMapContainer">
+                        {/* Map Header / Filter Chips */}
+                        <div
+                          style={{
+                            padding: "8px 12px",
+                            background: "#f8fafc",
+                            borderBottom: "1px solid #e2e8f0",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            overflowX: "auto",
+                          }}
+                        >
+                          <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>
+                            🎯 {lang === "hi" ? "मैप पर देखें:" : "View on Map:"}
+                          </span>
+                          {workerLocations.map((w) => {
+                            const isSelected =
+                              (focusedWorkerId === w.workerId) ||
+                              (!focusedWorkerId && w.workerId === activeWorker?.workerId);
+                            return (
+                              <button
+                                key={w.workerId}
+                                type="button"
+                                onClick={() => setFocusedWorkerId(w.workerId)}
+                                style={{
+                                  padding: "3px 8px",
+                                  borderRadius: "14px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  whiteSpace: "nowrap",
+                                  cursor: "pointer",
+                                  border: isSelected ? "1.5px solid #0062cc" : "1px solid #cbd5e1",
+                                  background: isSelected ? "#e0f2fe" : "#ffffff",
+                                  color: isSelected ? "#0284c7" : "#334155",
+                                }}
+                              >
+                                {w.isOnline ? "🟢" : "⚪"} {w.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Interactive Google Map Iframe */}
+                        <iframe
+                          title="Google Live Location Map"
+                          className="bmMapIframe"
+                          src={`https://maps.google.com/maps?q=${centerLat},${centerLng}&z=15&output=embed`}
+                          loading="lazy"
+                          allowFullScreen
+                        />
+
+                        {/* Map Bottom Bar */}
+                        <div className="bmMapActionOverlay">
+                          <span style={{ color: "#334155" }}>
+                            📍 <b>{activeName}</b> की लाइव स्थिति ({centerLat.toFixed(4)}, {centerLng.toFixed(4)})
+                          </span>
+                          <a
+                            href={`https://www.google.com/maps?q=${centerLat},${centerLng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bmOpenAllMapsBtn"
+                          >
+                            🗺️ {lang === "hi" ? "Google Maps ऐप में खोलें" : "Open in Google Maps"}
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Worker Cards List */}
+                  <div style={{ marginBottom: "12px", fontSize: "13.5px", fontWeight: 800, color: "#1e293b" }}>
+                    📋 {lang === "hi" ? "सभी कार्यकर्ताओं की स्थिति व संपर्क" : "All Workers Status & Direct Contact"}
+                  </div>
+
+                  {workerLocations.map((w) => {
+                    const isFocused = focusedWorkerId === w.workerId;
+                    return (
+                      <div
+                        key={w.workerId}
+                        className="bmWorkerLocationCard"
+                        style={{
+                          borderColor: isFocused ? "#0284c7" : "#e2e8f0",
+                          backgroundColor: isFocused ? "#f0f9ff" : "#ffffff",
+                        }}
+                      >
+                        <div className="bmWorkerCardTop">
+                          <div className="bmWorkerNameCol">
+                            <div className="bmWorkerAvatar">
+                              {w.name.charAt(0)}
+                              {w.isOnline && <span className="bmLivePulseDot" />}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: "14.5px", fontWeight: 800, color: "#0f172a" }}>{w.name}</div>
+                              <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", marginTop: "2px" }}>
+                                <span style={{
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "#f1f5f9",
+                                  color: "#475569",
+                                  padding: "2px 6px",
+                                  borderRadius: "4px"
+                                }}>
+                                  {w.roleTitle || "बूथ कार्यकर्ता"}
+                                </span>
+                                <span className={`bmLiveStatusBadge ${w.isOnline ? "online" : "offline"}`}>
+                                  {w.isOnline ? "🟢 लाइव ऑनलाइन" : "⚪ ऑफलाइन"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setFocusedWorkerId(w.workerId)}
+                            style={{
+                              border: "1px solid #0284c7",
+                              background: "#e0f2fe",
+                              color: "#0284c7",
+                              borderRadius: "6px",
+                              padding: "4px 8px",
+                              fontSize: "11px",
+                              fontWeight: 700,
+                              cursor: "pointer",
+                            }}
+                          >
+                            🎯 मैप पर पिन
+                          </button>
+                        </div>
+
+                        <div className="bmWorkerAddressBox">
+                          <div>📍 <b>स्थान:</b> {w.address || "वार्ड 34, भीलवाड़ा क्षेत्र"}</div>
+                          <div>🗳️ <b>आवंटित बूथ:</b> बूथ {w.assignedBooths?.join(", ") || "1"}</div>
+                          <div>🌐 <b>GPS:</b> {w.lat.toFixed(5)}, {w.lng.toFixed(5)} (±{w.accuracy || 10}m)</div>
+                          <div>
+                            🕒 <b>अंतिम अपडेट:</b>{" "}
+                            {(() => {
+                              const diffSec = Math.floor((Date.now() - (w.lastUpdated || Date.now())) / 1000);
+                              if (diffSec < 60) return "अभी (Live)";
+                              const diffMin = Math.floor(diffSec / 60);
+                              if (diffMin < 60) return `${diffMin} मिनट पहले`;
+                              return `${Math.floor(diffMin / 60)} घंटे पहले`;
+                            })()}
+                          </div>
+                        </div>
+
+                        {/* 4 Action Buttons for each Worker */}
+                        <div className="bmWorkerActionRow">
+                          <a
+                            href={`https://www.google.com/maps?q=${w.lat},${w.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bmWorkerBtn bmBtnMapTrack"
+                            title="Google Maps पर लाइव स्थान देखें"
+                          >
+                            🗺️ {lang === "hi" ? "गूगल मैप्स" : "Maps"}
+                          </a>
+                          <a
+                            href={`https://www.google.com/maps/dir/?api=1&destination=${w.lat},${w.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bmWorkerBtn bmBtnDirections"
+                            title="कार्यकर्ता तक पहुंचने का रास्ता नेविगेट करें"
+                          >
+                            🧭 {lang === "hi" ? "दिशा-निर्देश" : "Directions"}
+                          </a>
+                          <a
+                            href={`tel:${w.phone}`}
+                            className="bmWorkerBtn bmBtnWorkerCall"
+                            title="कार्यकर्ता को सीधे फोन कॉल करें"
+                          >
+                            📞 {lang === "hi" ? "कॉल करें" : "Call"}
+                          </a>
+                          <a
+                            href={`https://wa.me/${w.phone.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+                              `नमस्ते ${w.name} जी, आपकी वर्तमान लाइव लोकेशन और बूथ स्थिति क्या है?`
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bmWorkerBtn bmBtnWorkerWA"
+                            title="व्हाट्सएप पर मैसेज भेजें"
+                          >
+                            💬 {lang === "hi" ? "व्हाट्सएप" : "WhatsApp"}
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+                /* Polling Station Tab */
+                <div>
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1.5px solid #bae6fd",
+                      borderRadius: "12px",
+                      padding: "16px",
+                      marginBottom: "16px",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                    }}
+                  >
+                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7", textTransform: "uppercase" }}>
+                      POLLING STATION / मतदान केंद्र
+                    </span>
+                    <h4 style={{ margin: "6px 0 4px", fontSize: "17px", color: "#0f172a" }}>
+                      {t.pollingStationName}
+                    </h4>
+                    <p style={{ margin: "0 0 10px", fontSize: "13.5px", color: "#475467" }}>
+                      {t.pollingStationAddress}
+                    </p>
+                    <div style={{ fontSize: "12.5px", color: "#0369a1", fontWeight: 600 }}>
+                      🕒 {t.pollingTime}
+                    </div>
+                  </div>
+
+                  {/* Polling Station Map Embed */}
+                  <div className="bmMapContainer" style={{ marginBottom: "16px" }}>
+                    <iframe
+                      title="Polling Station Map"
+                      className="bmMapIframe"
+                      src="https://maps.google.com/maps?q=25.3485,74.6342&z=16&output=embed"
+                      loading="lazy"
+                    />
+                    <div className="bmMapActionOverlay">
+                      <span>🏛️ {t.pollingStationName}</span>
+                      <a
+                        href="https://maps.google.com/?q=Govt+Senior+Secondary+School+Bhilwara"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="bmOpenAllMapsBtn"
+                      >
+                        🗺️ {t.openInMaps}
+                      </a>
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: "12px",
+                      padding: "14px",
+                      marginBottom: "16px",
+                      fontSize: "13.5px",
+                      color: "#334155",
+                    }}
+                  >
+                    <p style={{ margin: "0 0 8px" }}>
+                      👤 <b>बूथ प्रभारी (Supervisor):</b> Amit Joshi (+91 98290 12345)
+                    </p>
+                    <p style={{ margin: "0 0 8px" }}>
+                      🗳️ <b>भाग / बूथ संख्या:</b> {partFilter === "ALL" ? "1 (वार्ड 34)" : `भाग सं. ${partFilter}`}
+                    </p>
+                    <p style={{ margin: "0" }}>
+                      📍 <b>निकटतम लैंडमार्क:</b> सुभाष नगर चौराहा, भीलवाड़ा
+                    </p>
+                  </div>
+
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <button
+                      type="button"
+                      className="primary"
+                      style={{ flex: 1 }}
+                      onClick={() => {
+                        window.open("https://maps.google.com/?q=Govt+Senior+Secondary+School+Bhilwara", "_blank");
+                      }}
+                    >
+                      🗺️ {t.openInMaps}
+                    </button>
+                    <button
+                      type="button"
+                      className="outline"
+                      onClick={() => setShowLocationModal(false)}
+                    >
+                      ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
