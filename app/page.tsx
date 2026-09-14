@@ -1246,6 +1246,35 @@ function BoothManagerView({
     setShowPrintSlipScreen(true);
   };
 
+  // Print single voter slip handler
+  const handlePrintVoterSlip = () => {
+    if (typeof document !== "undefined") {
+      document.body.classList.add("printing-single-slip");
+    }
+    setTimeout(() => {
+      window.print();
+    }, 50);
+  };
+
+  // Sync body class when single slip screen is opened/closed
+  useEffect(() => {
+    if (showPrintSlipScreen || showSlipModal) {
+      document.body.classList.add("printing-single-slip");
+    } else {
+      document.body.classList.remove("printing-single-slip");
+    }
+    const handleAfterPrint = () => {
+      if (!showPrintSlipScreen && !showSlipModal) {
+        document.body.classList.remove("printing-single-slip");
+      }
+    };
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      document.body.classList.remove("printing-single-slip");
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, [showPrintSlipScreen, showSlipModal]);
+
   // 2. मैसेज (Normal SMS Intent - Opens blank message composer without pre-filled text)
   const handleSendActionSMS = () => {
     if (!activeActionVoter) return;
@@ -2243,7 +2272,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       )}
 
       {/* 4. Tabular Voter Roll (Exact Layout from Screenshot) */}
-      <div className="bmTableContainer printableArea">
+      <div className={`bmTableContainer ${showPrintSlipScreen || showSlipModal ? "noPrint" : "printableArea"}`}>
         <table className="bmTable">
           <thead>
             <tr>
@@ -2818,8 +2847,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           2. NEW SCREEN: PRINT VOTER SLIP (100% 1:1 WITH IMAGE 2)
           ===================================================================== */}
       {showPrintSlipScreen && activeActionVoter && (
-        <div className="bmFullscreenModalOverlay noPrint">
-          <div className="bmHeaderBlue">
+        <div className="bmFullscreenModalOverlay">
+          <div className="bmHeaderBlue noPrint">
             <button
               className="bmBackBtn"
               onClick={() => setShowPrintSlipScreen(false)}
@@ -2832,7 +2861,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
           <div className="bmScreenContent">
             {/* Printer Selector Card */}
-            <div className="bmPrinterCard">
+            <div className="bmPrinterCard noPrint">
               <div className="bmPrinterLabel">Printer</div>
               <select
                 className="bmPrinterSelect"
@@ -2848,7 +2877,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
             {/* Add New Printer Link */}
             <a
-              className="bmAddPrinterLink"
+              className="bmAddPrinterLink noPrint"
               onClick={() => {
                 const p = prompt("नया प्रिंटर नाम या ब्लूटूथ डिवाइस का नाम दर्ज करें:", "Thermal Bluetooth Printer");
                 if (p) {
@@ -2861,8 +2890,16 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               Add New Printer
             </a>
 
-            {/* Dotted Voter Slip Card */}
-            <div className="bmDottedSlipCard">
+            {/* Dotted Voter Slip Card (Only this prints) */}
+            <div
+              className={`bmDottedSlipCard printableArea printableSlip ${
+                selectedPrinter.includes("58mm")
+                  ? "printer58mm"
+                  : selectedPrinter.includes("80mm")
+                  ? "printer80mm"
+                  : ""
+              }`}
+            >
               <div className="bmSlipRow">
                 <span><b>क्रम सं : {activeActionVoter.serialNo || "—"}</b></span>
                 <span><b>भाग सं : {activeActionVoter.booth || "—"}</b></span>
@@ -2888,10 +2925,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             {/* Bottom Print Button */}
             <button
               type="button"
-              className="bmBottomPrintBtn"
-              onClick={() => {
-                window.print();
-              }}
+              className="bmBottomPrintBtn noPrint"
+              onClick={handlePrintVoterSlip}
             >
               Print
             </button>
@@ -3234,9 +3269,9 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
 
       {/* 6. Modal: Slip Message (स्लिप मैसेज / WhatsApp Slip) */}
       {showSlipModal && activeVoterForSlip && (
-        <div className="modalOverlay noPrint">
+        <div className="modalOverlay">
           <div className="modalBox">
-            <div className="modalHead">
+            <div className="modalHead noPrint">
               <h3>{t.officialVoterSlip}</h3>
               <button onClick={() => setShowSlipModal(false)}>
                 <X size={18} />
@@ -3245,6 +3280,7 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
             <div className="modalBody">
               {/* Official Slip Preview Card */}
               <div
+                className="printableArea printableSlip"
                 style={{
                   border: "2px solid #026aa7",
                   borderRadius: "12px",
@@ -3304,7 +3340,7 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
               </div>
 
               {/* Recipient Phone Input */}
-              <div className="formGroup">
+              <div className="formGroup noPrint">
                 <label>{t.updateMobile}</label>
                 <div style={{ display: "flex", gap: "8px" }}>
                   <input
@@ -3335,7 +3371,7 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                 </div>
               </div>
 
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "16px" }}>
+              <div className="noPrint" style={{ display: "flex", justifyContent: "space-between", marginTop: "16px" }}>
                 <button
                   type="button"
                   className="outline"
@@ -3346,7 +3382,7 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                 <button
                   type="button"
                   className="primary"
-                  onClick={() => window.print()}
+                  onClick={handlePrintVoterSlip}
                 >
                   <Printer size={16} /> {t.printSlip}
                 </button>

@@ -672,20 +672,154 @@
 }
 
 @media print {
+  @page {
+    margin: 8mm;
+    size: auto;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  /* 1. Strictly hide anything marked as noPrint */
+  .noPrint,
+  .noPrint * {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* 2. Hide everything by default */
   body * {
     visibility: hidden;
   }
-  .printableArea, .printableArea * {
-    visibility: visible;
+
+  /* 3. Make printable areas visible */
+  .printableArea,
+  .printableArea * {
+    visibility: visible !important;
   }
-  .printableArea {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 100%;
+
+  /* 4. Full Voter Roll Table Print Mode (When NOT printing single slip) */
+  body:not(.printing-single-slip) .bmTableContainer.printableArea {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    display: block !important;
+    visibility: visible !important;
   }
-  .noPrint {
+
+  /* 5. Single Voter Slip Print Mode */
+  body.printing-single-slip .bmTableContainer,
+  body.printing-single-slip .bmTableContainer * {
     display: none !important;
+    visibility: hidden !important;
+  }
+
+  .bmFullscreenModalOverlay:not(.noPrint) {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    background: transparent !important;
+    display: block !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .bmFullscreenModalOverlay:not(.noPrint) .bmScreenContent {
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    display: block !important;
+  }
+
+  .modalOverlay:not(.noPrint) {
+    position: static !important;
+    inset: auto !important;
+    background: transparent !important;
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .modalOverlay:not(.noPrint) .modalBox {
+    position: static !important;
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  .modalOverlay:not(.noPrint) .modalBody {
+    padding: 0 !important;
+  }
+
+  /* Dotted Slip Card in Print Preview / Print Output */
+  .bmDottedSlipCard.printableSlip {
+    position: static !important;
+    display: block !important;
+    visibility: visible !important;
+    margin: 15px auto !important;
+    width: 340px !important;
+    max-width: 95% !important;
+    background: #ffffff !important;
+    border: 2px dashed #000000 !important;
+    border-radius: 8px !important;
+    padding: 16px 14px !important;
+    color: #000000 !important;
+    font-size: 15px !important;
+    line-height: 1.8 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .bmDottedSlipCard.printableSlip.printer58mm {
+    width: 54mm !important;
+    font-size: 12px !important;
+    line-height: 1.6 !important;
+    padding: 8px 6px !important;
+  }
+
+  .bmDottedSlipCard.printableSlip.printer80mm {
+    width: 74mm !important;
+    font-size: 14px !important;
+    line-height: 1.7 !important;
+    padding: 12px 10px !important;
+  }
+
+  .bmDottedSlipCard.printableSlip * {
+    visibility: visible !important;
+    color: #000000 !important;
+  }
+
+  .bmDottedSlipCard.printableSlip .bmSlipRow {
+    display: flex !important;
+    justify-content: space-between !important;
+    margin-bottom: 4px !important;
+  }
+
+  .bmDottedSlipCard.printableSlip .bmSlipField {
+    margin-bottom: 4px !important;
+  }
+
+  .bmDottedSlipCard.printableSlip b {
+    color: #000000 !important;
+    font-weight: 700 !important;
   }
 }
 
