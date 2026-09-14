@@ -871,6 +871,30 @@ function BoothManagerView({
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [updateTab, setUpdateTab] = useState<"sync" | "add" | "upload">("sync");
 
+  // Voter Slip Custom Message (1:1 with user screenshot)
+  const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
+  const [customSlipMsg, setCustomSlipMsg] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("voterdesk_slip_msg");
+      if (saved) return saved;
+    }
+    return `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
+  });
+  const [showSlipMsgModal, setShowSlipMsgModal] = useState(false);
+  const [tempSlipMsg, setTempSlipMsg] = useState(customSlipMsg);
+  const [localToast, setLocalToast] = useState("");
+
+  const handleSaveSlipMsg = () => {
+    const finalMsg = tempSlipMsg.trim() || defaultSlipMsg;
+    setCustomSlipMsg(finalMsg);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("voterdesk_slip_msg", finalMsg);
+    }
+    setShowSlipMsgModal(false);
+    setLocalToast("✅ वोटर स्लिप मैसेज सेव हो गया!");
+    setTimeout(() => setLocalToast(""), 3000);
+  };
+
   // Slip send phone state
   const [recipientPhone, setRecipientPhone] = useState("");
 
@@ -1174,6 +1198,7 @@ function BoothManagerView({
   const generateWhatsAppSlipText = (v: VoterRecord) => {
     const candName = candidate ? candidate.name : "अभय कुमार";
     const candParty = candidate ? candidate.party : "निर्दलीय";
+    const campaignMsg = customSlipMsg.trim() || `vote for "${candName}"`;
     return `🇮🇳 *मतदाता पर्ची (OFFICIAL VOTER SLIP)* 🇮🇳%0A` +
       `*उम्मीदवार:* ${candName} (${candParty})%0A` +
       `----------------------------------------%0A` +
@@ -1184,7 +1209,7 @@ function BoothManagerView({
       `🏠 *मकान नं.:* ${v.house || "—"}${v.address ? ` (${v.address})` : ""}%0A` +
       `📍 *मतदान केंद्र:* ${t.pollingStationName}%0A` +
       `----------------------------------------%0A` +
-      `🗳️ कृपया अपना अमूल्य मत देकर भारी मतों से विजयी बनाएं! 🙏`;
+      `🗳️ ${campaignMsg} 🙏`;
   };
 
   const handleSendWhatsApp = (v: VoterRecord) => {
@@ -1198,8 +1223,8 @@ function BoothManagerView({
 
   return (
     <div className="bmShell">
-      {/* Floating Live Sync Toast Notification */}
-      {syncToast && (
+      {/* Floating Live Sync / Slip Toast Notification */}
+      {(syncToast || localToast) && (
         <div
           style={{
             position: "fixed",
@@ -1222,67 +1247,35 @@ function BoothManagerView({
             textAlign: "center",
           }}
         >
-          <RefreshCw size={13} style={{ animation: "spin 1s linear infinite" }} />
-          <span>{syncToast}</span>
+          <RefreshCw size={13} style={{ animation: syncToast ? "spin 1s linear infinite" : "none" }} />
+          <span>{localToast || syncToast}</span>
         </div>
       )}
 
       {/* 1. Header (Matching Screenshot) */}
       <header className="bmHeader noPrint">
         <div className="bmHeaderLeft">
-          <div
-            style={{
-              width: "36px",
-              height: "36px",
-              borderRadius: "10px",
-              background: "rgba(255, 255, 255, 0.15)",
-              border: "1px solid rgba(255, 255, 255, 0.3)",
-              display: "grid",
-              placeItems: "center",
-              flexShrink: 0,
-            }}
-          >
-            <ShieldCheck size={22} color="#ffffff" />
+          <div className="bmHeaderLogo">
+            <ShieldCheck size={20} color="#ffffff" />
           </div>
-          <div>
+          <div style={{ minWidth: 0, overflow: "hidden" }}>
             <b className="bmHeaderTitle">{t.bmTitle}</b>
             <span className="bmHeaderSub">{t.bmSub}</span>
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div className="bmHeaderRight">
           {/* Live Multi-Mobile Sync Indicator */}
           <button
             type="button"
             onClick={() => onRefreshData(true)}
-            style={{
-              background: "rgba(16, 185, 129, 0.25)",
-              border: "1px solid rgba(52, 211, 153, 0.7)",
-              color: "#ecfdf5",
-              borderRadius: "16px",
-              padding: "4px 9px",
-              fontSize: "11px",
-              fontWeight: 700,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "5px",
-              cursor: "pointer",
-            }}
+            className="bmLiveBadge"
             title="क्लिक करके अभी डेटा रिफ्रेश व 15 मोबाइल्स में सिंक करें"
           >
-            <span
-              style={{
-                width: "7px",
-                height: "7px",
-                borderRadius: "50%",
-                background: "#34d399",
-                boxShadow: "0 0 6px #34d399",
-                display: "inline-block",
-              }}
-            />
-            <span>{onlineWorkersCount > 1 ? `${onlineWorkersCount} मोबाइल्स` : "15 मोबाइल्स"} लाइव</span>
+            <span className="bmLiveDot" />
+            <span>{onlineWorkersCount > 1 ? `${onlineWorkersCount} लाइव` : "15 लाइव"}</span>
             <RefreshCw
-              size={11}
+              size={10}
               style={{
                 animation: isSyncing ? "spin 1s linear infinite" : "none",
               }}
@@ -1293,23 +1286,11 @@ function BoothManagerView({
           <button
             type="button"
             onClick={toggleLang}
-            style={{
-              background: "rgba(255, 255, 255, 0.18)",
-              color: "#ffffff",
-              border: "1px solid rgba(255, 255, 255, 0.4)",
-              borderRadius: "8px",
-              padding: "5px 9px",
-              fontSize: "12px",
-              fontWeight: 800,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "4px",
-              cursor: "pointer",
-            }}
+            className="bmLangBtn"
             title="Switch Language / भाषा बदलें"
           >
-            <Globe size={13} />
-            <span>{t.langToggle}</span>
+            <Globe size={11} />
+            <span>{lang === "hi" ? "EN" : "हि"}</span>
           </button>
 
           {/* Admin Panel Button (for Candidate Admin / Super Admin) */}
@@ -1317,19 +1298,10 @@ function BoothManagerView({
             <button
               type="button"
               onClick={onOpenAdminPanel}
-              style={{
-                background: "rgba(255, 255, 255, 0.18)",
-                color: "#ffffff",
-                border: "1px solid rgba(255, 255, 255, 0.4)",
-                borderRadius: "8px",
-                padding: "5px 9px",
-                fontSize: "12px",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
+              className="bmAdminBtn"
               title={t.adminPanel}
             >
-              <span>{t.adminPanel}</span>
+              <span>{lang === "hi" ? "एडमिन" : "Admin"}</span>
             </button>
           )}
         </div>
@@ -1341,9 +1313,10 @@ function BoothManagerView({
           type="button"
           className="bmActionBtn bmBtnSlip"
           onClick={() => {
-            setSelectedVoter(selectedVoter || filteredVoters[0] || voters[0]);
-            setShowSlipModal(true);
+            setTempSlipMsg(customSlipMsg);
+            setShowSlipMsgModal(true);
           }}
+          title="वोटर स्लिप के साथ मैसेज सेट करें"
         >
           <span>{lang === "hi" ? "स्लिप" : "Slip"}</span>
           <span>{lang === "hi" ? "मैसेज" : "Message"}</span>
@@ -2203,6 +2176,44 @@ function BoothManagerView({
             >
               ✏️ {lang === "hi" ? "एडिट" : "Edit"}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Modal: वोटर स्लिप के साथ मैसेज (Matching User Screenshot 1:1) */}
+      {showSlipMsgModal && (
+        <div
+          className="bmSlipMsgModalOverlay noPrint"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSlipMsgModal(false);
+          }}
+        >
+          <div className="bmSlipMsgBox">
+            <h3 className="bmSlipMsgTitle">वोटर स्लिप के साथ मैसेज</h3>
+            <input
+              type="text"
+              className="bmSlipMsgInput"
+              value={tempSlipMsg}
+              onChange={(e) => setTempSlipMsg(e.target.value)}
+              placeholder='vote for "Candidate Name"'
+              autoFocus
+            />
+            <div className="bmSlipMsgBtnRow">
+              <button
+                type="button"
+                className="bmSlipMsgBtnCancel"
+                onClick={() => setShowSlipMsgModal(false)}
+              >
+                कैंसिल
+              </button>
+              <button
+                type="button"
+                className="bmSlipMsgBtnSave"
+                onClick={handleSaveSlipMsg}
+              >
+                सेव करें
+              </button>
+            </div>
           </div>
         </div>
       )}
