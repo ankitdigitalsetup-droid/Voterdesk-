@@ -121,14 +121,14 @@ export function detectFieldMapping(columns: string[]) {
       mapping.boothAddress = col;
     }
 
-    // Optional: EPIC No.
-    if (!mapping.epic && (c.includes("epic") || c.includes("voter id") || c.includes("card") || c.includes("पहचान") || c.includes("id"))) {
-      mapping.epic = col;
+    // Age (आयु / उम्र)
+    if (!mapping.age && (c.includes("age") || c.includes("आयु") || c.includes("उम्र") || c.includes("वय") || c.includes("years") || c.includes("वर्ष"))) {
+      mapping.age = col;
     }
 
-    // Optional: Age
-    if (!mapping.age && (c.includes("age") || c.includes("आयु") || c.includes("उम्र"))) {
-      mapping.age = col;
+    // EPIC / Voter ID (पहचान पत्र क्र.)
+    if (!mapping.epic && (c.includes("epic") || c.includes("voter id") || c.includes("voterid") || c.includes("पहचान पत्र") || c.includes("पहचान") || c.includes("card no") || c.includes("cardno") || c.includes("id no") || c.includes("voter card") || c.includes("कार्ड") || c === "id" || c.includes("epc"))) {
+      mapping.epic = col;
     }
 
     // Optional: Gender
@@ -140,7 +140,7 @@ export function detectFieldMapping(columns: string[]) {
   return mapping;
 }
 
-// Generate sample Excel template with the exact 11 requested fields and trigger download in browser
+// Generate sample Excel template with the exact requested fields order and trigger download in browser
 export function downloadSampleExcelTemplate() {
   const sampleData = [
     {
@@ -151,11 +151,12 @@ export function downloadSampleExcelTemplate() {
       "वोट डाला": "हाँ",
       "सपोर्टर है": "हाँ",
       "बाहर है": "नहीं",
+      "आयु": "45",
       "मोबाइल नो": "9829011111",
+      "पहचान पत्र (EPIC)": "RJX1001001",
       "हाउस No": "12",
       "एड्रेस": "वार्ड 34, स्टेशन रोड",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      "पहचान पत्र (EPIC)": "RJX1001001",
     },
     {
       "भाग संख्या": "1",
@@ -165,11 +166,12 @@ export function downloadSampleExcelTemplate() {
       "वोट डाला": "नहीं",
       "सपोर्टर है": "हाँ",
       "बाहर है": "नहीं",
+      "आयु": "32",
       "मोबाइल नो": "9829022222",
+      "पहचान पत्र (EPIC)": "RJX1001002",
       "हाउस No": "14",
       "एड्रेस": "वार्ड 34, गांधी नगर",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      "पहचान पत्र (EPIC)": "RJX1001002",
     },
     {
       "भाग संख्या": "1",
@@ -179,11 +181,12 @@ export function downloadSampleExcelTemplate() {
       "वोट डाला": "हाँ",
       "सपोर्टर है": "हाँ",
       "बाहर है": "हाँ",
+      "आयु": "28",
       "मोबाइल नो": "9829088888",
+      "पहचान पत्र (EPIC)": "RJX1001025",
       "हाउस No": "64",
       "एड्रेस": "वार्ड 34, शास्त्री नगर",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      "पहचान पत्र (EPIC)": "RJX1001025",
     },
     {
       "भाग संख्या": "1",
@@ -193,11 +196,12 @@ export function downloadSampleExcelTemplate() {
       "वोट डाला": "नहीं",
       "सपोर्टर है": "हाँ",
       "बाहर है": "नहीं",
+      "आयु": "54",
       "मोबाइल नो": "9829066666",
+      "पहचान पत्र (EPIC)": "RJX1001019",
       "हाउस No": "52",
       "एड्रेस": "वार्ड 34, शांति नगर",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      "पहचान पत्र (EPIC)": "RJX1001019",
     }
   ];
 

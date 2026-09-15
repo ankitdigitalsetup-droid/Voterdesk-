@@ -72,6 +72,7 @@ export interface VoterRecord {
     detail1?: string; // अन्य विवरण 1
     detail2?: string; // अन्य विवरण 2
   };
+  extraData?: Record<string, any>; // All raw/extra columns uploaded via Excel
 }
 
 export interface WorkerLocation {

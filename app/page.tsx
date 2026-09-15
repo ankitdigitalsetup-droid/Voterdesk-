@@ -37,6 +37,7 @@ import {
   Copy,
   Sparkles,
   Image as ImageIcon,
+  ArrowUpDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store } from "@/lib/data-store";
@@ -683,16 +684,36 @@ function SuperAdminView({
     try {
       const parsed = await parseExcelFile(file);
       const mapping = detectFieldMapping(parsed.columns);
+      const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
         .map((row, idx) => {
           const boothVal = String(row[mapping.booth] || "1").trim();
+          const serialVal = row[mapping.serialNo] ? Number(row[mapping.serialNo]) || (idx + 1) : (idx + 1);
+          const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
+            ? String(row[mapping.age]).trim()
+            : "35";
+          let epicVal = mapping.epic && row[mapping.epic] !== undefined && String(row[mapping.epic]).trim() !== ""
+            ? String(row[mapping.epic]).trim().toUpperCase()
+            : "";
+          if (!epicVal) {
+            epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
+          }
+
+          // Preserve all extra columns from Excel sheet
+          const extraData: Record<string, any> = {};
+          for (const [key, val] of Object.entries(row)) {
+            if (!mappedColNames.has(key)) {
+              extraData[key] = val;
+            }
+          }
+
           return {
             name: String(row[mapping.name] || "").trim(),
             guardian: String(row[mapping.guardian] || "").trim(),
-            epic: String(row[mapping.epic] || `EPIC_${idx + 1}`).trim(),
+            epic: epicVal,
             booth: boothVal,
-            serialNo: row[mapping.serialNo] ? Number(row[mapping.serialNo]) || (idx + 1) : (idx + 1),
-            age: String(row[mapping.age] || "35").trim(),
+            serialNo: serialVal,
+            age: ageVal,
             gender: String(row[mapping.gender] || "Male").trim(),
             house: String(row[mapping.house] || "").trim(),
             address: String(row[mapping.address] || "").trim(),
@@ -704,6 +725,8 @@ function SuperAdminView({
             status: "Pending" as VoterRecord["status"],
             worker: "Unassigned",
             candidateId: "",
+            extraData,
+            ...extraData,
           };
         })
         .filter((v) => v.name);
@@ -1849,6 +1872,38 @@ function BoothManagerView({
   const [tempSlipMsg, setTempSlipMsg] = useState(customSlipMsg);
   const [localToast, setLocalToast] = useState("");
 
+  // Age column sorting state (Ascending, Descending, None)
+  const [ageSortOrder, setAgeSortOrder] = useState<"none" | "asc" | "desc">("none");
+  const [showAgeSortMenu, setShowAgeSortMenu] = useState(false);
+
+  // Dynamic extra columns from uploaded Excel sheet
+  const extraExcelColumns = useMemo(() => {
+    const standardKeys = new Set([
+      "id", "candidateId", "booth", "serialNo", "name", "guardian", "age", "gender",
+      "house", "address", "boothAddress", "phone", "epic", "voted", "isSupporter",
+      "isOutside", "status", "worker", "notes", "slipMessage", "survey", "extraData",
+      "voterCount", "createdAt", "updatedAt"
+    ]);
+
+    const colsSet = new Set<string>();
+    for (const v of voters) {
+      if (v.extraData && typeof v.extraData === "object") {
+        for (const k of Object.keys(v.extraData)) {
+          if (!standardKeys.has(k)) {
+            colsSet.add(k);
+          }
+        }
+      }
+      for (const k of Object.keys(v)) {
+        const val = (v as Record<string, any>)[k];
+        if (!standardKeys.has(k) && typeof val !== "object" && typeof val !== "function") {
+          colsSet.add(k);
+        }
+      }
+    }
+    return Array.from(colsSet);
+  }, [voters]);
+
   const handleSaveSlipMsg = () => {
     const finalMsg = tempSlipMsg.trim() || defaultSlipMsg;
     setCustomSlipMsg(finalMsg);
@@ -2251,7 +2306,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
   // Filtered voters list
   const filteredVoters = useMemo(() => {
-    return voters.filter((v) => {
+    let list = voters.filter((v) => {
       if (user.role === "KARYAKARTA" && user.assignedBooths && user.assignedBooths.length > 0) {
         if (!user.assignedBooths.includes(v.booth)) return false;
       }
@@ -2291,7 +2346,35 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       }
       return true;
     });
-  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic, familyFilter]);
+
+    // Apply numerical Age Sorting (Ascending / Descending)
+    if (ageSortOrder !== "none") {
+      const getNumericAge = (v: VoterRecord) => {
+        if (!v.age) return -1;
+        const num = parseInt(String(v.age).replace(/\D/g, ""), 10);
+        return isNaN(num) ? -1 : num;
+      };
+
+      list = [...list].sort((a, b) => {
+        const ageA = getNumericAge(a);
+        const ageB = getNumericAge(b);
+        if (ageSortOrder === "asc") {
+          if (ageA === -1 && ageB === -1) return 0;
+          if (ageA === -1) return 1;
+          if (ageB === -1) return -1;
+          return ageA - ageB;
+        } else {
+          // Descending (High to Low)
+          if (ageA === -1 && ageB === -1) return 0;
+          if (ageA === -1) return 1;
+          if (ageB === -1) return -1;
+          return ageB - ageA;
+        }
+      });
+    }
+
+    return list;
+  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic, familyFilter, ageSortOrder]);
 
   // Auto-select and show details drawer when search pinpoints a single voter
   useEffect(() => {
@@ -2441,21 +2524,37 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const parsed = await parseExcelFile(file);
       const mapping = detectFieldMapping(parsed.columns);
+      const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const toImport = parsed.rows.map((row, idx) => {
         const boothVal = String(row[mapping.booth] || "1").trim();
         const serialVal = mapping.serialNo && row[mapping.serialNo] ? Number(row[mapping.serialNo]) : (idx + 1);
-        const epicVal = String(row[mapping.epic] || "").trim().toUpperCase() ||
-          `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
+        const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
+          ? String(row[mapping.age]).trim()
+          : "35";
+        let epicVal = mapping.epic && row[mapping.epic] !== undefined && String(row[mapping.epic]).trim() !== ""
+          ? String(row[mapping.epic]).trim().toUpperCase()
+          : "";
+        if (!epicVal) {
+          epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
+        }
 
         const isSupp = String(row[mapping.isSupporter] || "").trim();
         const votedVal = String(row[mapping.voted] || "").trim();
         const outsideVal = String(row[mapping.isOutside] || "").trim();
 
+        // Preserve all extra columns from Excel sheet
+        const extraData: Record<string, any> = {};
+        for (const [key, val] of Object.entries(row)) {
+          if (!mappedColNames.has(key)) {
+            extraData[key] = val;
+          }
+        }
+
         return {
           name: String(row[mapping.name] || "").trim(),
           epic: epicVal,
           guardian: String(row[mapping.guardian] || "").trim(),
-          age: String(row[mapping.age] || "35"),
+          age: ageVal,
           gender: String(row[mapping.gender] || "Male"),
           house: String(row[mapping.house] || "").trim(),
           booth: boothVal,
@@ -2468,6 +2567,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           boothAddress: String(row[mapping.boothAddress] || "").trim(),
           status: (isSupp === "हाँ" || isSupp === "Yes") ? ("In-Favor" as VoterRecord["status"]) : ("Pending" as VoterRecord["status"]),
           worker: "Unassigned",
+          extraData,
+          ...extraData,
         };
       }).filter((v) => v.name);
 
@@ -3125,16 +3226,173 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               <th style={{ minWidth: "85px" }}>{t.colVoted}</th>
               <th style={{ minWidth: "85px" }}>{t.colSupporter}</th>
               <th style={{ minWidth: "85px" }}>{t.colOutside}</th>
+              {/* 8. आयु (Age) - Placed BEFORE Mobile No with Sort Button */}
+              <th style={{ minWidth: "105px", position: "relative", textAlign: "center" }}>
+                <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "5px" }}>
+                  <span>{lang === "hi" ? "आयु" : "Age"}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAgeSortMenu((prev) => !prev);
+                    }}
+                    style={{
+                      background: ageSortOrder !== "none" ? "#0284c7" : "#ffffff",
+                      color: ageSortOrder !== "none" ? "#ffffff" : "#475569",
+                      border: "1px solid",
+                      borderColor: ageSortOrder !== "none" ? "#0284c7" : "#cbd5e1",
+                      borderRadius: "4px",
+                      padding: "2px 5px",
+                      cursor: "pointer",
+                      fontSize: "10.5px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "2px",
+                      fontWeight: 800,
+                      lineHeight: 1,
+                    }}
+                    title={lang === "hi" ? "आयु अनुसार क्रमबद्ध करें" : "Sort by Age"}
+                  >
+                    <ArrowUpDown size={11} />
+                    {ageSortOrder === "asc" && " ↑"}
+                    {ageSortOrder === "desc" && " ↓"}
+                  </button>
+                </div>
+
+                {/* Dropdown Menu for Age Sorting */}
+                {showAgeSortMenu && (
+                  <>
+                    <div
+                      style={{ position: "fixed", inset: 0, zIndex: 100 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAgeSortMenu(false);
+                      }}
+                    />
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        marginTop: "4px",
+                        background: "#ffffff",
+                        border: "1px solid #cbd5e1",
+                        borderRadius: "8px",
+                        boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+                        padding: "6px",
+                        zIndex: 101,
+                        minWidth: "190px",
+                        textAlign: "left",
+                        color: "#0f172a",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", padding: "4px 8px", borderBottom: "1px solid #f1f5f9", marginBottom: "4px" }}>
+                        {lang === "hi" ? "आयु के अनुसार क्रम (Sort Age)" : "Sort by Age"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAgeSortOrder("desc");
+                          setShowAgeSortMenu(false);
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          width: "100%",
+                          padding: "7px 10px",
+                          border: "none",
+                          borderRadius: "6px",
+                          background: ageSortOrder === "desc" ? "#e0f2fe" : "transparent",
+                          color: ageSortOrder === "desc" ? "#0369a1" : "#1e293b",
+                          fontSize: "12px",
+                          fontWeight: ageSortOrder === "desc" ? 700 : 500,
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span>⬇️</span>
+                        <span>{lang === "hi" ? "घटते क्रम में (Descending)" : "Descending Order"}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAgeSortOrder("asc");
+                          setShowAgeSortMenu(false);
+                        }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "8px",
+                          width: "100%",
+                          padding: "7px 10px",
+                          border: "none",
+                          borderRadius: "6px",
+                          background: ageSortOrder === "asc" ? "#e0f2fe" : "transparent",
+                          color: ageSortOrder === "asc" ? "#0369a1" : "#1e293b",
+                          fontSize: "12px",
+                          fontWeight: ageSortOrder === "asc" ? 700 : 500,
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <span>⬆️</span>
+                        <span>{lang === "hi" ? "बढ़ते क्रम में (Ascending)" : "Ascending Order"}</span>
+                      </button>
+                      {ageSortOrder !== "none" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAgeSortOrder("none");
+                            setShowAgeSortMenu(false);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            padding: "6px 10px",
+                            marginTop: "4px",
+                            borderTop: "1px solid #f1f5f9",
+                            background: "transparent",
+                            color: "#ef4444",
+                            fontSize: "11px",
+                            fontWeight: 600,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <span>✕</span>
+                          <span>{lang === "hi" ? "सामान्य क्रम (Reset)" : "Reset Default"}</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </th>
+              {/* 9. मोबाइल नो */}
               <th style={{ minWidth: "115px" }}>{t.colPhone}</th>
+              {/* 10. वोटर ID / पहचान पत्र - Placed AFTER Mobile No */}
+              <th style={{ minWidth: "115px" }}>{lang === "hi" ? "वोटर ID" : "Voter ID"}</th>
+              {/* 11. हाउस No */}
               <th style={{ width: "75px" }}>{t.colHouse}</th>
+              {/* 12. एड्रेस */}
               <th className="thLeft" style={{ minWidth: "150px" }}>{t.colAddress}</th>
+              {/* 13. Booth Address */}
               <th className="thLeft" style={{ minWidth: "170px" }}>{t.colBoothAddress}</th>
+              {/* 14+. Dynamic extra columns from Excel */}
+              {extraExcelColumns.map((colName) => (
+                <th key={colName} className="thLeft" style={{ minWidth: "120px" }}>
+                  {colName}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {filteredVoters.length === 0 ? (
               <tr>
-                <td colSpan={11} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                <td colSpan={13 + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
                   {t.noVotersMatch}
                 </td>
               </tr>
@@ -3235,7 +3493,12 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       </button>
                     </td>
 
-                    {/* 8. मोबाइल नो */}
+                    {/* 8. आयु (Age) - BEFORE Mobile No */}
+                    <td className="colCenter" style={{ fontWeight: 700, color: "#1e293b", fontSize: "12.5px" }}>
+                      {v.age ? `${v.age} वर्ष` : "—"}
+                    </td>
+
+                    {/* 9. मोबाइल नो */}
                     <td className="colPhone" onClick={(e) => e.stopPropagation()}>
                       {v.phone ? (
                         <a
@@ -3255,14 +3518,31 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       )}
                     </td>
 
-                    {/* 9. हाउस No */}
+                    {/* 10. वोटर ID (EPIC) - AFTER Mobile No */}
+                    <td className="colCenter" style={{ fontFamily: "monospace", fontWeight: 700, color: "#0369a1", fontSize: "12px" }}>
+                      {v.epic || "—"}
+                    </td>
+
+                    {/* 11. हाउस No */}
                     <td className="colHouse">{v.house || "—"}</td>
 
-                    {/* 10. एड्रेस */}
+                    {/* 12. एड्रेस */}
                     <td className="colAddress">{v.address || "—"}</td>
 
-                    {/* 11. Booth Address */}
+                    {/* 13. Booth Address */}
                     <td className="colBoothAddress">{v.boothAddress || "—"}</td>
+
+                    {/* 14+. All Dynamic Extra Columns from Excel */}
+                    {extraExcelColumns.map((colName) => {
+                      const val = (v.extraData && v.extraData[colName] !== undefined)
+                        ? v.extraData[colName]
+                        : (v as Record<string, any>)[colName];
+                      return (
+                        <td key={colName} style={{ fontSize: "12px", color: "#334155" }}>
+                          {val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "—"}
+                        </td>
+                      );
+                    })}
                   </tr>
                 );
               })
@@ -5255,8 +5535,38 @@ function VotersTable({
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [voters]);
 
+  const [ageSortOrder, setAgeSortOrder] = useState<"none" | "asc" | "desc">("none");
+  const [showAgeSortMenu, setShowAgeSortMenu] = useState(false);
+
+  const extraExcelColumns = useMemo(() => {
+    const standardKeys = new Set([
+      "id", "candidateId", "booth", "serialNo", "name", "guardian", "age", "gender",
+      "house", "address", "boothAddress", "phone", "epic", "voted", "isSupporter",
+      "isOutside", "status", "worker", "notes", "slipMessage", "survey", "extraData",
+      "voterCount", "createdAt", "updatedAt"
+    ]);
+
+    const colsSet = new Set<string>();
+    for (const v of voters) {
+      if (v.extraData && typeof v.extraData === "object") {
+        for (const k of Object.keys(v.extraData)) {
+          if (!standardKeys.has(k)) {
+            colsSet.add(k);
+          }
+        }
+      }
+      for (const k of Object.keys(v)) {
+        const val = (v as Record<string, any>)[k];
+        if (!standardKeys.has(k) && typeof val !== "object" && typeof val !== "function") {
+          colsSet.add(k);
+        }
+      }
+    }
+    return Array.from(colsSet);
+  }, [voters]);
+
   const filtered = useMemo(() => {
-    return voters.filter((v) => {
+    let list = voters.filter((v) => {
       if (boothFilter !== "ALL" && v.booth !== boothFilter) return false;
       if (statusFilter !== "ALL" && v.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
 
@@ -5282,7 +5592,33 @@ function VotersTable({
       }
       return true;
     });
-  }, [voters, boothFilter, statusFilter, q, advName, advFather, advAddress, advEpic]);
+
+    if (ageSortOrder !== "none") {
+      const getNumAge = (v: VoterRecord) => {
+        if (!v.age) return -1;
+        const n = parseInt(String(v.age).replace(/\D/g, ""), 10);
+        return isNaN(n) ? -1 : n;
+      };
+
+      list = [...list].sort((a, b) => {
+        const ageA = getNumAge(a);
+        const ageB = getNumAge(b);
+        if (ageSortOrder === "asc") {
+          if (ageA === -1 && ageB === -1) return 0;
+          if (ageA === -1) return 1;
+          if (ageB === -1) return -1;
+          return ageA - ageB;
+        } else {
+          if (ageA === -1 && ageB === -1) return 0;
+          if (ageA === -1) return 1;
+          if (ageB === -1) return -1;
+          return ageB - ageA;
+        }
+      });
+    }
+
+    return list;
+  }, [voters, boothFilter, statusFilter, q, advName, advFather, advAddress, advEpic, ageSortOrder]);
 
   const handleAddVoter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -5603,11 +5939,166 @@ function VotersTable({
                 <th style={{ minWidth: "85px" }}>वोट डाला</th>
                 <th style={{ minWidth: "85px" }}>सपोर्टर है</th>
                 <th style={{ minWidth: "85px" }}>बाहर है</th>
+                {/* 8. आयु (Age) - BEFORE Mobile No with Sort Button */}
+                <th style={{ minWidth: "105px", position: "relative", textAlign: "center" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "5px" }}>
+                    <span>आयु</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAgeSortMenu((prev) => !prev);
+                      }}
+                      style={{
+                        background: ageSortOrder !== "none" ? "#0284c7" : "#ffffff",
+                        color: ageSortOrder !== "none" ? "#ffffff" : "#475569",
+                        border: "1px solid",
+                        borderColor: ageSortOrder !== "none" ? "#0284c7" : "#cbd5e1",
+                        borderRadius: "4px",
+                        padding: "2px 5px",
+                        cursor: "pointer",
+                        fontSize: "10.5px",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "2px",
+                        fontWeight: 800,
+                        lineHeight: 1,
+                      }}
+                      title="आयु अनुसार क्रमबद्ध करें"
+                    >
+                      <ArrowUpDown size={11} />
+                      {ageSortOrder === "asc" && " ↑"}
+                      {ageSortOrder === "desc" && " ↓"}
+                    </button>
+                  </div>
+
+                  {showAgeSortMenu && (
+                    <>
+                      <div
+                        style={{ position: "fixed", inset: 0, zIndex: 100 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowAgeSortMenu(false);
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: "100%",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          marginTop: "4px",
+                          background: "#ffffff",
+                          border: "1px solid #cbd5e1",
+                          borderRadius: "8px",
+                          boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+                          padding: "6px",
+                          zIndex: 101,
+                          minWidth: "190px",
+                          textAlign: "left",
+                          color: "#0f172a",
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", padding: "4px 8px", borderBottom: "1px solid #f1f5f9", marginBottom: "4px" }}>
+                          आयु के अनुसार क्रम
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAgeSortOrder("desc");
+                            setShowAgeSortMenu(false);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            padding: "7px 10px",
+                            border: "none",
+                            borderRadius: "6px",
+                            background: ageSortOrder === "desc" ? "#e0f2fe" : "transparent",
+                            color: ageSortOrder === "desc" ? "#0369a1" : "#1e293b",
+                            fontSize: "12px",
+                            fontWeight: ageSortOrder === "desc" ? 700 : 500,
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span>⬇️</span>
+                          <span>घटते क्रम में (Descending)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAgeSortOrder("asc");
+                            setShowAgeSortMenu(false);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "8px",
+                            width: "100%",
+                            padding: "7px 10px",
+                            border: "none",
+                            borderRadius: "6px",
+                            background: ageSortOrder === "asc" ? "#e0f2fe" : "transparent",
+                            color: ageSortOrder === "asc" ? "#0369a1" : "#1e293b",
+                            fontSize: "12px",
+                            fontWeight: ageSortOrder === "asc" ? 700 : 500,
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <span>⬆️</span>
+                          <span>बढ़ते क्रम में (Ascending)</span>
+                        </button>
+                        {ageSortOrder !== "none" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAgeSortOrder("none");
+                              setShowAgeSortMenu(false);
+                            }}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              width: "100%",
+                              padding: "6px 10px",
+                              marginTop: "4px",
+                              borderTop: "1px solid #f1f5f9",
+                              background: "transparent",
+                              color: "#ef4444",
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              cursor: "pointer",
+                            }}
+                          >
+                            <span>✕</span>
+                            <span>सामान्य क्रम (Reset)</span>
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </th>
+                {/* 9. मोबाइल नो */}
                 <th style={{ minWidth: "115px" }}>मोबाइल नो</th>
+                {/* 10. वोटर ID (EPIC) - AFTER Mobile No */}
+                <th style={{ width: "110px" }}>वोटर ID</th>
+                {/* 11. हाउस No */}
                 <th style={{ width: "75px" }}>हाउस No</th>
+                {/* 12. एड्रेस */}
                 <th style={{ minWidth: "140px" }}>एड्रेस</th>
+                {/* 13. Booth Address */}
                 <th style={{ minWidth: "160px" }}>Booth Address</th>
-                <th style={{ width: "110px" }}>EPIC</th>
+                {/* 14+. Dynamic extra columns from Excel */}
+                {extraExcelColumns.map((colName) => (
+                  <th key={colName} className="thLeft" style={{ minWidth: "120px" }}>
+                    {colName}
+                  </th>
+                ))}
                 <th style={{ width: "50px" }}>Actions</th>
               </tr>
             </thead>
@@ -5730,7 +6221,12 @@ function VotersTable({
                       </button>
                     </td>
 
-                    {/* 8. मोबाइल नो */}
+                    {/* 8. आयु (Age) - BEFORE Mobile No */}
+                    <td style={{ textAlign: "center", fontWeight: 700, color: "#1e293b", fontSize: "12.5px" }}>
+                      {v.age ? `${v.age} वर्ष` : "—"}
+                    </td>
+
+                    {/* 9. मोबाइल नो */}
                     <td style={{ textAlign: "center", whiteSpace: "nowrap" }}>
                       {v.phone ? (
                         <a
@@ -5750,19 +6246,31 @@ function VotersTable({
                       )}
                     </td>
 
-                    {/* 9. हाउस No */}
+                    {/* 10. वोटर ID (EPIC) - AFTER Mobile No */}
+                    <td style={{ textAlign: "center" }}>
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--blue)", fontSize: "12px" }}>{v.epic || "—"}</span>
+                    </td>
+
+                    {/* 11. हाउस No */}
                     <td style={{ textAlign: "center", fontWeight: 600 }}>{v.house || "—"}</td>
 
-                    {/* 10. एड्रेस */}
+                    {/* 12. एड्रेस */}
                     <td style={{ fontSize: "12px", color: "#334155" }}>{v.address || "—"}</td>
 
-                    {/* 11. Booth Address */}
+                    {/* 13. Booth Address */}
                     <td style={{ fontSize: "12px", color: "#0369a1" }}>{v.boothAddress || "—"}</td>
 
-                    {/* Optional: EPIC */}
-                    <td>
-                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: "var(--blue)" }}>{v.epic}</span>
-                    </td>
+                    {/* 14+. All Dynamic Extra Columns from Excel */}
+                    {extraExcelColumns.map((colName) => {
+                      const val = (v.extraData && v.extraData[colName] !== undefined)
+                        ? v.extraData[colName]
+                        : (v as Record<string, any>)[colName];
+                      return (
+                        <td key={colName} style={{ fontSize: "12px", color: "#334155" }}>
+                          {val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "—"}
+                        </td>
+                      );
+                    })}
 
                     {/* Delete Action */}
                     <td style={{ textAlign: "center" }}>
@@ -6042,6 +6550,7 @@ function RealExcelImporter({
   const handleExecuteImport = () => {
     if (!parsedData) return;
 
+    const mappedColNames = new Set(Object.values(fieldMap).filter(Boolean));
     const votersToImport = parsedData.rows.map((row, idx) => {
       const name = String(row[fieldMap.name] || "").trim();
       const booth = String(row[fieldMap.booth] || "1").trim();
@@ -6054,12 +6563,23 @@ function RealExcelImporter({
       const isSupp = String(row[fieldMap.isSupporter] || "").trim();
       const votedVal = String(row[fieldMap.voted] || "").trim();
       const outsideVal = String(row[fieldMap.isOutside] || "").trim();
+      const ageVal = fieldMap.age && row[fieldMap.age] !== undefined && String(row[fieldMap.age]).trim() !== ""
+        ? String(row[fieldMap.age]).trim()
+        : "35";
+
+      // Preserve all extra columns from Excel sheet
+      const extraData: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        if (!mappedColNames.has(key)) {
+          extraData[key] = val;
+        }
+      }
 
       return {
         name,
         epic,
         guardian: String(row[fieldMap.guardian] || "").trim(),
-        age: String(row[fieldMap.age] || "35"),
+        age: ageVal,
         gender: String(row[fieldMap.gender] || "Male"),
         house: String(row[fieldMap.house] || "").trim(),
         booth,
@@ -6072,6 +6592,8 @@ function RealExcelImporter({
         isOutside: outsideVal || "नहीं",
         status: (isSupp === "हाँ" || isSupp === "Yes") ? ("In-Favor" as VoterRecord["status"]) : ("Pending" as VoterRecord["status"]),
         worker: "Unassigned",
+        extraData,
+        ...extraData,
       };
     }).filter((v) => v.name && v.epic);
 
