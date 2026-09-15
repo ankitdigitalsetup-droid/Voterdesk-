@@ -20,6 +20,19 @@ export interface CandidateAccount {
   voterCount: number;
   boothCount: number;
   createdAt: string;
+  posterUrl?: string;
+}
+
+export interface CandidateCredential {
+  id: string;
+  name: string;
+  phone: string;
+  password: string;
+  role: Role;
+  candidateId: string;
+  assignedBooths: string[];
+  boothNumber: string;
+  roleTitle: string;
 }
 
 export interface VoterRecord {

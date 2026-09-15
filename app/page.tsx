@@ -32,10 +32,15 @@ import {
   UserCheck,
   Globe,
   SlidersHorizontal,
-  RefreshCw
+  RefreshCw,
+  Key,
+  Copy,
+  Sparkles,
+  Image as ImageIcon,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { store } from "@/lib/data-store";
-import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation } from "@/lib/types";
+import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches } from "@/lib/transliterate";
@@ -562,6 +567,273 @@ function SuperAdminView({
     password: "voterdesk",
   });
 
+  // Dedicated Ward Onboarding Card States
+  const [wardNo, setWardNo] = useState("Ward 34");
+  const [electionName, setElectionName] = useState("Municipal Election 2026");
+  const [candName, setCandName] = useState("");
+  const [candParty, setCandParty] = useState("Independent (निर्दलीय)");
+  const [candPhone, setCandPhone] = useState("");
+  const [boothCount, setBoothCount] = useState<number>(3); // default 3 booths = 12 passwords
+
+  // Poster Upload state
+  const [posterPreview, setPosterPreview] = useState<string>("");
+  const [posterFileName, setPosterFileName] = useState<string>("");
+  const posterInputRef = useRef<HTMLInputElement>(null);
+
+  // Excel Voter Roll Upload state
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelFileName, setExcelFileName] = useState<string>("");
+  const [parsedVoters, setParsedVoters] = useState<Omit<VoterRecord, "id">[]>([]);
+  const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
+
+  // Credentials Generation state
+  const [credentials, setCredentials] = useState<Array<{
+    name: string;
+    phone: string;
+    password: string;
+    role: "CANDIDATE_ADMIN" | "KARYAKARTA";
+    boothNumber: string;
+    roleTitle: string;
+  }>>([]);
+  const [previewBoothFilter, setPreviewBoothFilter] = useState<string>("ALL");
+  const [isActivating, setIsActivating] = useState<boolean>(false);
+  const [activationToast, setActivationToast] = useState<string>("");
+
+  // Credentials Export / View Modal State
+  const [viewCredsModal, setViewCredsModal] = useState<{
+    candidate: CandidateAccount;
+    creds: CandidateCredential[];
+  } | null>(null);
+  const [modalBoothFilter, setModalBoothFilter] = useState<string>("ALL");
+  const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
+
+  // Dynamic Password Generator Formula (1 booth = 4 passwords: 1 candidate + 3 karyakartas)
+  const generateCredsList = useCallback((count: number, cName: string, cPhone: string) => {
+    const list: Array<{
+      name: string;
+      phone: string;
+      password: string;
+      role: "CANDIDATE_ADMIN" | "KARYAKARTA";
+      boothNumber: string;
+      roleTitle: string;
+    }> = [];
+
+    const baseName = cName.trim() || "प्रत्याशी";
+    const cleanPhone = cPhone.replace(/\D/g, "");
+    const basePhone = cleanPhone.length === 10 ? cleanPhone : "9829012345";
+    const prefix = basePhone.substring(0, 6);
+
+    for (let b = 1; b <= count; b++) {
+      const bStr = String(b);
+      const bPad = b < 10 ? `0${b}` : `${b}`;
+
+      // 1. Candidate Password for Booth b
+      const candPin = Math.floor(1000 + Math.random() * 9000);
+      list.push({
+        name: b === 1 ? baseName : `${baseName} (बूथ ${b})`,
+        phone: b === 1 && cleanPhone.length === 10 ? cleanPhone : `${prefix}${bPad}0`,
+        password: `CAND@B${b}_${candPin}`,
+        role: "CANDIDATE_ADMIN",
+        boothNumber: bStr,
+        roleTitle: `बूथ ${b} प्रत्याशी प्रभारी`,
+      });
+
+      // 2. Three Karyakarta Passwords for Booth b
+      for (let k = 1; k <= 3; k++) {
+        const karyPin = Math.floor(1000 + Math.random() * 9000);
+        list.push({
+          name: `कार्यकर्ता ${k} (बूथ ${b})`,
+          phone: `${prefix}${bPad}${k}`,
+          password: `WORK@B${b}K${k}_${karyPin}`,
+          role: "KARYAKARTA",
+          boothNumber: bStr,
+          roleTitle: `बूथ ${b} कार्यकर्ता ${k}`,
+        });
+      }
+    }
+    return list;
+  }, []);
+
+  // Synchronize credentials whenever boothCount, candName, or candPhone change
+  useEffect(() => {
+    setCredentials(generateCredsList(boothCount, candName, candPhone));
+  }, [boothCount, candName, candPhone, generateCredsList]);
+
+  // Poster File Handler
+  const handlePosterUpload = (file: File) => {
+    if (!file || !file.type.startsWith("image/")) {
+      alert("कृपया एक मान्य इमेज फ़ाइल (.jpg, .png, .webp) चुनें।");
+      return;
+    }
+    setPosterFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setPosterPreview(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Excel File Handler
+  const handleExcelUpload = async (file: File) => {
+    if (!file) return;
+    setExcelFile(file);
+    setExcelFileName(file.name);
+    setIsParsingExcel(true);
+    try {
+      const parsed = await parseExcelFile(file);
+      const mapping = detectFieldMapping(parsed.columns);
+      const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
+        .map((row, idx) => {
+          const boothVal = String(row[mapping.booth] || "1").trim();
+          return {
+            name: String(row[mapping.name] || "").trim(),
+            guardian: String(row[mapping.guardian] || "").trim(),
+            epic: String(row[mapping.epic] || `EPIC_${idx + 1}`).trim(),
+            booth: boothVal,
+            serialNo: row[mapping.serialNo] ? Number(row[mapping.serialNo]) || (idx + 1) : (idx + 1),
+            age: String(row[mapping.age] || "35").trim(),
+            gender: String(row[mapping.gender] || "Male").trim(),
+            house: String(row[mapping.house] || "").trim(),
+            address: String(row[mapping.address] || "").trim(),
+            boothAddress: String(row[mapping.boothAddress] || "").trim(),
+            phone: String(row[mapping.phone] || "").trim(),
+            voted: row[mapping.voted] === "हाँ" || row[mapping.voted] === "Yes" ? "हाँ" : "नहीं",
+            isSupporter: row[mapping.isSupporter] === "हाँ" || row[mapping.isSupporter] === "Yes" ? "हाँ" : "नहीं",
+            isOutside: row[mapping.isOutside] === "हाँ" || row[mapping.isOutside] === "Yes" ? "हाँ" : "नहीं",
+            status: "Pending" as VoterRecord["status"],
+            worker: "Unassigned",
+            candidateId: "",
+          };
+        })
+        .filter((v) => v.name);
+
+      setParsedVoters(votersToImport);
+
+      // Auto-detect max booth from data if present
+      const boothsInData = Array.from(
+        new Set(votersToImport.map((v) => Number(v.booth)).filter((n) => !isNaN(n) && n > 0))
+      );
+      if (boothsInData.length > 0) {
+        const maxBooth = Math.max(...boothsInData);
+        if (maxBooth > 0 && maxBooth !== boothCount) {
+          setBoothCount(maxBooth);
+        }
+      }
+    } catch (err) {
+      alert("एक्सेल पार्स करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsParsingExcel(false);
+    }
+  };
+
+  // Submit Activation
+  const handleActivateSetup = () => {
+    if (!candName.trim()) {
+      alert("कृपया प्रत्याशी का नाम दर्ज करें!");
+      return;
+    }
+    if (!candPhone.trim()) {
+      alert("कृपया मुख्य मोबाइल नंबर दर्ज करें!");
+      return;
+    }
+    if (boothCount < 1) {
+      alert("कम से कम 1 बूथ होना आवश्यक है!");
+      return;
+    }
+
+    setIsActivating(true);
+    try {
+      const result = store.createCandidateBatchWithPasswords({
+        candidate: {
+          name: candName.trim(),
+          phone: candPhone.trim(),
+          party: candParty.trim(),
+          electionName: electionName.trim(),
+          wardConstituency: wardNo.trim(),
+          boothCount: Number(boothCount),
+          status: "ACTIVE",
+          posterUrl: posterPreview || undefined,
+        },
+        voters: parsedVoters,
+        credentials: credentials,
+      });
+
+      onCandidateCreated();
+
+      setActivationToast(`🎉 ${wardNo} के लिए प्रत्याशी एवं ${result.credentialsCount} पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`);
+      setTimeout(() => setActivationToast(""), 4000);
+
+      // Open credentials export modal so admin can immediately copy/download
+      setViewCredsModal({
+        candidate: result.candidate,
+        creds: result.credentials,
+      });
+
+      // Clear form
+      setCandName("");
+      setCandPhone("");
+      setPosterPreview("");
+      setPosterFileName("");
+      setExcelFile(null);
+      setExcelFileName("");
+      setParsedVoters([]);
+    } catch (err) {
+      alert("सक्रिय करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsActivating(false);
+    }
+  };
+
+  // Download Credentials as Excel Sheet
+  const downloadCredentialsExcel = (cand: CandidateAccount, creds: CandidateCredential[]) => {
+    const data = creds.map((c) => ({
+      "वार्ड / क्षेत्र": cand.wardConstituency,
+      "चुनाव का नाम": cand.electionName,
+      "प्रत्याशी का नाम": cand.name,
+      "पार्टी": cand.party,
+      "भूमिका": c.role === "CANDIDATE_ADMIN" ? "प्रत्याशी (Candidate Admin)" : "कार्यकर्ता (Karyakarta)",
+      "पद / पदनाम": c.roleTitle,
+      "आवंटित बूथ": `बूथ ${c.boothNumber}`,
+      "मोबाइल / लॉगिन आईडी": c.phone,
+      "पासवर्ड": c.password,
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Passwords");
+    XLSX.writeFile(workbook, `VoterDesk_Passwords_${cand.wardConstituency.replace(/\s+/g, "_")}.xlsx`);
+  };
+
+  // Copy Credentials formatted for WhatsApp sharing
+  const copyCredentialsForWhatsApp = (cand: CandidateAccount, creds: CandidateCredential[]) => {
+    const text =
+      `🇮🇳 *वोटर डेस्क - चुनाव प्रबंधन पोर्टल* 🇮🇳\n` +
+      `*वार्ड / क्षेत्र:* ${cand.wardConstituency}\n` +
+      `*चुनाव:* ${cand.electionName}\n` +
+      `*प्रत्याशी:* ${cand.name} (${cand.party})\n` +
+      `*कुल पोलिंग बूथ:* ${cand.boothCount} | *कुल क्रेडेंशियल्स:* ${creds.length}\n` +
+      `----------------------------------------\n` +
+      creds
+        .map(
+          (c) =>
+            `🔑 *${c.roleTitle}* (${c.role === "CANDIDATE_ADMIN" ? "कैंडिडेट" : "कार्यकर्ता"})\n` +
+            `👤 नाम: ${c.name}\n` +
+            `📱 मोबाइल: ${c.phone}\n` +
+            `🔒 पासवर्ड: ${c.password}\n` +
+            `📍 बूथ: बूथ ${c.boothNumber}`
+        )
+        .join("\n----------------------------------------\n") +
+      `\n----------------------------------------\n` +
+      `🌐 लॉगिन वेबसाइट: ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
+      `⚠️ *नोट:* अपने मोबाइल नंबर और दिए गए पासवर्ड से लॉगिन करें।`;
+
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedSuccess(true);
+      setTimeout(() => setCopiedSuccess(false), 3000);
+    }
+  };
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCand.name || !newCand.phone) return;
@@ -677,6 +949,417 @@ function SuperAdminView({
           </article>
         </div>
 
+        {/* Floating Activation Toast Notification */}
+        {activationToast && (
+          <div
+            style={{
+              position: "fixed",
+              top: "20px",
+              left: "50%",
+              transform: "translateX(-50%)",
+              zIndex: 99999,
+              background: "#065f46",
+              color: "#ecfdf5",
+              padding: "10px 20px",
+              borderRadius: "30px",
+              boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
+              fontSize: "13.5px",
+              fontWeight: 800,
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              border: "1.5px solid #34d399",
+              maxWidth: "92vw",
+              textAlign: "center",
+            }}
+          >
+            <Check size={16} />
+            <span>{activationToast}</span>
+          </div>
+        )}
+
+        {/* =====================================================================
+            NEW PROPER CARD: वार्ड ऑनबोर्डिंग, डेटा, पोस्टर एवं 4-पासवर्ड जनरेटर
+            ===================================================================== */}
+        <div className="saOnboardingCard">
+          <div className="saCardHeader">
+            <div className="saCardHeaderLeft">
+              <div className="saCardHeaderIcon">
+                <Sparkles size={22} />
+              </div>
+              <div>
+                <h2 className="saCardTitle">🎯 वार्ड ऑनबोर्डिंग एवं पासवर्ड जनरेटर (Ward Onboarding & Multi-Booth Engine)</h2>
+                <p className="saCardSubtitle">
+                  वार्ड का डेटा (Excel) व प्रत्याशी का पोस्टर अपलोड करें, और 1 बूथ = 4 पासवर्ड्स के अनुपात से तुरंत क्रेडेंशियल्स जनरेट करें।
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                className="outline"
+                style={{ background: "rgba(255, 255, 255, 0.15)", color: "#ffffff", border: "1px solid rgba(255, 255, 255, 0.3)", padding: "7px 12px", fontSize: "12px", borderRadius: "8px" }}
+                onClick={downloadSampleExcelTemplate}
+              >
+                <Download size={13} /> {t.downloadTemplate}
+              </button>
+            </div>
+          </div>
+
+          <div className="saCardBody">
+            {/* Live Formula Banner */}
+            <div className="saFormulaBanner">
+              <div className="saFormulaText">
+                <span>⚡ <b>पासवर्ड नियम:</b></span>
+                <span>1 बूथ पर 4 पासवर्ड | 2 बूथ पर 8 | 3 बूथ पर 12 | (प्रत्येक बूथ: 1 प्रत्याशी + 3 कार्यकर्ता)</span>
+              </div>
+              <div className="saFormulaBadge">
+                कुल {boothCount} बूथ = {credentials.length} सक्रिय क्रेडेंशियल्स
+              </div>
+            </div>
+
+            {/* Inputs Grid */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "24px" }}>
+              
+              {/* Column 1: Ward & Candidate Information */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                  🏛️ 1. वार्ड एवं प्रत्याशी विवरण
+                </h4>
+
+                <div className="formGroup" style={{ margin: 0 }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700 }}>वार्ड / क्षेत्र का नाम या संख्या</label>
+                  <input
+                    type="text"
+                    value={wardNo}
+                    onChange={(e) => setWardNo(e.target.value)}
+                    placeholder="उदा. Ward 34 / वार्ड 34"
+                    required
+                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div className="formGroup" style={{ margin: 0 }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700 }}>चुनाव का नाम</label>
+                  <input
+                    type="text"
+                    value={electionName}
+                    onChange={(e) => setElectionName(e.target.value)}
+                    placeholder="उदा. Municipal Election 2026"
+                    required
+                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div className="formGroup" style={{ margin: 0 }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी का पूरा नाम</label>
+                  <input
+                    type="text"
+                    value={candName}
+                    onChange={(e) => setCandName(e.target.value)}
+                    placeholder="उदा. रमेश कुमार शर्मा"
+                    required
+                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                  />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>पार्टी / दल</label>
+                    <input
+                      type="text"
+                      value={candParty}
+                      onChange={(e) => setCandParty(e.target.value)}
+                      placeholder="निर्दलीय / BJP / Congress"
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    />
+                  </div>
+
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>मुख्य मोबाइल नं. (लॉगिन हेतु)</label>
+                    <input
+                      type="tel"
+                      value={candPhone}
+                      onChange={(e) => setCandPhone(e.target.value)}
+                      placeholder="98290XXXXX"
+                      required
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Booth Count Selector */}
+                <div className="formGroup" style={{ margin: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>वार्ड में कुल बूथ संख्या (Total Booths)</label>
+                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7" }}>
+                      {boothCount} बूथ = {boothCount * 4} पासवर्ड
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                    {[1, 2, 3, 4, 5].map((cnt) => (
+                      <button
+                        key={cnt}
+                        type="button"
+                        onClick={() => setBoothCount(cnt)}
+                        style={{
+                          flex: 1,
+                          padding: "7px 4px",
+                          borderRadius: "8px",
+                          fontSize: "12px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          border: boothCount === cnt ? "2px solid #0062cc" : "1px solid #cbd5e1",
+                          background: boothCount === cnt ? "#eff6ff" : "#ffffff",
+                          color: boothCount === cnt ? "#0062cc" : "#334155",
+                        }}
+                      >
+                        {cnt} {cnt === 1 ? "बूथ (4)" : cnt === 2 ? "बूथ (8)" : cnt === 3 ? "बूथ (12)" : `बूथ (${cnt * 4})`}
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={boothCount}
+                      onChange={(e) => setBoothCount(Math.max(1, Number(e.target.value) || 1))}
+                      style={{ width: "65px", padding: "7px 8px", borderRadius: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: 700 }}
+                      title="कस्टम बूथ संख्या"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2: Candidate Campaign Poster Upload */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                  🖼️ 2. प्रत्याशी पोस्टर / बैनर अपलोड
+                </h4>
+                <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+                  यह पोस्टर वोटर स्लिप, व्हाट्सएप शेयरिंग और डिजिटल कार्ड में प्रदर्शित होगा।
+                </p>
+
+                <input
+                  ref={posterInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handlePosterUpload(f);
+                  }}
+                />
+
+                {!posterPreview ? (
+                  <div
+                    className="saUploadDropzone"
+                    onClick={() => posterInputRef.current?.click()}
+                  >
+                    <ImageIcon size={32} color="#0284c7" />
+                    <b style={{ fontSize: "13.5px", color: "#0f172a" }}>प्रत्याशी का पोस्टर चुनें या ड्रैग करें</b>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>JPG, PNG, WEBP (अधिकतम 5MB)</span>
+                    <button
+                      type="button"
+                      className="outline"
+                      style={{ padding: "4px 12px", fontSize: "12px", pointerEvents: "none" }}
+                    >
+                      फ़ाइल ब्राउज़ करें
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ textAlign: "center" }}>
+                    <div className="saPosterPreviewBox">
+                      <img src={posterPreview} alt="Candidate Poster Preview" className="saPosterThumbnail" />
+                      <button
+                        type="button"
+                        className="saPosterRemoveBtn"
+                        onClick={() => {
+                          setPosterPreview("");
+                          setPosterFileName("");
+                          if (posterInputRef.current) posterInputRef.current.value = "";
+                        }}
+                        title="पोस्टर हटाएं"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#059669", fontWeight: 700, marginTop: "6px" }}>
+                      ✓ पोस्टर सेट: {posterFileName || "poster.jpg"}
+                    </div>
+                    <button
+                      type="button"
+                      className="outline"
+                      style={{ padding: "4px 10px", fontSize: "11px", marginTop: "4px" }}
+                      onClick={() => posterInputRef.current?.click()}
+                    >
+                      पोस्टर बदलें
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Column 3: Excel Voter Data Upload */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                  📊 3. वार्ड वोटर लिस्ट डेटा (Excel Upload)
+                </h4>
+                <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+                  इस वार्ड के सभी मतदाताओं की एक्सेल (.xlsx / .csv) फ़ाइल अपलोड करें।
+                </p>
+
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx, .xls, .csv"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleExcelUpload(f);
+                  }}
+                />
+
+                <div
+                  className="saUploadDropzone"
+                  onClick={() => excelInputRef.current?.click()}
+                  style={{ borderColor: parsedVoters.length > 0 ? "#10b981" : "#cbd5e1", background: parsedVoters.length > 0 ? "#f0fdf4" : "#f8fafc" }}
+                >
+                  <FileSpreadsheet size={32} color={parsedVoters.length > 0 ? "#10b981" : "#0284c7"} />
+                  {isParsingExcel ? (
+                    <span style={{ fontSize: "13px", color: "#0284c7", fontWeight: 700 }}>
+                      <RefreshCw size={14} className="spin" /> एक्सेल फ़ाइल पार्स हो रही है...
+                    </span>
+                  ) : parsedVoters.length > 0 ? (
+                    <>
+                      <b style={{ fontSize: "13.5px", color: "#065f46" }}>✓ {excelFileName}</b>
+                      <span style={{ fontSize: "12px", color: "#047857", fontWeight: 700 }}>
+                        {parsedVoters.length.toLocaleString()} मतदाता रिकॉर्ड्स लोड हो गए!
+                      </span>
+                      <button
+                        type="button"
+                        className="outline"
+                        style={{ padding: "4px 10px", fontSize: "11px", pointerEvents: "none" }}
+                      >
+                        दूसरी फ़ाइल चुनें
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <b style={{ fontSize: "13.5px", color: "#0f172a" }}>वार्ड वोटर एक्सेल फ़ाइल चुनें</b>
+                      <span style={{ fontSize: "11px", color: "#64748b" }}>.xlsx, .xls, .csv (11 कॉलम स्वतः मैच होंगे)</span>
+                      <button
+                        type="button"
+                        className="outline"
+                        style={{ padding: "4px 12px", fontSize: "12px", pointerEvents: "none" }}
+                      >
+                        फ़ाइल ब्राउज़ करें
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                <div style={{ fontSize: "11.5px", color: "#475569", background: "#f1f5f9", padding: "8px 10px", borderRadius: "8px" }}>
+                  💡 <b>कॉलम्स:</b> भाग सं., क्र. सं., नाम, पिता/पति, वोट डाला, सपोर्टर, बाहर, मोबाइल, मकान, एड्रेस, बूथ पता।
+                </div>
+              </div>
+            </div>
+
+            {/* Credentials Live Preview Section */}
+            <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
+                <div>
+                  <h4 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                    🔑 4. जनरेट होने वाले पासवर्ड्स प्रीव्यू ({credentials.length} Accounts)
+                  </h4>
+                  <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+                    हर बूथ पर 1 कैंडिडेट पासवर्ड और 3 कार्यकर्ता पासवर्ड तैयार हैं।
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  {/* Booth Filter Chips */}
+                  <select
+                    value={previewBoothFilter}
+                    onChange={(e) => setPreviewBoothFilter(e.target.value)}
+                    style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700, color: "#334155" }}
+                  >
+                    <option value="ALL">सभी बूथ देखें ({credentials.length})</option>
+                    {Array.from({ length: boothCount }, (_, i) => i + 1).map((b) => (
+                      <option key={b} value={String(b)}>बूथ {b} के 4 पासवर्ड्स</option>
+                    ))}
+                  </select>
+
+                  <button
+                    type="button"
+                    className="outline"
+                    style={{ padding: "6px 10px", fontSize: "12px" }}
+                    onClick={() => setCredentials(generateCredsList(boothCount, candName, candPhone))}
+                    title="रैंडम पिन री-जनरेट करें"
+                  >
+                    <RefreshCw size={12} /> री-जनरेट
+                  </button>
+                </div>
+              </div>
+
+              {/* Grid of Credentials */}
+              <div className="saCredGrid">
+                {credentials
+                  .filter((c) => previewBoothFilter === "ALL" || c.boothNumber === previewBoothFilter)
+                  .map((c, idx) => (
+                    <div
+                      key={idx}
+                      className={`saCredCard ${c.role === "CANDIDATE_ADMIN" ? "candidate" : "karyakarta"}`}
+                    >
+                      <div className="saCredHeader">
+                        <span className={`saCredRoleBadge ${c.role === "CANDIDATE_ADMIN" ? "cand" : "kary"}`}>
+                          {c.role === "CANDIDATE_ADMIN" ? "👑 कैंडिडेट पासवर्ड" : "👤 कार्यकर्ता पासवर्ड"}
+                        </span>
+                        <span className="saCredBoothBadge">बूथ {c.boothNumber}</span>
+                      </div>
+
+                      <div style={{ fontSize: "13px", fontWeight: 800, color: "#0f172a" }}>
+                        {c.name}
+                      </div>
+
+                      <div className="saCredRow">
+                        <span style={{ color: "#64748b" }}>📱 मोबाइल / लॉगिन:</span>
+                        <b style={{ color: "#0f172a" }}>{c.phone}</b>
+                      </div>
+
+                      <div className="saCredRow">
+                        <span style={{ color: "#64748b" }}>🔒 पासवर्ड:</span>
+                        <span className="saCredPassBox">{c.password}</span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+
+            {/* Final Action Submission Bar */}
+            <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1.5px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
+              <div style={{ fontSize: "13px", color: "#475569" }}>
+                {parsedVoters.length > 0 ? (
+                  <span>✅ <b>{parsedVoters.length}</b> वोटर्स + <b>{posterPreview ? "1 पोस्टर" : "डिफ़ॉल्ट पोस्टर"}</b> + <b>{credentials.length}</b> पासवर्ड्स तैयार</span>
+                ) : (
+                  <span>⚠️ एक्सेल फ़ाइल वैकल्पिक है। यदि अभी अपलोड नहीं करेंगे तो बाद में भी कर सकते हैं।</span>
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="primary"
+                  style={{ padding: "12px 28px", fontSize: "14.5px", fontWeight: 800, display: "flex", alignItems: "center", gap: "8px", borderRadius: "8px", boxShadow: "0 4px 14px rgba(0, 98, 204, 0.35)" }}
+                  disabled={isActivating}
+                  onClick={handleActivateSetup}
+                >
+                  <Sparkles size={16} />
+                  {isActivating ? "सक्रिय किया जा रहा है..." : `🚀 वार्ड डेटा, पोस्टर एवं सभी ${credentials.length} पासवर्ड एक्टिवेट करें`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Candidate Campaigns Table */}
         <Panel title="Active Candidate Campaigns" sub="Click on 'Open Workspace' to inspect or manage any candidate's campaign directly.">
           <div className="tableWrap">
@@ -714,13 +1397,27 @@ function SuperAdminView({
                       <span className="status in-favor">{cand.status}</span>
                     </td>
                     <td>
-                      <button
-                        className="primary"
-                        style={{ padding: "6px 12px", fontSize: "12px" }}
-                        onClick={() => onSelectCandidate(cand.id)}
-                      >
-                        Open Workspace ›
-                      </button>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}
+                          onClick={() => {
+                            const creds = store.getCandidateUsers(cand.id);
+                            setViewCredsModal({ candidate: cand, creds });
+                          }}
+                          title="इस प्रत्याशी के सभी लॉगिन पासवर्ड देखें व कॉपी करें"
+                        >
+                          <Key size={13} /> 🔑 पासवर्ड
+                        </button>
+                        <button
+                          className="primary"
+                          style={{ padding: "6px 12px", fontSize: "12px" }}
+                          onClick={() => onSelectCandidate(cand.id)}
+                        >
+                          Open Workspace ›
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -729,6 +1426,151 @@ function SuperAdminView({
           </div>
         </Panel>
       </div>
+
+      {/* Credentials Export & View Modal */}
+      {viewCredsModal && (
+        <div className="modalOverlay" onClick={() => setViewCredsModal(null)}>
+          <div className="modalBox" style={{ maxWidth: "850px", width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Key size={18} color="#38bdf8" />
+                <h3 style={{ margin: 0, color: "#ffffff", fontSize: "17px" }}>
+                  🔑 {viewCredsModal.candidate.name} ({viewCredsModal.candidate.wardConstituency}) - लॉगिन क्रेडेंशियल्स
+                </h3>
+              </div>
+              <button onClick={() => setViewCredsModal(null)} style={{ color: "#ffffff" }}><X /></button>
+            </div>
+
+            <div className="modalBody">
+              {/* Top Details & Action Row */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px", background: "#f8fafc", padding: "12px 14px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
+                <div>
+                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a" }}>
+                    {viewCredsModal.candidate.name} ({viewCredsModal.candidate.party})
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748b" }}>
+                    {viewCredsModal.candidate.electionName} • कुल {viewCredsModal.candidate.boothCount} बूथ • {viewCredsModal.creds.length} एक्टिव पासवर्ड
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="outline"
+                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#ffffff" }}
+                    onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
+                  >
+                    <Download size={14} /> 📥 Excel डाउनलोड (.xlsx)
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{ padding: "6px 14px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#16a34a", borderColor: "#16a34a" }}
+                    onClick={() => copyCredentialsForWhatsApp(viewCredsModal.candidate, viewCredsModal.creds)}
+                  >
+                    <Share2 size={14} /> {copiedSuccess ? "✓ कॉपी हो गया!" : "💬 WhatsApp कॉपी"}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{ padding: "6px 12px", fontSize: "12px" }}
+                    onClick={() => {
+                      setViewCredsModal(null);
+                      onSelectCandidate(viewCredsModal.candidate.id);
+                    }}
+                  >
+                    ⚡ ऐप खोलें ›
+                  </button>
+                </div>
+              </div>
+
+              {/* Booth Filter */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "#475569" }}>बूथ फ़िल्टर:</span>
+                <select
+                  value={modalBoothFilter}
+                  onChange={(e) => setModalBoothFilter(e.target.value)}
+                  style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+                >
+                  <option value="ALL">सभी बूथ ({viewCredsModal.creds.length} पासवर्ड)</option>
+                  {Array.from(new Set(viewCredsModal.creds.map((c) => c.boothNumber))).map((b) => (
+                    <option key={b} value={b}>बूथ {b}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Table of Credentials */}
+              <div style={{ maxHeight: "400px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
+                  <thead style={{ background: "#f1f5f9", position: "sticky", top: 0, zIndex: 2 }}>
+                    <tr>
+                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>भूमिका / रोल</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>नाम</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>बूथ</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>मोबाइल / लॉगिन</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>पासवर्ड</th>
+                      <th style={{ padding: "8px 12px", textAlign: "center", borderBottom: "1px solid #cbd5e1" }}>कॉपी</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {viewCredsModal.creds
+                      .filter((c) => modalBoothFilter === "ALL" || c.boothNumber === modalBoothFilter)
+                      .map((c, idx) => (
+                        <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9", background: c.role === "CANDIDATE_ADMIN" ? "#f0f9ff" : "#ffffff" }}>
+                          <td style={{ padding: "8px 12px" }}>
+                            <span style={{
+                              fontSize: "11px",
+                              fontWeight: 800,
+                              padding: "2px 8px",
+                              borderRadius: "6px",
+                              background: c.role === "CANDIDATE_ADMIN" ? "#dbeafe" : "#d1fae5",
+                              color: c.role === "CANDIDATE_ADMIN" ? "#1d4ed8" : "#047857"
+                            }}>
+                              {c.role === "CANDIDATE_ADMIN" ? "कैंडिडेट" : "कार्यकर्ता"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a" }}>{c.name}</td>
+                          <td style={{ padding: "8px 12px" }}>
+                            <span style={{ background: "#f1f5f9", padding: "2px 6px", borderRadius: "4px", fontWeight: 700, fontSize: "11px" }}>
+                              बूथ {c.boothNumber}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: "#0369a1" }}>{c.phone}</td>
+                          <td style={{ padding: "8px 12px" }}>
+                            <code style={{ background: "#f1f5f9", padding: "3px 6px", borderRadius: "4px", fontWeight: 700, color: "#0f172a" }}>
+                              {c.password}
+                            </code>
+                          </td>
+                          <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                            <button
+                              type="button"
+                              className="outline"
+                              style={{ padding: "2px 6px", fontSize: "11px" }}
+                              onClick={() => {
+                                navigator.clipboard.writeText(`मोबाइल: ${c.phone}\nपासवर्ड: ${c.password}`);
+                                setActivationToast(`लॉगिन क्रेडेंशियल कॉपी हो गया!`);
+                                setTimeout(() => setActivationToast(""), 2500);
+                              }}
+                              title="कॉपी करें"
+                            >
+                              <Copy size={12} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>
+                <button type="button" className="outline" onClick={() => setViewCredsModal(null)}>
+                  बंद करें (Close)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Candidate Modal */}
       {showAddModal && (
@@ -2953,7 +3795,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           <div className="bmScreenContent">
             {/* Candidate Election Poster Graphic Banner */}
             <img
-              src="/images/campaign-poster.jpg"
+              src={candidate?.posterUrl || "/images/campaign-poster.jpg"}
               alt="Campaign Poster"
               className="bmPosterImg"
             />

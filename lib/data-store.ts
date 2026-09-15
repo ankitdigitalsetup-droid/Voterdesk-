@@ -1,4 +1,4 @@
-import { CandidateAccount, TeamMember, UserAccount, VoterRecord, WorkerLocation } from "./types";
+import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 
 // In-Memory & Persistent global store for high-speed multi-mobile synchronization
@@ -621,6 +621,90 @@ class DataStore {
     });
 
     return newCand;
+  }
+
+  getCandidateUsers(candidateId: string): CandidateCredential[] {
+    const matching = this.users.filter((u) => u.candidateId === candidateId);
+    return matching.map((u) => {
+      const booth = u.assignedBooths && u.assignedBooths.length > 0 ? u.assignedBooths[0] : "1";
+      const isCand = u.role === "CANDIDATE_ADMIN";
+      return {
+        id: u.id,
+        name: u.name,
+        phone: u.phone,
+        password: u.password,
+        role: u.role,
+        candidateId: u.candidateId || candidateId,
+        assignedBooths: u.assignedBooths || [booth],
+        boothNumber: booth,
+        roleTitle: isCand ? "प्रत्याशी / कैंडिडेट" : "बूथ कार्यकर्ता",
+      };
+    });
+  }
+
+  createCandidateBatchWithPasswords(data: {
+    candidate: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string };
+    voters?: Omit<VoterRecord, "id">[];
+    credentials: Array<{
+      name: string;
+      phone: string;
+      password: string;
+      role: "SUPER_ADMIN" | "CANDIDATE_ADMIN" | "KARYAKARTA";
+      boothNumber: string;
+      roleTitle: string;
+    }>;
+  }) {
+    const id = "cand_" + Date.now();
+    const newCand: CandidateAccount = {
+      ...data.candidate,
+      id,
+      voterCount: 0,
+      createdAt: new Date().toISOString().split("T")[0],
+    };
+    this.candidates.unshift(newCand);
+
+    // Register all generated credentials
+    for (const cred of data.credentials) {
+      const userId = "usr_" + id + "_" + cred.boothNumber + "_" + Math.random().toString(36).substring(2, 7);
+      this.users.push({
+        id: userId,
+        name: cred.name,
+        phone: cred.phone,
+        password: cred.password,
+        role: cred.role,
+        candidateId: id,
+        assignedBooths: [cred.boothNumber],
+      });
+
+      // Also register in team if karyakarta
+      if (cred.role === "KARYAKARTA") {
+        this.team.push({
+          id: "team_" + userId,
+          name: cred.name,
+          phone: cred.phone,
+          roleTitle: cred.roleTitle || `बूथ ${cred.boothNumber} कार्यकर्ता`,
+          assignedBooths: [cred.boothNumber],
+          status: "Active",
+          candidateId: id,
+          contactedCount: 0,
+        });
+      }
+    }
+
+    // Import voters if provided
+    let imported = 0;
+    if (data.voters && data.voters.length > 0) {
+      const result = this.importVoters(id, data.voters);
+      imported = result.imported;
+    }
+
+    this.touchVersion();
+    return {
+      candidate: newCand,
+      importedVoters: imported,
+      credentialsCount: data.credentials.length,
+      credentials: this.getCandidateUsers(id),
+    };
   }
 
   // Voters
