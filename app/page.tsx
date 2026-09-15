@@ -1858,6 +1858,9 @@ function BoothManagerView({
     detail2: "",
   });
   const [familyFilter, setFamilyFilter] = useState<{ house: string; booth: string } | null>(null);
+  const [selectedFamilyVoterIds, setSelectedFamilyVoterIds] = useState<string[]>([]);
+  const [showFamilySlipModal, setShowFamilySlipModal] = useState(false);
+  const [isGeneratingFamilyImage, setIsGeneratingFamilyImage] = useState(false);
 
   // Voter Slip Custom Message (1:1 with user screenshot)
   const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
@@ -2230,10 +2233,234 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   // 5. फैमिली लिस्ट (Filter by same House & Booth)
   const handleFilterFamily = () => {
     if (!activeActionVoter) return;
-    setFamilyFilter({ house: activeActionVoter.house || "", booth: activeActionVoter.booth });
+    const h = activeActionVoter.house || "";
+    const b = activeActionVoter.booth;
+    setFamilyFilter({ house: h, booth: b });
+
+    // Pre-select matching family members up to 6
+    const matching = voters.filter((v) => v.booth === b && (v.house || "") === h);
+    setSelectedFamilyVoterIds(matching.slice(0, 6).map((v) => v.id));
+
     setActiveActionVoter(null);
-    setLocalToast(`👨‍👩‍👧‍👦 मकान नं. ${activeActionVoter.house || "—"} के सभी परिवारजन फ़िल्टर हो गए!`);
+    setLocalToast(`👨‍👩‍👧‍👦 मकान नं. ${h || "—"} के परिवारजन फ़िल्टर हो गए! (${matching.length} सदस्य)`);
     setTimeout(() => setLocalToast(""), 3500);
+  };
+
+  const selectedFamilyVoters = useMemo(() => {
+    return voters.filter((v) => selectedFamilyVoterIds.includes(v.id));
+  }, [voters, selectedFamilyVoterIds]);
+
+  // Sync body class when A4 family slip modal is open
+  useEffect(() => {
+    if (showFamilySlipModal) {
+      document.body.classList.add("printing-a4-family-slip");
+    } else {
+      document.body.classList.remove("printing-a4-family-slip");
+    }
+    const handleAfterPrint = () => {
+      if (!showFamilySlipModal) {
+        document.body.classList.remove("printing-a4-family-slip");
+      }
+    };
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      document.body.classList.remove("printing-a4-family-slip");
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, [showFamilySlipModal]);
+
+  // A4 Family Voter Slip Print
+  const handlePrintFamilyA4 = () => {
+    if (typeof document !== "undefined") {
+      document.body.classList.add("printing-a4-family-slip");
+    }
+    setTimeout(() => {
+      window.print();
+    }, 50);
+  };
+
+  // High-Resolution A4 Image Generator (Top A5 Poster + Bottom A5 Slips) via HTML5 Canvas
+  const handleDownloadFamilyA4Image = async () => {
+    if (selectedFamilyVoters.length === 0) {
+      alert("कृपया पहले कम से कम 1 फैमिली मेंबर चेक करें!");
+      return;
+    }
+    setIsGeneratingFamilyImage(true);
+
+    try {
+      const canvas = document.createElement("canvas");
+      // Standard A4 dimensions at 150 DPI: 1240 x 1754 px
+      const w = 1240;
+      const h = 1754;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas context not available");
+
+      // 1. Fill white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+
+      // 2. Load and draw Top A5 Poster (0 to 860px)
+      const posterSrc = candidate?.posterUrl || "/images/campaign-poster.jpg";
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = posterSrc;
+
+      await new Promise<void>((resolve) => {
+        img.onload = () => {
+          try {
+            ctx.drawImage(img, 0, 0, w, 860);
+          } catch {}
+          resolve();
+        };
+        img.onerror = () => {
+          ctx.fillStyle = "#0284c7";
+          ctx.fillRect(0, 0, w, 860);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 48px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(candidate?.name || "प्रत्याशी चुनाव प्रचार", w / 2, 420);
+          ctx.font = "bold 28px sans-serif";
+          ctx.fillText(candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा", w / 2, 480);
+          resolve();
+        };
+      });
+
+      // 3. Draw Cut Line (Divider between Top A5 and Bottom A5)
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([12, 8]);
+      ctx.beginPath();
+      ctx.moveTo(20, 875);
+      ctx.lineTo(w - 20, 875);
+      ctx.stroke();
+      ctx.setLineDash([]); // reset
+
+      // Cut badge
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(w / 2 - 100, 862, 200, 26);
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(w / 2 - 100, 862, 200, 26);
+      ctx.fillStyle = "#475569";
+      ctx.font = "bold 15px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("✂ यहाँ से काटें / Cut Here", w / 2, 881);
+
+      // 4. Bottom A5: Family Voter Slips (895 to 1735)
+      // Header Banner
+      ctx.fillStyle = "#0284c7";
+      ctx.font = "bold 26px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`👨‍👩‍👧‍👦 परिवार मतदाता पर्ची / FAMILY VOTER SLIP (मकान नं: ${familyFilter?.house || "—"})`, 40, 920);
+
+      ctx.fillStyle = "#64748b";
+      ctx.font = "bold 18px sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText(`भाग संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`, w - 40, 920);
+
+      // Thin separator line
+      ctx.strokeStyle = "#cbd5e1";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(40, 935);
+      ctx.lineTo(w - 40, 935);
+      ctx.stroke();
+
+      // Slips Grid: 2 columns x 3 rows (max 6 slips)
+      const slips = selectedFamilyVoters.slice(0, 6);
+      const startX = 40;
+      const startY = 955;
+      const cardW = 565;
+      const cardH = 240;
+      const gapX = 30;
+      const gapY = 20;
+
+      slips.forEach((v, index) => {
+        const col = index % 2;
+        const row = Math.floor(index / 2);
+        const x = startX + col * (cardW + gapX);
+        const y = startY + row * (cardH + gapY);
+
+        // Draw card background
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(x, y, cardW, cardH);
+
+        // Draw dotted border
+        ctx.strokeStyle = "#0062cc";
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([8, 5]);
+        ctx.strokeRect(x, y, cardW, cardH);
+        ctx.setLineDash([]); // reset
+
+        // Top blue banner inside card
+        ctx.fillStyle = "#eff6ff";
+        ctx.fillRect(x + 4, y + 4, cardW - 8, 38);
+
+        ctx.fillStyle = "#1e40af";
+        ctx.font = "bold 18px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : index + 1}`, x + 16, y + 29);
+        ctx.textAlign = "right";
+        ctx.fillText(`भाग सं : ${v.booth || "—"}`, x + cardW - 16, y + 29);
+
+        // Name
+        ctx.fillStyle = "#0f172a";
+        ctx.font = "bold 22px sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillText(`नाम : ${v.name}`, x + 16, y + 74);
+
+        // Guardian
+        ctx.fillStyle = "#334155";
+        ctx.font = "18px sans-serif";
+        ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 106);
+
+        // Age & House
+        ctx.fillStyle = "#334155";
+        ctx.font = "bold 17px sans-serif";
+        ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 138);
+        ctx.textAlign = "right";
+        ctx.fillText(`मकान नं : ${v.house || "—"}`, x + cardW - 16, y + 138);
+
+        // Voter ID (EPIC)
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#0369a1";
+        ctx.font = "bold 18px monospace";
+        ctx.fillText(`वोटर ID : ${v.epic}`, x + 16, y + 172);
+
+        // Divider
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x + 12, y + 186);
+        ctx.lineTo(x + cardW - 12, y + 186);
+        ctx.stroke();
+
+        // Polling Station / Booth Address
+        ctx.fillStyle = "#64748b";
+        ctx.font = "14px sans-serif";
+        const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
+        ctx.fillText(addrText.length > 48 ? addrText.substring(0, 48) + "..." : addrText, x + 16, y + 214);
+      });
+
+      // 5. Trigger download as PNG
+      const dataUrl = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      const fileName = `Family_Voter_Slip_House_${familyFilter?.house || "Family"}_Part_${familyFilter?.booth || "1"}.png`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setLocalToast(`✅ A4 फैमिली वोटर स्लिप डाउनलोड हो गई! (${fileName})`);
+      setTimeout(() => setLocalToast(""), 3500);
+    } catch (err) {
+      alert("इमेज जनरेट करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsGeneratingFamilyImage(false);
+    }
   };
 
   // 6. व्हाट्सएप (Open Image 3 screen)
@@ -3175,42 +3402,97 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         </>
       )}
 
-      {/* Active Family List Filter Badge */}
+      {/* Active Family List Filter Badge & Generator Button */}
       {familyFilter && (
-        <div style={{
-          background: "#fee2e2",
-          border: "1.5px solid #f87171",
-          color: "#991b1b",
-          padding: "10px 14px",
-          borderRadius: "8px",
-          margin: "0 10px 12px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          fontSize: "13.5px",
-          fontWeight: 600,
-          boxShadow: "0 1px 3px rgba(0,0,0,0.05)"
-        }}>
-          <span>
-            👨‍👩‍👧‍👦 {lang === "hi" ? "फैमिली लिस्ट फ़िल्टर सक्रिय:" : "Family List Active:"}{" "}
-            भाग {familyFilter.booth}, मकान नं {familyFilter.house || "—"} ({filteredVoters.length} {lang === "hi" ? "सदस्य" : "members"})
-          </span>
-          <button
-            type="button"
-            onClick={() => setFamilyFilter(null)}
-            style={{
-              background: "#dc2626",
-              color: "#ffffff",
-              border: "none",
-              borderRadius: "6px",
-              padding: "4px 10px",
-              fontSize: "12px",
-              fontWeight: 700,
-              cursor: "pointer"
-            }}
-          >
-            ✕ {lang === "hi" ? "फ़िल्टर हटाएं" : "Clear Filter"}
-          </button>
+        <div
+          style={{
+            background: "#fee2e2",
+            border: "1.5px solid #f87171",
+            color: "#991b1b",
+            padding: "10px 14px",
+            borderRadius: "8px",
+            margin: "0 10px 12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: "13.5px",
+            fontWeight: 600,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            flexWrap: "wrap",
+            gap: "10px",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "14px", fontWeight: 800 }}>👨‍👩‍👧‍👦 {lang === "hi" ? "फैमिली लिस्ट:" : "Family List:"}</span>
+            <span
+              style={{
+                background: "#ffffff",
+                padding: "2px 8px",
+                borderRadius: "6px",
+                fontSize: "12.5px",
+                fontWeight: 700,
+                color: "#991b1b",
+                border: "1px solid #fca5a5",
+              }}
+            >
+              भाग {familyFilter.booth} • मकान नं {familyFilter.house || "—"}
+            </span>
+            <span style={{ fontSize: "12.5px", color: "#7f1d1d", fontWeight: 600 }}>
+              ({selectedFamilyVoterIds.length}/{filteredVoters.length}{" "}
+              {lang === "hi" ? "सदस्य चुने गए, अधिकतम 6" : "selected, max 6"})
+            </span>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedFamilyVoters.length === 0) {
+                  setLocalToast("⚠️ कृपया पहले नीचे चेकबॉक्स से कम से कम 1 सदस्य चुनें!");
+                  setTimeout(() => setLocalToast(""), 3500);
+                  return;
+                }
+                setShowFamilySlipModal(true);
+              }}
+              style={{
+                background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "7px",
+                padding: "6px 14px",
+                fontSize: "13px",
+                fontWeight: 800,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                boxShadow: "0 2px 6px rgba(2, 132, 199, 0.35)",
+              }}
+              title="A4 साइज फैमिली वोटर स्लिप जनरेट करें"
+            >
+              <Sparkles size={15} />
+              <span>Generate Family Voter Slip ({selectedFamilyVoterIds.length}/6)</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFamilyFilter(null);
+                setSelectedFamilyVoterIds([]);
+              }}
+              style={{
+                background: "#dc2626",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "6px",
+                padding: "6px 12px",
+                fontSize: "12.5px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              ✕ {lang === "hi" ? "फ़िल्टर हटाएं" : "Clear Filter"}
+            </button>
+          </div>
         </div>
       )}
 
@@ -3219,6 +3501,24 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         <table className="bmTable">
           <thead>
             <tr>
+              {/* Checkbox column when Family List filter is active */}
+              {familyFilter && (
+                <th style={{ width: "45px", textAlign: "center", background: "#fee2e2" }}>
+                  <input
+                    type="checkbox"
+                    checked={filteredVoters.length > 0 && selectedFamilyVoterIds.length === Math.min(6, filteredVoters.length)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedFamilyVoterIds(filteredVoters.slice(0, 6).map((v) => v.id));
+                      } else {
+                        setSelectedFamilyVoterIds([]);
+                      }
+                    }}
+                    style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#0284c7" }}
+                    title={lang === "hi" ? "सभी सदस्य चुनें (अधिकतम 6)" : "Select all (max 6)"}
+                  />
+                </th>
+              )}
               <th style={{ width: "55px" }}>{t.colPart}</th>
               <th style={{ width: "55px" }}>{t.colSerial}</th>
               <th className="thLeft" style={{ minWidth: "140px" }}>{t.colName}</th>
@@ -3392,7 +3692,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           <tbody>
             {filteredVoters.length === 0 ? (
               <tr>
-                <td colSpan={13 + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                <td colSpan={(familyFilter ? 14 : 13) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
                   {t.noVotersMatch}
                 </td>
               </tr>
@@ -3413,6 +3713,34 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     }}
                     title={lang === "hi" ? "मैसेज व एक्शन मेन्यू खोलने के लिए क्लिक करें" : "Click to open action menu"}
                   >
+                    {/* Checkbox cell when Family List filter is active */}
+                    {familyFilter && (
+                      <td
+                        className="colCenter"
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ background: selectedFamilyVoterIds.includes(v.id) ? "#f0f9ff" : undefined }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedFamilyVoterIds.includes(v.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            if (selectedFamilyVoterIds.includes(v.id)) {
+                              setSelectedFamilyVoterIds((prev) => prev.filter((id) => id !== v.id));
+                            } else {
+                              if (selectedFamilyVoterIds.length >= 6) {
+                                setLocalToast("⚠️ एक A4 शीट पर अधिकतम 6 फैमिली मेंबर्स की वोटर स्लिप आ सकती है!");
+                                setTimeout(() => setLocalToast(""), 3500);
+                                return;
+                              }
+                              setSelectedFamilyVoterIds((prev) => [...prev, v.id]);
+                            }
+                          }}
+                          style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#0284c7" }}
+                        />
+                      </td>
+                    )}
+
                     {/* 1. भाग संख्या */}
                     <td className="colPart">{v.booth}</td>
 
@@ -5359,6 +5687,194 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                 <button type="button" className="outline" onClick={() => setShowPrintModal(false)}>
                   ✕ {lang === "hi" ? "बंद करें" : "Close"}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 10. Modal: A4 Family Voter Slip Preview & Generator (Top A5 Poster + Bottom A5 Slips) */}
+      {showFamilySlipModal && selectedFamilyVoters.length > 0 && (
+        <div className="a4ModalOverlay">
+          {/* Top Bar with Actions */}
+          <div className="a4ModalHeader noPrint">
+            <div className="a4ModalTitle">
+              <Sparkles size={18} color="#0284c7" />
+              <span>
+                {lang === "hi" ? "A4 परिवार मतदाता पर्ची प्रीव्यू" : "A4 Family Voter Slip Preview"}{" "}
+                ({selectedFamilyVoters.length} {lang === "hi" ? "सदस्य चुने गए" : "members"})
+              </span>
+            </div>
+            <div className="a4ModalActions">
+              <button
+                type="button"
+                onClick={handleDownloadFamilyA4Image}
+                disabled={isGeneratingFamilyImage}
+                style={{
+                  background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "7px",
+                  padding: "7px 14px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: isGeneratingFamilyImage ? "wait" : "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 2px 6px rgba(22, 163, 74, 0.35)",
+                }}
+              >
+                <Download size={15} />
+                <span>{isGeneratingFamilyImage ? (lang === "hi" ? "इमेज बन रही है..." : "Generating...") : (lang === "hi" ? "A4 इमेज डाउनलोड (.png)" : "Download A4 Image")}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintFamilyA4}
+                style={{
+                  background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "7px",
+                  padding: "7px 14px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 2px 6px rgba(2, 132, 199, 0.35)",
+                }}
+              >
+                <Printer size={15} />
+                <span>{lang === "hi" ? "A4 प्रिंट करें" : "Print A4"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const slipSummary = selectedFamilyVoters
+                    .map((v, i) => `${i + 1}. ${v.name} (क्र. ${v.serialNo !== undefined ? v.serialNo : i + 1}, EPIC: ${v.epic})`)
+                    .join("\n");
+                  const text = `*परिवार मतदाता पर्ची / Family Voter Slip*\n\n` +
+                    `*प्रत्याशी:* ${candidate?.name || "सम्मानित प्रत्याशी"}\n` +
+                    `*भाग संख्या:* ${familyFilter?.booth || "—"} | *मकान नं:* ${familyFilter?.house || "—"}\n\n` +
+                    `*परिवार के मतदाता:*\n${slipSummary}\n\n` +
+                    `*मतदान केंद्र:* ${selectedFamilyVoters[0]?.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}\n\n` +
+                    `कृपया अपना मतदान अवश्य करें! 🗳️`;
+                  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+                }}
+                style={{
+                  background: "#25d366",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "7px",
+                  padding: "7px 14px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  boxShadow: "0 2px 6px rgba(37, 211, 102, 0.35)",
+                }}
+              >
+                <Share2 size={15} />
+                <span>WhatsApp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowFamilySlipModal(false)}
+                style={{
+                  background: "#e2e8f0",
+                  color: "#334155",
+                  border: "none",
+                  borderRadius: "7px",
+                  padding: "7px 12px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                ✕ {lang === "hi" ? "बंद करें" : "Close"}
+              </button>
+            </div>
+          </div>
+
+          {/* A4 Sheet Container (Top A5 Poster + Cut Line + Bottom A5 Slips) */}
+          <div className="a4SheetWrapper">
+            <div className="a4FamilySheet">
+              {/* TOP A5: Candidate Poster */}
+              <div className="a4TopPoster">
+                <img
+                  src={candidate?.posterUrl || "/images/campaign-poster.jpg"}
+                  alt={candidate?.name || "प्रत्याशी पोस्टर"}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    target.style.display = "none";
+                    if (target.parentElement) {
+                      target.parentElement.style.background = "linear-gradient(135deg, #0284c7 0%, #1e3a8a 100%)";
+                      target.parentElement.innerHTML = `
+                        <div style="text-align: center; color: #ffffff; padding: 40px 20px;">
+                          <div style="font-size: 32px; font-weight: 900; margin-bottom: 8px;">${candidate?.name || "प्रत्याशी चुनाव प्रचार"}</div>
+                          <div style="font-size: 20px; font-weight: 700; opacity: 0.9; margin-bottom: 12px;">${candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा"}</div>
+                          <div style="font-size: 16px; opacity: 0.8;">वार्ड / क्षेत्र के सर्वांगीण विकास हेतु आपका अमूल्य वोट</div>
+                        </div>
+                      `;
+                    }
+                  }}
+                />
+                <div className="a4CutLine noPrint">
+                  <span className="a4CutLineBadge">✂ यहाँ से काटें / Cut Here</span>
+                </div>
+              </div>
+
+              {/* BOTTOM A5: Family Voter Slips */}
+              <div className="a4BottomSlips">
+                <div className="a4BottomHeader">
+                  <div>
+                    <span className="a4BottomTitle">
+                      👨‍👩‍👧‍👦 {lang === "hi" ? "परिवार मतदाता पर्ची" : "FAMILY VOTER SLIP"} (मकान नं: {familyFilter?.house || "—"})
+                    </span>
+                  </div>
+                  <div>
+                    <span className="a4BottomSub">
+                      भाग सं: {familyFilter?.booth || "—"} • कुल सदस्य: {selectedFamilyVoters.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2x3 Grid for up to 6 Slips */}
+                <div className="a4SlipsGrid">
+                  {selectedFamilyVoters.slice(0, 6).map((v, i) => (
+                    <div key={v.id} className="a4MiniSlipCard">
+                      <div>
+                        <div className="a4SlipTopRow">
+                          <span>क्रम सं : {v.serialNo !== undefined ? v.serialNo : i + 1}</span>
+                          <span>भाग सं : {v.booth || "—"}</span>
+                        </div>
+                        <div className="a4SlipNameRow">
+                          <span>नाम : <b>{v.name}</b></span>
+                        </div>
+                        <div className="a4SlipGuardianRow">
+                          <span>पिता/पति : {v.guardian || "—"}</span>
+                        </div>
+                        <div className="a4SlipMidRow">
+                          <span>उम्र : {v.age ? `${v.age} वर्ष` : "—"}</span>
+                          <span>मकान नं : {v.house || "—"}</span>
+                        </div>
+                        <div className="a4SlipEpicRow">
+                          <span>वोटर ID : {v.epic}</span>
+                        </div>
+                      </div>
+                      <div className="a4SlipBoothAddress">
+                        केंद्र : {v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
