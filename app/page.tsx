@@ -245,6 +245,45 @@ export default function Page() {
           ))}
         </nav>
 
+        <p className="label second">{lang === "hi" ? "डाउनलोड" : "Download"}</p>
+        <nav>
+          <button
+            onClick={() => {
+              setMenu(false);
+              if (voters.length === 0) {
+                alert(lang === "hi" ? "कोई मतदाता डेटा उपलब्ध नहीं है!" : "No voter data available!");
+                return;
+              }
+              const exportRows = voters.map((v, idx) => ({
+                "भाग संख्या (Part No)": v.booth || "—",
+                "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
+                "मतदाता का नाम (Name)": v.name || "",
+                "पिता/पति का नाम (Guardian)": v.guardian || "—",
+                "वोट डाला (Voted)": (v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) ? "हाँ" : "नहीं",
+                "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
+                "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
+                "आयु (Age)": v.age || "—",
+                "मोबाइल नंबर (Mobile)": v.phone || "—",
+                "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
+                "मकान नंबर (House No)": v.house || "—",
+                "पता (Address)": v.address || "—",
+                "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
+                "लिंग (Gender)": v.gender || "—",
+                "स्थिति (Status)": v.status || "Pending",
+                "कार्यकर्ता (Worker)": v.worker || "—",
+              }));
+              const ws = XLSX.utils.json_to_sheet(exportRows);
+              const wb = XLSX.utils.book_new();
+              XLSX.utils.book_append_sheet(wb, ws, "All_Voters");
+              const dateStr = new Date().toISOString().slice(0, 10);
+              XLSX.writeFile(wb, `VoterDesk_All_${voters.length}_voters_${dateStr}.xlsx`);
+            }}
+          >
+            <Download />
+            <span>{lang === "hi" ? `डाउनलोड Excel (${voters.length})` : `Download Voters (${voters.length})`}</span>
+          </button>
+        </nav>
+
         <p className="label second">{t.switchViews}</p>
         <nav>
           {user.role === "SUPER_ADMIN" && (
@@ -1880,6 +1919,9 @@ function BoothManagerView({
   const [ageSortOrder, setAgeSortOrder] = useState<"none" | "asc" | "desc">("none");
   const [showAgeSortMenu, setShowAgeSortMenu] = useState(false);
 
+  // Candidate Menu dropdown state (Current Page Download, All Voters Download, etc.)
+  const [showMenuDropdown, setShowMenuDropdown] = useState(false);
+
   // Dynamic extra columns from uploaded Excel sheet
   const extraExcelColumns = useMemo(() => {
     const standardKeys = new Set([
@@ -2660,6 +2702,146 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
   }, [activeVoterForSlip]);
 
+  // -------------------------------------------------------------
+  // CURRENT PAGE EXCEL DOWNLOAD (.xlsx) & ALL VOTERS DOWNLOAD
+  // -------------------------------------------------------------
+  const handleDownloadCurrentPageExcel = () => {
+    if (filteredVoters.length === 0) {
+      setLocalToast("⚠️ डाउनलोड करने के लिए कोई मतदाता डेटा उपलब्ध नहीं है!");
+      setTimeout(() => setLocalToast(""), 3500);
+      return;
+    }
+    try {
+      const exportRows = filteredVoters.map((v, idx) => {
+        const row: Record<string, any> = {
+          "भाग संख्या (Part No)": v.booth || "—",
+          "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
+          "मतदाता का नाम (Name)": v.name || "",
+          "पिता/पति का नाम (Guardian)": v.guardian || "—",
+          "वोट डाला (Voted)": (v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) ? "हाँ" : "नहीं",
+          "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
+          "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
+          "आयु (Age)": v.age || "—",
+          "मोबाइल नंबर (Mobile)": v.phone || "—",
+          "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
+          "मकान नंबर (House No)": v.house || "—",
+          "पता (Address)": v.address || "—",
+          "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
+          "लिंग (Gender)": v.gender || "—",
+          "स्थिति (Status)": v.status || "Pending",
+          "कार्यकर्ता (Worker)": v.worker || "—",
+        };
+
+        if (extraExcelColumns && extraExcelColumns.length > 0) {
+          extraExcelColumns.forEach((col) => {
+            let val = v.extraData && typeof v.extraData === "object" ? v.extraData[col] : undefined;
+            if (val === undefined) {
+              val = (v as Record<string, any>)[col];
+            }
+            row[col] = val !== undefined && val !== null ? val : "—";
+          });
+        }
+        return row;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const colWidths = Object.keys(exportRows[0] || {}).map((key) => {
+        const maxContentLen = Math.max(
+          key.length,
+          ...exportRows.slice(0, 40).map((r) => String(r[key] || "").length)
+        );
+        return { wch: Math.min(45, Math.max(12, maxContentLen + 3)) };
+      });
+      worksheet["!cols"] = colWidths;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Filtered_Voters");
+
+      let filePrefix = "Current_Page";
+      if (search.trim()) {
+        filePrefix = `Search_${search.trim().replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, "_")}`;
+      } else if (advName.trim()) {
+        filePrefix = `Name_${advName.trim().replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, "_")}`;
+      } else if (familyFilter) {
+        filePrefix = `Family_House_${(familyFilter.house || "Unknown").replace(/[^a-zA-Z0-9_]/g, "_")}`;
+      } else if (partFilter !== "ALL") {
+        filePrefix = `Part_${partFilter}`;
+      }
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const fileName = `VoterDesk_${filePrefix}_${filteredVoters.length}_voters_${dateStr}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      setLocalToast(`✅ ${filteredVoters.length} मतदाताओं की Excel (.xlsx) फाइल डाउनलोड हो गई!`);
+      setTimeout(() => setLocalToast(""), 4000);
+    } catch (err) {
+      alert("Excel डाउनलोड में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
+  const handleDownloadAllVotersExcel = () => {
+    if (voters.length === 0) {
+      setLocalToast("⚠️ कोई मतदाता डेटा उपलब्ध नहीं है!");
+      setTimeout(() => setLocalToast(""), 3500);
+      return;
+    }
+    try {
+      const exportRows = voters.map((v, idx) => {
+        const row: Record<string, any> = {
+          "भाग संख्या (Part No)": v.booth || "—",
+          "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
+          "मतदाता का नाम (Name)": v.name || "",
+          "पिता/पति का नाम (Guardian)": v.guardian || "—",
+          "वोट डाला (Voted)": (v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) ? "हाँ" : "नहीं",
+          "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
+          "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
+          "आयु (Age)": v.age || "—",
+          "मोबाइल नंबर (Mobile)": v.phone || "—",
+          "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
+          "मकान नंबर (House No)": v.house || "—",
+          "पता (Address)": v.address || "—",
+          "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
+          "लिंग (Gender)": v.gender || "—",
+          "स्थिति (Status)": v.status || "Pending",
+          "कार्यकर्ता (Worker)": v.worker || "—",
+        };
+
+        if (extraExcelColumns && extraExcelColumns.length > 0) {
+          extraExcelColumns.forEach((col) => {
+            let val = v.extraData && typeof v.extraData === "object" ? v.extraData[col] : undefined;
+            if (val === undefined) {
+              val = (v as Record<string, any>)[col];
+            }
+            row[col] = val !== undefined && val !== null ? val : "—";
+          });
+        }
+        return row;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const colWidths = Object.keys(exportRows[0] || {}).map((key) => {
+        const maxContentLen = Math.max(
+          key.length,
+          ...exportRows.slice(0, 40).map((r) => String(r[key] || "").length)
+        );
+        return { wch: Math.min(45, Math.max(12, maxContentLen + 3)) };
+      });
+      worksheet["!cols"] = colWidths;
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "All_Voters");
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const fileName = `VoterDesk_All_${voters.length}_voters_${dateStr}.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      setLocalToast(`✅ सभी ${voters.length} मतदाताओं की Excel (.xlsx) फाइल डाउनलोड हो गई!`);
+      setTimeout(() => setLocalToast(""), 4000);
+    } catch (err) {
+      alert("Excel डाउनलोड में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   const handleStatusChange = (voterId: string, newStatus: VoterRecord["status"]) => {
     store.updateVoter(voterId, { status: newStatus, worker: user.name });
     if (selectedVoter && selectedVoter.id === voterId) {
@@ -2938,7 +3120,292 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           </div>
         </div>
 
-        <div className="bmHeaderRight">
+        <div className="bmHeaderRight" style={{ position: "relative" }}>
+          {/* Candidate Menu Button with Dropdown */}
+          <button
+            type="button"
+            onClick={() => setShowMenuDropdown((prev) => !prev)}
+            className={`bmMenuBtn ${showMenuDropdown ? "active" : ""}`}
+            title={lang === "hi" ? "कैंडिडेट मेनू (डाउनलोड व सेटिंग्स)" : "Candidate Menu (Download & Settings)"}
+          >
+            <Menu size={13} />
+            <span>{lang === "hi" ? "मेनू" : "Menu"}</span>
+            <ChevronDown size={11} style={{ transform: showMenuDropdown ? "rotate(180deg)" : "none", transition: "transform 0.2s" }} />
+          </button>
+
+          {/* Menu Dropdown Modal / Popup */}
+          {showMenuDropdown && (
+            <>
+              {/* Invisible Backdrop for click-outside */}
+              <div
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  zIndex: 90,
+                  background: "transparent",
+                }}
+                onClick={() => setShowMenuDropdown(false)}
+              />
+
+              {/* Menu Dropdown Card */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: "36px",
+                  right: "0",
+                  zIndex: 100,
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  boxShadow: "0 12px 35px -4px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.15)",
+                  border: "1.5px solid #e2e8f0",
+                  width: "295px",
+                  maxWidth: "92vw",
+                  padding: "8px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  color: "#0f172a",
+                  animation: "fadeIn 0.15s ease-out",
+                }}
+              >
+                {/* Menu Header with Candidate context */}
+                <div style={{ padding: "6px 8px 8px", borderBottom: "1px solid #f1f5f9" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#0284c7", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                      📋 {lang === "hi" ? "कैंडिडेट मेनू" : "Candidate Menu"}
+                    </span>
+                    <span style={{ fontSize: "10px", background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>
+                      {user.role === "SUPER_ADMIN" ? "Super Admin" : "Candidate"}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#334155", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {candidate ? candidate.name : user.name}
+                  </div>
+                </div>
+
+                {/* Primary Action 1: Current Page Download (Excel .xlsx) */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenuDropdown(false);
+                    handleDownloadCurrentPageExcel();
+                  }}
+                  style={{
+                    background: "linear-gradient(135deg, #10b981, #059669)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "10px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    boxShadow: "0 2px 8px rgba(16, 185, 129, 0.35)",
+                  }}
+                >
+                  <Download size={20} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 800, lineHeight: 1.2 }}>
+                      {lang === "hi" ? "📥 करंट पेज डाउनलोड (Excel)" : "📥 Current Page Download (.xlsx)"}
+                    </div>
+                    <div style={{ fontSize: "11px", opacity: 0.92, marginTop: "2px", lineHeight: 1.2 }}>
+                      {search.trim()
+                        ? `"${search.trim()}" के ${filteredVoters.length} मतदाता (.xlsx)`
+                        : advName.trim()
+                        ? `"${advName.trim()}" के ${filteredVoters.length} मतदाता (.xlsx)`
+                        : `${filteredVoters.length} मतदाता Excel (.xlsx)`}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Action 2: Master Download - All Voters Excel */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenuDropdown(false);
+                    handleDownloadAllVotersExcel();
+                  }}
+                  style={{
+                    background: "#f8fafc",
+                    color: "#0f172a",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <FileSpreadsheet size={18} color="#0284c7" style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                      {lang === "hi" ? "पूरी मतदाता सूची डाउनलोड (All)" : "Download All Voters (.xlsx)"}
+                    </div>
+                    <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px" }}>
+                      {voters.length} {lang === "hi" ? "कुल मतदाता (मास्टर फाइल)" : "total voters master"}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Action 3: Print Options */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenuDropdown(false);
+                    setShowPrintModal(true);
+                  }}
+                  style={{
+                    background: "#f8fafc",
+                    color: "#0f172a",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <Printer size={18} color="#ea580c" style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                      {lang === "hi" ? "प्रिंट विकल्प (Print Options)" : "Print Options"}
+                    </div>
+                    <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px" }}>
+                      {lang === "hi" ? "नामावली व पर्ची प्रिंट करें" : "Print voter roll & slips"}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Action 4: Data Sync & Refresh */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenuDropdown(false);
+                    onRefreshData(true);
+                  }}
+                  style={{
+                    background: "#f8fafc",
+                    color: "#0f172a",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <RefreshCw size={17} color="#10b981" style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                      {lang === "hi" ? "डेटा रिफ्रेश व सिंक" : "Refresh & Live Sync"}
+                    </div>
+                    <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px" }}>
+                      {onlineWorkersCount > 1 ? `${onlineWorkersCount} डिवाइस कनेक्टेड` : "15 मोबाइल्स में रियल-टाइम सिंक"}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Action 5: Location Modal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenuDropdown(false);
+                    setShowLocationModal(true);
+                  }}
+                  style={{
+                    background: "#f8fafc",
+                    color: "#0f172a",
+                    border: "1px solid #cbd5e1",
+                    borderRadius: "8px",
+                    padding: "8px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <Building2 size={17} color="#6366f1" style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                      {lang === "hi" ? "कार्यकर्ता लोकेशन ट्रैकर" : "Worker Live Locations"}
+                    </div>
+                    <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px" }}>
+                      {lang === "hi" ? "मैप पर लाइव लोकेशन देखें" : "Track team on Google Map"}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Action 6: Admin Panel (if authorized) */}
+                {onOpenAdminPanel && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMenuDropdown(false);
+                      onOpenAdminPanel();
+                    }}
+                    style={{
+                      background: "#e0f2fe",
+                      color: "#0369a1",
+                      border: "1px solid #7dd3fc",
+                      borderRadius: "8px",
+                      padding: "8px 12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    <Settings size={17} color="#0284c7" style={{ flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                        {lang === "hi" ? "एडमिन डैशबोर्ड (Admin)" : "Admin Dashboard"}
+                      </div>
+                      <div style={{ fontSize: "10.5px", color: "#0284c7", marginTop: "1px" }}>
+                        {lang === "hi" ? "कार्यकर्ता पासवर्ड, Excel अपलोड व रिपोर्ट" : "Manage team, ward & reports"}
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {/* Action 7: Logout */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMenuDropdown(false);
+                    onLogout();
+                  }}
+                  style={{
+                    background: "#fff1f2",
+                    color: "#be123c",
+                    border: "1px solid #fecdd3",
+                    borderRadius: "8px",
+                    padding: "7px 12px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "10px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    marginTop: "2px",
+                  }}
+                >
+                  <LogOut size={16} color="#be123c" style={{ flexShrink: 0 }} />
+                  <div style={{ fontSize: "12px", fontWeight: 700 }}>
+                    {lang === "hi" ? "लॉग आउट करें" : "Sign Out"}
+                  </div>
+                </button>
+              </div>
+            </>
+          )}
+
           {/* Live Multi-Mobile Sync Indicator */}
           <button
             type="button"
@@ -3169,19 +3636,46 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               </select>
             )}
 
-            <span
-              style={{
-                fontSize: "11px",
-                fontWeight: 700,
-                color: "#475467",
-                background: "#e2e8f0",
-                padding: "4px 8px",
-                borderRadius: "6px",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {filteredVoters.length} {lang === "hi" ? "मतदाता" : "voters"}
-            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "#475467",
+                  background: "#e2e8f0",
+                  padding: "4px 8px",
+                  borderRadius: "6px",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {filteredVoters.length} {lang === "hi" ? "मतदाता" : "voters"}
+              </span>
+
+              <button
+                type="button"
+                onClick={handleDownloadCurrentPageExcel}
+                title={lang === "hi" ? `करंट पेज के ${filteredVoters.length} मतदाता Excel (.xlsx) में डाउनलोड करें` : `Download current page ${filteredVoters.length} voters (.xlsx)`}
+                style={{
+                  height: "36px",
+                  padding: "0 10px",
+                  borderRadius: "8px",
+                  border: "none",
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  color: "#ffffff",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  boxShadow: "0 2px 5px rgba(16, 185, 129, 0.25)",
+                }}
+              >
+                <Download size={14} />
+                <span>{lang === "hi" ? `डाउनलोड (${filteredVoters.length})` : `Download (${filteredVoters.length})`}</span>
+              </button>
+            </div>
           </div>
 
           {/* Advanced Multi-Column Search Drawer / Panel */}
@@ -3428,14 +3922,36 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 </div>
               </div>
 
-              {/* Helper tip with live match count */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11.5px", color: "#64748b", borderTop: "1px dashed #e2e8f0", paddingTop: "8px" }}>
+              {/* Helper tip with live match count & download button */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "11.5px", color: "#64748b", borderTop: "1px dashed #e2e8f0", paddingTop: "8px", flexWrap: "wrap", gap: "6px" }}>
                 <span>
                   💡 <b>{lang === "hi" ? "सुझाव:" : "Tip:"}</b> {lang === "hi" ? "नाम में 'Gau' और पिता के कॉलम में 'San' लिखते ही सटीक मतदाता तुरंत सामने आ जाएगा।" : "Typing 'Gau' in Name and 'San' in Father immediately pinpoints the voter."}
                 </span>
-                <span style={{ fontWeight: 700, color: "#0369a1", background: "#f0f9ff", padding: "2px 8px", borderRadius: "6px" }}>
-                  {filteredVoters.length} {lang === "hi" ? "मतदाता मिले" : "voters found"}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontWeight: 700, color: "#0369a1", background: "#f0f9ff", padding: "2px 8px", borderRadius: "6px" }}>
+                    {filteredVoters.length} {lang === "hi" ? "मतदाता मिले" : "voters found"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleDownloadCurrentPageExcel}
+                    style={{
+                      background: "#10b981",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "6px",
+                      padding: "3px 8px",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "4px",
+                    }}
+                  >
+                    <Download size={12} />
+                    <span>Excel</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -5721,6 +6237,35 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                     </small>
                   </div>
                 </button>
+
+                <button
+                  type="button"
+                  style={{
+                    padding: "16px",
+                    border: "1.5px solid #10b981",
+                    borderRadius: "10px",
+                    background: "#f0fdf4",
+                    textAlign: "left",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "12px",
+                  }}
+                  onClick={() => {
+                    setShowPrintModal(false);
+                    handleDownloadCurrentPageExcel();
+                  }}
+                >
+                  <Download size={24} color="#059669" />
+                  <div>
+                    <b style={{ fontSize: "14px", display: "block", color: "#065f46" }}>
+                      {lang === "hi" ? "करंट पेज Excel (.xlsx) डाउनलोड" : "Current Page Excel (.xlsx) Download"}
+                    </b>
+                    <small style={{ color: "#047857", fontSize: "11px" }}>
+                      वर्तमान में दिख रहे {filteredVoters.length} मतदाताओं का पूरा डेटा Excel फाइल में डाउनलोड करें
+                    </small>
+                  </div>
+                </button>
               </div>
 
               <div style={{ textAlign: "right" }}>
@@ -6331,6 +6876,70 @@ function VotersTable({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportExcel = () => {
+    if (filtered.length === 0) return;
+    try {
+      const exportRows = filtered.map((v, idx) => {
+        const row: Record<string, any> = {
+          "भाग संख्या (Part No)": v.booth || "—",
+          "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
+          "मतदाता का नाम (Name)": v.name || "",
+          "पिता/पति का नाम (Guardian)": v.guardian || "—",
+          "वोट डाला (Voted)": (v.voted === "हाँ" || v.voted === "Yes" || v.voted === true) ? "हाँ" : "नहीं",
+          "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
+          "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
+          "आयु (Age)": v.age || "—",
+          "मोबाइल नंबर (Mobile)": v.phone || "—",
+          "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
+          "मकान नंबर (House No)": v.house || "—",
+          "पता (Address)": v.address || "—",
+          "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
+          "लिंग (Gender)": v.gender || "—",
+          "स्थिति (Status)": v.status || "Pending",
+          "कार्यकर्ता (Worker)": v.worker || "—",
+        };
+
+        if (extraExcelColumns && extraExcelColumns.length > 0) {
+          extraExcelColumns.forEach((col) => {
+            let val = v.extraData && typeof v.extraData === "object" ? v.extraData[col] : undefined;
+            if (val === undefined) {
+              val = (v as Record<string, any>)[col];
+            }
+            row[col] = val !== undefined && val !== null ? val : "—";
+          });
+        }
+        return row;
+      });
+
+      const ws = XLSX.utils.json_to_sheet(exportRows);
+      const colWidths = Object.keys(exportRows[0] || {}).map((key) => {
+        const maxContentLen = Math.max(
+          key.length,
+          ...exportRows.slice(0, 40).map((r) => String(r[key] || "").length)
+        );
+        return { wch: Math.min(45, Math.max(12, maxContentLen + 3)) };
+      });
+      ws["!cols"] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Current_Page_Voters");
+
+      let filePrefix = "Current_Page";
+      if (q.trim()) {
+        filePrefix = `Search_${q.trim().replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, "_")}`;
+      } else if (advName.trim()) {
+        filePrefix = `Name_${advName.trim().replace(/[^a-zA-Z0-9_\u0900-\u097F]/g, "_")}`;
+      } else if (boothFilter !== "ALL") {
+        filePrefix = `Booth_${boothFilter}`;
+      }
+
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `VoterDesk_${filePrefix}_${filtered.length}_voters_${dateStr}.xlsx`);
+    } catch (err) {
+      alert("Excel download error: " + (err instanceof Error ? err.message : String(err)));
+    }
+  };
+
   return (
     <>
       <Title
@@ -6339,6 +6948,14 @@ function VotersTable({
         sub={`Total ${filtered.length} voters match your filters.`}
       >
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            className="outline"
+            onClick={handleExportExcel}
+            style={{ background: "#ecfdf5", borderColor: "#a7f3d0", color: "#065f46", fontWeight: 700 }}
+            title="करंट पेज का पूरा डेटा Excel (.xlsx) में डाउनलोड करें"
+          >
+            <Download size={16} /> Current Page Excel ({filtered.length})
+          </button>
           <button className="outline" onClick={downloadSampleExcelTemplate} title="11 कॉलम वाला एक्सेल टेम्पलेट डाउनलोड करें">
             <Download size={16} /> Download Template (.xlsx)
           </button>
