@@ -1959,25 +1959,28 @@
   box-sizing: border-box;
 }
 
-/* TOP A5: Landscape A5 half (aspect-ratio 1.414 : 1) */
+/* TOP A5: Candidate Campaign Poster */
 .a4TopPoster {
   width: 100%;
-  aspect-ratio: 1.414 / 1;
+  min-height: 180px;
   max-height: 560px;
   background: #f8fafc;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  overflow: hidden;
   border-bottom: 2px dashed #94a3b8;
+  box-sizing: border-box;
 }
 
-.a4TopPoster img {
+.a4TopPoster img,
+.a4TopPoster .a4PosterImg {
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  object-position: center top;
+  max-height: 560px;
+  object-fit: contain;
+  object-position: center;
+  display: block;
 }
 
 .a4CutLine {
@@ -1989,6 +1992,7 @@
   align-items: center;
   justify-content: center;
   z-index: 10;
+  pointer-events: none;
 }
 
 .a4CutLineBadge {
@@ -1999,6 +2003,7 @@
   font-weight: 700;
   padding: 1px 8px;
   border-radius: 10px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
 /* BOTTOM A5: Slips Area */
@@ -2172,6 +2177,21 @@
     font-size: 11.5px !important;
   }
 
+  .a4TopPoster {
+    min-height: 150px;
+    max-height: 360px;
+    background: #f1f5f9;
+  }
+
+  .a4TopPoster img,
+  .a4TopPoster .a4PosterImg {
+    width: 100%;
+    height: auto;
+    max-height: 360px;
+    object-fit: contain;
+    object-position: center;
+  }
+
   .a4FamilySheet {
     border-radius: 4px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
@@ -2298,8 +2318,20 @@
   }
 
   body.printing-a4-family-slip .a4TopPoster {
-    height: 560px !important;
-    aspect-ratio: auto !important;
+    height: 540px !important;
+    max-height: 540px !important;
+    background: #ffffff !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  body.printing-a4-family-slip .a4TopPoster img,
+  body.printing-a4-family-slip .a4TopPoster .a4PosterImg {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 540px !important;
+    object-fit: contain !important;
   }
 
   body.printing-a4-family-slip .a4SlipsGrid {

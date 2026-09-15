@@ -2311,7 +2311,33 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       await new Promise<void>((resolve) => {
         img.onload = () => {
           try {
-            ctx.drawImage(img, 0, 0, w, 860);
+            const topW = w;
+            const topH = 860;
+            const imgAspect = (img.naturalWidth || img.width || topW) / (img.naturalHeight || img.height || topH);
+            const areaAspect = topW / topH;
+
+            let drawW = topW;
+            let drawH = topH;
+            let drawX = 0;
+            let drawY = 0;
+
+            if (imgAspect > areaAspect) {
+              // Image is wider than 1.44:1
+              drawW = topW;
+              drawH = topW / imgAspect;
+              drawY = (topH - drawH) / 2;
+            } else {
+              // Image is taller than 1.44:1 (e.g. portrait or square)
+              drawH = topH;
+              drawW = topH * imgAspect;
+              drawX = (topW - drawW) / 2;
+            }
+
+            // Fill clean light background for letterbox padding
+            ctx.fillStyle = "#f8fafc";
+            ctx.fillRect(0, 0, topW, topH);
+
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
           } catch {}
           resolve();
         };
@@ -5847,21 +5873,39 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                 <img
                   src={candidate?.posterUrl || "/images/campaign-poster.jpg"}
                   alt={candidate?.name || "प्रत्याशी पोस्टर"}
+                  className="a4PosterImg"
                   onError={(e) => {
                     const target = e.currentTarget;
                     target.style.display = "none";
-                    if (target.parentElement) {
-                      target.parentElement.style.background = "linear-gradient(135deg, #0284c7 0%, #1e3a8a 100%)";
-                      target.parentElement.innerHTML = `
-                        <div style="text-align: center; color: #ffffff; padding: 40px 20px;">
-                          <div style="font-size: 28px; font-weight: 900; margin-bottom: 8px;">${candidate?.name || "प्रत्याशी चुनाव प्रचार"}</div>
-                          <div style="font-size: 18px; font-weight: 700; opacity: 0.9; margin-bottom: 10px;">${candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा"}</div>
-                          <div style="font-size: 14px; opacity: 0.85;">वार्ड / क्षेत्र के सर्वांगीण विकास हेतु आपका अमूल्य वोट</div>
-                        </div>
-                      `;
-                    }
+                    const fb = document.getElementById("a4PosterFallback");
+                    if (fb) fb.style.display = "flex";
                   }}
                 />
+                <div
+                  id="a4PosterFallback"
+                  style={{
+                    display: "none",
+                    width: "100%",
+                    minHeight: "160px",
+                    background: "linear-gradient(135deg, #0284c7 0%, #1e3a8a 100%)",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#ffffff",
+                    padding: "20px 14px",
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: "22px", fontWeight: 900, marginBottom: "6px" }}>
+                    {candidate?.name || "प्रत्याशी चुनाव प्रचार"}
+                  </div>
+                  <div style={{ fontSize: "15px", fontWeight: 700, opacity: 0.9, marginBottom: "8px" }}>
+                    {candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा"}
+                  </div>
+                  <div style={{ fontSize: "13px", opacity: 0.85 }}>
+                    वार्ड / क्षेत्र के सर्वांगीण विकास हेतु आपका अमूल्य वोट
+                  </div>
+                </div>
                 <div className="a4CutLine noPrint">
                   <span className="a4CutLineBadge">✂ यहाँ से काटें / Cut Here</span>
                 </div>
