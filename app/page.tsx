@@ -1861,6 +1861,7 @@ function BoothManagerView({
   const [selectedFamilyVoterIds, setSelectedFamilyVoterIds] = useState<string[]>([]);
   const [showFamilySlipModal, setShowFamilySlipModal] = useState(false);
   const [isGeneratingFamilyImage, setIsGeneratingFamilyImage] = useState(false);
+  const [familySlipGridCols, setFamilySlipGridCols] = useState<number>(2);
 
   // Voter Slip Custom Message (1:1 with user screenshot)
   const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
@@ -2368,7 +2369,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.lineTo(w - 40, 935);
       ctx.stroke();
 
-      // Slips Grid: 2 columns x 3 rows (max 6 slips)
+      // Slips Grid: 2 columns x 3 rows (ALWAYS 6 slots, empty slots remain blank)
       const slips = selectedFamilyVoters.slice(0, 6);
       const startX = 40;
       const startY = 955;
@@ -2377,72 +2378,85 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       const gapX = 30;
       const gapY = 20;
 
-      slips.forEach((v, index) => {
-        const col = index % 2;
-        const row = Math.floor(index / 2);
+      for (let slotIndex = 0; slotIndex < 6; slotIndex++) {
+        const col = slotIndex % 2;
+        const row = Math.floor(slotIndex / 2);
         const x = startX + col * (cardW + gapX);
         const y = startY + row * (cardH + gapY);
 
-        // Draw card background
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(x, y, cardW, cardH);
+        const v = slips[slotIndex];
 
-        // Draw dotted border
-        ctx.strokeStyle = "#0062cc";
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([8, 5]);
-        ctx.strokeRect(x, y, cardW, cardH);
-        ctx.setLineDash([]); // reset
+        if (v) {
+          // Draw card background
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(x, y, cardW, cardH);
 
-        // Top blue banner inside card
-        ctx.fillStyle = "#eff6ff";
-        ctx.fillRect(x + 4, y + 4, cardW - 8, 38);
+          // Draw dotted border
+          ctx.strokeStyle = "#0062cc";
+          ctx.lineWidth = 2.5;
+          ctx.setLineDash([8, 5]);
+          ctx.strokeRect(x, y, cardW, cardH);
+          ctx.setLineDash([]); // reset
 
-        ctx.fillStyle = "#1e40af";
-        ctx.font = "bold 18px sans-serif";
-        ctx.textAlign = "left";
-        ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : index + 1}`, x + 16, y + 29);
-        ctx.textAlign = "right";
-        ctx.fillText(`भाग सं : ${v.booth || "—"}`, x + cardW - 16, y + 29);
+          // Top blue banner inside card
+          ctx.fillStyle = "#eff6ff";
+          ctx.fillRect(x + 4, y + 4, cardW - 8, 38);
 
-        // Name
-        ctx.fillStyle = "#0f172a";
-        ctx.font = "bold 22px sans-serif";
-        ctx.textAlign = "left";
-        ctx.fillText(`नाम : ${v.name}`, x + 16, y + 74);
+          ctx.fillStyle = "#1e40af";
+          ctx.font = "bold 18px sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : slotIndex + 1}`, x + 16, y + 29);
+          ctx.textAlign = "right";
+          ctx.fillText(`भाग सं : ${v.booth || "—"}`, x + cardW - 16, y + 29);
 
-        // Guardian
-        ctx.fillStyle = "#334155";
-        ctx.font = "18px sans-serif";
-        ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 106);
+          // Name
+          ctx.fillStyle = "#0f172a";
+          ctx.font = "bold 22px sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText(`नाम : ${v.name}`, x + 16, y + 74);
 
-        // Age & House
-        ctx.fillStyle = "#334155";
-        ctx.font = "bold 17px sans-serif";
-        ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 138);
-        ctx.textAlign = "right";
-        ctx.fillText(`मकान नं : ${v.house || "—"}`, x + cardW - 16, y + 138);
+          // Guardian
+          ctx.fillStyle = "#334155";
+          ctx.font = "18px sans-serif";
+          ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 106);
 
-        // Voter ID (EPIC)
-        ctx.textAlign = "left";
-        ctx.fillStyle = "#0369a1";
-        ctx.font = "bold 18px monospace";
-        ctx.fillText(`वोटर ID : ${v.epic}`, x + 16, y + 172);
+          // Age & House
+          ctx.fillStyle = "#334155";
+          ctx.font = "bold 17px sans-serif";
+          ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 138);
+          ctx.textAlign = "right";
+          ctx.fillText(`मकान नं : ${v.house || "—"}`, x + cardW - 16, y + 138);
 
-        // Divider
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x + 12, y + 186);
-        ctx.lineTo(x + cardW - 12, y + 186);
-        ctx.stroke();
+          // Voter ID (EPIC)
+          ctx.textAlign = "left";
+          ctx.fillStyle = "#0369a1";
+          ctx.font = "bold 18px monospace";
+          ctx.fillText(`वोटर ID : ${v.epic}`, x + 16, y + 172);
 
-        // Polling Station / Booth Address
-        ctx.fillStyle = "#64748b";
-        ctx.font = "14px sans-serif";
-        const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
-        ctx.fillText(addrText.length > 48 ? addrText.substring(0, 48) + "..." : addrText, x + 16, y + 214);
-      });
+          // Divider
+          ctx.strokeStyle = "#e2e8f0";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(x + 12, y + 186);
+          ctx.lineTo(x + cardW - 12, y + 186);
+          ctx.stroke();
+
+          // Polling Station / Booth Address
+          ctx.fillStyle = "#64748b";
+          ctx.font = "14px sans-serif";
+          const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
+          ctx.fillText(addrText.length > 48 ? addrText.substring(0, 48) + "..." : addrText, x + 16, y + 214);
+        } else {
+          // Draw empty / blank card placeholder (preserving the 6-slot geometry, leaving slot blank)
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(x, y, cardW, cardH);
+          ctx.strokeStyle = "#cbd5e1";
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([8, 6]);
+          ctx.strokeRect(x, y, cardW, cardH);
+          ctx.setLineDash([]);
+        }
+      }
 
       // 5. Trigger download as PNG
       const dataUrl = canvas.toDataURL("image/png");
@@ -5696,15 +5710,28 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
       {/* 10. Modal: A4 Family Voter Slip Preview & Generator (Top A5 Poster + Bottom A5 Slips) */}
       {showFamilySlipModal && selectedFamilyVoters.length > 0 && (
         <div className="a4ModalOverlay">
-          {/* Top Bar with Actions */}
+          {/* Top Bar with Responsive Actions */}
           <div className="a4ModalHeader noPrint">
-            <div className="a4ModalTitle">
-              <Sparkles size={18} color="#0284c7" />
-              <span>
-                {lang === "hi" ? "A4 परिवार मतदाता पर्ची प्रीव्यू" : "A4 Family Voter Slip Preview"}{" "}
-                ({selectedFamilyVoters.length} {lang === "hi" ? "सदस्य चुने गए" : "members"})
-              </span>
+            <div className="a4ModalHeaderTop">
+              <div className="a4ModalTitle">
+                <Sparkles size={18} color="#0284c7" />
+                <span>
+                  {lang === "hi" ? "A4 परिवार मतदाता पर्ची" : "A4 Family Voter Slip"}
+                  <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 600, marginLeft: "6px" }}>
+                    ({selectedFamilyVoters.length} {lang === "hi" ? "सदस्य चुने गए, 6 स्लॉट" : "selected, 6 slots"})
+                  </span>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="a4ModalCloseBtn"
+                onClick={() => setShowFamilySlipModal(false)}
+                title="बंद करें"
+              >
+                ✕ {lang === "hi" ? "बंद करें" : "Close"}
+              </button>
             </div>
+
             <div className="a4ModalActions">
               <button
                 type="button"
@@ -5715,18 +5742,19 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "7px",
-                  padding: "7px 14px",
-                  fontSize: "13px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
                   fontWeight: 700,
                   cursor: isGeneratingFamilyImage ? "wait" : "pointer",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
                   boxShadow: "0 2px 6px rgba(22, 163, 74, 0.35)",
+                  flex: 1,
                 }}
               >
-                <Download size={15} />
-                <span>{isGeneratingFamilyImage ? (lang === "hi" ? "इमेज बन रही है..." : "Generating...") : (lang === "hi" ? "A4 इमेज डाउनलोड (.png)" : "Download A4 Image")}</span>
+                <Download size={14} />
+                <span>{isGeneratingFamilyImage ? (lang === "hi" ? "बन रही है..." : "Generating...") : (lang === "hi" ? "A4 इमेज (.png)" : "Download A4")}</span>
               </button>
 
               <button
@@ -5737,17 +5765,18 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "7px",
-                  padding: "7px 14px",
-                  fontSize: "13px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
                   fontWeight: 700,
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
                   boxShadow: "0 2px 6px rgba(2, 132, 199, 0.35)",
+                  flex: 1,
                 }}
               >
-                <Printer size={15} />
+                <Printer size={14} />
                 <span>{lang === "hi" ? "A4 प्रिंट करें" : "Print A4"}</span>
               </button>
 
@@ -5770,35 +5799,42 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "7px",
-                  padding: "7px 14px",
-                  fontSize: "13px",
+                  padding: "7px 12px",
+                  fontSize: "12px",
                   fontWeight: 700,
                   cursor: "pointer",
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
                   boxShadow: "0 2px 6px rgba(37, 211, 102, 0.35)",
+                  flex: 1,
                 }}
               >
-                <Share2 size={15} />
+                <Share2 size={14} />
                 <span>WhatsApp</span>
               </button>
 
+              {/* Mobile View Mode: 1-Column vs 2-Column A4 */}
               <button
                 type="button"
-                onClick={() => setShowFamilySlipModal(false)}
+                onClick={() => setFamilySlipGridCols((prev) => (prev === 2 ? 1 : 2))}
                 style={{
-                  background: "#e2e8f0",
-                  color: "#334155",
-                  border: "none",
+                  background: "#f8fafc",
+                  color: "#0369a1",
+                  border: "1px solid #cbd5e1",
                   borderRadius: "7px",
-                  padding: "7px 12px",
-                  fontSize: "13px",
+                  padding: "7px 10px",
+                  fontSize: "12px",
                   fontWeight: 700,
                   cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "5px",
+                  flex: 1,
                 }}
+                title="कॉलम लेआउट बदलें"
               >
-                ✕ {lang === "hi" ? "बंद करें" : "Close"}
+                <span>{familySlipGridCols === 2 ? "📱 1-कॉलम" : "📄 2-कॉलम"}</span>
               </button>
             </div>
           </div>
@@ -5818,9 +5854,9 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                       target.parentElement.style.background = "linear-gradient(135deg, #0284c7 0%, #1e3a8a 100%)";
                       target.parentElement.innerHTML = `
                         <div style="text-align: center; color: #ffffff; padding: 40px 20px;">
-                          <div style="font-size: 32px; font-weight: 900; margin-bottom: 8px;">${candidate?.name || "प्रत्याशी चुनाव प्रचार"}</div>
-                          <div style="font-size: 20px; font-weight: 700; opacity: 0.9; margin-bottom: 12px;">${candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा"}</div>
-                          <div style="font-size: 16px; opacity: 0.8;">वार्ड / क्षेत्र के सर्वांगीण विकास हेतु आपका अमूल्य वोट</div>
+                          <div style="font-size: 28px; font-weight: 900; margin-bottom: 8px;">${candidate?.name || "प्रत्याशी चुनाव प्रचार"}</div>
+                          <div style="font-size: 18px; font-weight: 700; opacity: 0.9; margin-bottom: 10px;">${candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा"}</div>
+                          <div style="font-size: 14px; opacity: 0.85;">वार्ड / क्षेत्र के सर्वांगीण विकास हेतु आपका अमूल्य वोट</div>
                         </div>
                       `;
                     }
@@ -5841,39 +5877,52 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                   </div>
                   <div>
                     <span className="a4BottomSub">
-                      भाग सं: {familyFilter?.booth || "—"} • कुल सदस्य: {selectedFamilyVoters.length}
+                      भाग सं: {familyFilter?.booth || "—"} • {selectedFamilyVoters.length} सदस्य ({6 - selectedFamilyVoters.length} रिक्त स्थान)
                     </span>
                   </div>
                 </div>
 
-                {/* 2x3 Grid for up to 6 Slips */}
-                <div className="a4SlipsGrid">
-                  {selectedFamilyVoters.slice(0, 6).map((v, i) => (
-                    <div key={v.id} className="a4MiniSlipCard">
-                      <div>
-                        <div className="a4SlipTopRow">
-                          <span>क्रम सं : {v.serialNo !== undefined ? v.serialNo : i + 1}</span>
-                          <span>भाग सं : {v.booth || "—"}</span>
+                {/* 6 Slots Grid: 2 columns x 3 rows (or 1-column on mobile) */}
+                <div className={`a4SlipsGrid ${familySlipGridCols === 1 ? "a4SlipsGridSingleCol" : ""}`}>
+                  {[0, 1, 2, 3, 4, 5].map((slotIdx) => {
+                    const v = selectedFamilyVoters[slotIdx];
+                    if (v) {
+                      return (
+                        <div key={v.id} className="a4MiniSlipCard">
+                          <div>
+                            <div className="a4SlipTopRow">
+                              <span>क्रम सं : {v.serialNo !== undefined ? v.serialNo : slotIdx + 1}</span>
+                              <span>भाग सं : {v.booth || "—"}</span>
+                            </div>
+                            <div className="a4SlipNameRow">
+                              <span>नाम : <b>{v.name}</b></span>
+                            </div>
+                            <div className="a4SlipGuardianRow">
+                              <span>पिता/पति : {v.guardian || "—"}</span>
+                            </div>
+                            <div className="a4SlipMidRow">
+                              <span>उम्र : {v.age ? `${v.age} वर्ष` : "—"}</span>
+                              <span>मकान नं : {v.house || "—"}</span>
+                            </div>
+                            <div className="a4SlipEpicRow">
+                              <span>वोटर ID : {v.epic}</span>
+                            </div>
+                          </div>
+                          <div className="a4SlipBoothAddress">
+                            केंद्र : {v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}
+                          </div>
                         </div>
-                        <div className="a4SlipNameRow">
-                          <span>नाम : <b>{v.name}</b></span>
-                        </div>
-                        <div className="a4SlipGuardianRow">
-                          <span>पिता/पति : {v.guardian || "—"}</span>
-                        </div>
-                        <div className="a4SlipMidRow">
-                          <span>उम्र : {v.age ? `${v.age} वर्ष` : "—"}</span>
-                          <span>मकान नं : {v.house || "—"}</span>
-                        </div>
-                        <div className="a4SlipEpicRow">
-                          <span>वोटर ID : {v.epic}</span>
+                      );
+                    }
+                    return (
+                      <div key={`empty-slot-${slotIdx}`} className="a4MiniSlipCard a4EmptySlipCard">
+                        <div className="a4EmptyCardInner">
+                          <span style={{ fontSize: "16px", opacity: 0.4 }}>◻️</span>
+                          <span>{lang === "hi" ? `पर्ची ${slotIdx + 1} (रिक्त स्थान)` : `Slip ${slotIdx + 1} (Blank)`}</span>
                         </div>
                       </div>
-                      <div className="a4SlipBoothAddress">
-                        केंद्र : {v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>

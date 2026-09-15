@@ -1859,79 +1859,111 @@
 }
 
 /* =====================================================================
-   A4 FAMILY VOTER SLIP GENERATOR STYLES
+   A4 FAMILY VOTER SLIP GENERATOR STYLES (MOBILE RESPONSIVE + 6 SLOTS)
    ===================================================================== */
 .a4ModalOverlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.85);
+  background: rgba(15, 23, 42, 0.88);
   backdrop-filter: blur(8px);
   z-index: 9999;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 14px;
+  padding: 14px 10px 30px;
   overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .a4ModalHeader {
   width: 100%;
-  max-width: 820px;
+  max-width: 794px;
+  background: #ffffff;
+  padding: 12px 16px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.a4ModalHeaderTop {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: #ffffff;
-  padding: 12px 18px;
-  border-radius: 12px;
-  margin-bottom: 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  gap: 12px;
-  flex-wrap: wrap;
+  width: 100%;
+  gap: 8px;
 }
 
 .a4ModalTitle {
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 800;
   color: #0f172a;
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.a4ModalCloseBtn {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.a4ModalCloseBtn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 .a4ModalActions {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   flex-wrap: wrap;
 }
 
 .a4SheetWrapper {
   width: 100%;
-  max-width: 820px;
+  max-width: 794px;
   display: flex;
   justify-content: center;
   margin-bottom: 24px;
+  box-sizing: border-box;
 }
 
-/* Exact A4 Portrait Aspect Ratio Sheet (210mm x 297mm) */
+/* Exact A4 Portrait Aspect Ratio Sheet */
 .a4FamilySheet {
   width: 100%;
   max-width: 794px;
-  min-height: 1123px;
   background: #ffffff;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
-  border-radius: 4px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  box-sizing: border-box;
 }
 
-/* TOP A5: 50% of A4 */
+/* TOP A5: Landscape A5 half (aspect-ratio 1.414 : 1) */
 .a4TopPoster {
   width: 100%;
-  height: 560px;
+  aspect-ratio: 1.414 / 1;
+  max-height: 560px;
   background: #f8fafc;
   display: flex;
   align-items: center;
@@ -1969,15 +2001,14 @@
   border-radius: 10px;
 }
 
-/* BOTTOM A5: 50% of A4 */
+/* BOTTOM A5: Slips Area */
 .a4BottomSlips {
   width: 100%;
-  flex: 1;
-  min-height: 560px;
   padding: 14px 16px 16px;
   background: #ffffff;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
 }
 
 .a4BottomHeader {
@@ -1985,8 +2016,10 @@
   align-items: center;
   justify-content: space-between;
   padding-bottom: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   border-bottom: 1.5px solid #e2e8f0;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .a4BottomTitle {
@@ -2001,12 +2034,18 @@
   color: #64748b;
 }
 
-/* 2-column x 3-row grid for max 6 slips */
+/* 2-column x 3-row grid for 6 slots */
 .a4SlipsGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
+  grid-auto-rows: minmax(130px, auto);
   gap: 10px;
-  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.a4SlipsGridSingleCol {
+  grid-template-columns: 1fr !important;
 }
 
 .a4MiniSlipCard {
@@ -2018,6 +2057,30 @@
   flex-direction: column;
   justify-content: space-between;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-sizing: border-box;
+  min-height: 130px;
+}
+
+.a4EmptySlipCard {
+  border: 1.5px dashed #cbd5e1;
+  background: #f8fafc;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 130px;
+  box-sizing: border-box;
+}
+
+.a4EmptyCardInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  user-select: none;
 }
 
 .a4SlipTopRow {
@@ -2077,7 +2140,120 @@
   margin-top: 2px;
 }
 
-/* Single-page A4 print isolation */
+/* =====================================================================
+   MOBILE OPTIMIZATIONS (Screen Width <= 640px)
+   ===================================================================== */
+@media (max-width: 640px) {
+  .a4ModalOverlay {
+    padding: 6px 4px 20px;
+  }
+
+  .a4ModalHeader {
+    padding: 10px 10px;
+    border-radius: 10px;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+
+  .a4ModalTitle {
+    font-size: 13px;
+  }
+
+  .a4ModalActions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .a4ModalActions button {
+    width: 100%;
+    justify-content: center !important;
+    padding: 7px 4px !important;
+    font-size: 11.5px !important;
+  }
+
+  .a4FamilySheet {
+    border-radius: 4px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+
+  .a4BottomSlips {
+    padding: 8px 6px 12px;
+  }
+
+  .a4BottomHeader {
+    padding-bottom: 5px;
+    margin-bottom: 6px;
+    gap: 4px;
+  }
+
+  .a4BottomTitle {
+    font-size: 11px;
+  }
+
+  .a4BottomSub {
+    font-size: 9.5px;
+  }
+
+  .a4SlipsGrid {
+    gap: 6px;
+    grid-auto-rows: minmax(105px, auto);
+  }
+
+  .a4MiniSlipCard {
+    padding: 5px 6px;
+    border-radius: 6px;
+    min-height: 105px;
+  }
+
+  .a4EmptySlipCard {
+    border-radius: 6px;
+    min-height: 105px;
+  }
+
+  .a4EmptyCardInner {
+    font-size: 9px;
+  }
+
+  .a4SlipTopRow {
+    font-size: 9.5px;
+    padding: 2px 4px;
+    margin-bottom: 2px;
+  }
+
+  .a4SlipNameRow {
+    font-size: 11.5px;
+    margin-bottom: 1px;
+    line-height: 1.15;
+  }
+
+  .a4SlipGuardianRow {
+    font-size: 9.5px;
+    margin-bottom: 1px;
+    line-height: 1.15;
+  }
+
+  .a4SlipMidRow {
+    font-size: 9px;
+    margin-bottom: 1px;
+  }
+
+  .a4SlipEpicRow {
+    font-size: 9.5px;
+    margin-bottom: 1px;
+  }
+
+  .a4SlipBoothAddress {
+    font-size: 8px;
+    line-height: 1.15;
+    padding-top: 2px;
+    margin-top: 1px;
+  }
+}
+
+/* =====================================================================
+   PRINT ISOLATION: A4 SINGLE PAGE
+   ===================================================================== */
 @media print {
   body.printing-a4-family-slip {
     margin: 0 !important;
@@ -2119,6 +2295,33 @@
     box-shadow: none !important;
     border: none !important;
     page-break-inside: avoid !important;
+  }
+
+  body.printing-a4-family-slip .a4TopPoster {
+    height: 560px !important;
+    aspect-ratio: auto !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipsGrid {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  body.printing-a4-family-slip .a4MiniSlipCard {
+    min-height: 130px !important;
+    padding: 8px 10px !important;
+  }
+
+  body.printing-a4-family-slip .a4EmptySlipCard {
+    border: 1.5px dashed #cbd5e1 !important;
+    background: #ffffff !important;
+    min-height: 130px !important;
+  }
+
+  body.printing-a4-family-slip .a4EmptyCardInner {
+    display: none !important;
+    visibility: hidden !important;
   }
 }
 
