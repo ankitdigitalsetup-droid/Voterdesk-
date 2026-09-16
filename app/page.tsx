@@ -209,7 +209,7 @@ export default function Page() {
     ["boothmanager", t.boothManager, Vote],
     ["dashboard", t.navDashboard, Home],
     ["voters", t.navVoters, Users],
-    ["import", t.navImport, FileSpreadsheet],
+    ...(user.role === "SUPER_ADMIN" ? [["import", t.navImport, FileSpreadsheet] as const] : []),
     ["team", t.navTeam, UserRound],
     ["reports", t.navReports, BarChart3],
   ] as const;
@@ -356,9 +356,26 @@ export default function Page() {
         </header>
 
         <section className="content">
-          {page === "dashboard" && <CandidateDashboard go={setPage} candidate={currentCandidate} voters={voters} t={t} />}
-          {page === "voters" && <VotersTable candidateId={activeCandidateId} voters={voters} onUpdate={refreshData} t={t} />}
-          {page === "import" && <RealExcelImporter candidateId={activeCandidateId} onImportSuccess={() => { refreshData(); setPage("voters"); }} t={t} />}
+          {page === "dashboard" && <CandidateDashboard go={setPage} candidate={currentCandidate} voters={voters} t={t} user={user} />}
+          {page === "voters" && <VotersTable candidateId={activeCandidateId} voters={voters} onUpdate={refreshData} t={t} user={user} />}
+          {page === "import" && (
+            user.role === "SUPER_ADMIN" ? (
+              <RealExcelImporter candidateId={activeCandidateId} onImportSuccess={() => { refreshData(); setPage("voters"); }} t={t} />
+            ) : (
+              <Panel title="एक्सेस प्रतिबंधित (Access Restricted)">
+                <div style={{ padding: "30px", textAlign: "center" }}>
+                  <AlertCircle size={40} color="#e11d48" style={{ margin: "0 auto 12px" }} />
+                  <h3 style={{ color: "#0f172a" }}>Excel फ़ाइल अपलोड की अनुमति केवल सुपर एडमिन को है।</h3>
+                  <p style={{ color: "#64748b", fontSize: "14px", marginTop: "6px" }}>
+                    कैंडिडेट पैनल से एक्सेल अपलोड और नया वोटर जोड़ना हटा दिया गया है। यह सुविधा केवल सुपर एडमिन पैनल से उपलब्ध है।
+                  </p>
+                  <button className="primary" style={{ marginTop: "16px" }} onClick={() => setPage("boothmanager")}>
+                    बूथ मैनेजमेंट पर वापस जाएं ›
+                  </button>
+                </div>
+              </Panel>
+            )
+          )}
           {page === "team" && <TeamManagement candidateId={activeCandidateId} team={team} onUpdate={refreshData} t={t} />}
           {page === "reports" && <ReportsView voters={voters} t={t} />}
         </section>
@@ -647,6 +664,147 @@ function SuperAdminView({
   } | null>(null);
   const [modalBoothFilter, setModalBoothFilter] = useState<string>("ALL");
   const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
+
+  // Dedicated Excel Upload Modal for Existing Candidate (Super Admin exclusive)
+  const [saUploadCand, setSaUploadCand] = useState<CandidateAccount | null>(null);
+  const [saUploadFileName, setSaUploadFileName] = useState("");
+  const [saParsedVoters, setSaParsedVoters] = useState<Omit<VoterRecord, "id">[]>([]);
+  const [isParsingSaExcel, setIsParsingSaExcel] = useState(false);
+  const saExcelInputRef = useRef<HTMLInputElement>(null);
+
+  // Dedicated Add Single Voter Modal for Existing Candidate (Super Admin exclusive)
+  const [saAddVoterCand, setSaAddVoterCand] = useState<CandidateAccount | null>(null);
+  const [saVoterForm, setSaVoterForm] = useState({
+    name: "",
+    guardian: "",
+    booth: "1",
+    serialNo: "",
+    epic: "",
+    age: "35",
+    gender: "Male",
+    phone: "",
+    house: "",
+    address: "",
+    boothAddress: "",
+    voted: "नहीं",
+    isSupporter: "हाँ",
+    isOutside: "नहीं",
+  });
+
+  const handleSaExcelSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsParsingSaExcel(true);
+    setSaUploadFileName(file.name);
+    try {
+      const parsed = await parseExcelFile(file);
+      const mapping = detectFieldMapping(parsed.columns);
+      const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx) => {
+        const boothVal = mapping.booth && r[mapping.booth] ? String(r[mapping.booth]).trim() : "1";
+        const serialVal = mapping.serialNo && r[mapping.serialNo] ? Number(String(r[mapping.serialNo]).replace(/\D/g, "")) || (idx + 1) : idx + 1;
+        const nameVal = mapping.name && r[mapping.name] ? String(r[mapping.name]).trim() : `मतदाता ${idx + 1}`;
+        const guardianVal = mapping.guardian && r[mapping.guardian] ? String(r[mapping.guardian]).trim() : "";
+        const votedVal = mapping.voted && r[mapping.voted] ? String(r[mapping.voted]).trim() : "नहीं";
+        const suppVal = mapping.isSupporter && r[mapping.isSupporter] ? String(r[mapping.isSupporter]).trim() : "हाँ";
+        const outsideVal = mapping.isOutside && r[mapping.isOutside] ? String(r[mapping.isOutside]).trim() : "नहीं";
+        const ageVal = mapping.age && r[mapping.age] ? String(r[mapping.age]).trim() : "35";
+        const genderVal = mapping.gender && r[mapping.gender] ? String(r[mapping.gender]).trim() : "Male";
+        const phoneVal = mapping.phone && r[mapping.phone] ? String(r[mapping.phone]).trim() : "";
+        const houseVal = mapping.house && r[mapping.house] ? String(r[mapping.house]).trim() : "";
+        const addressVal = mapping.address && r[mapping.address] ? String(r[mapping.address]).trim() : "";
+        const boothAddrVal = mapping.boothAddress && r[mapping.boothAddress] ? String(r[mapping.boothAddress]).trim() : "";
+        let epicVal = mapping.epic && r[mapping.epic] ? String(r[mapping.epic]).trim().toUpperCase() : "";
+        if (!epicVal) {
+          epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
+        }
+        return {
+          candidateId: saUploadCand ? saUploadCand.id : "cand_1",
+          booth: boothVal,
+          serialNo: serialVal,
+          name: nameVal,
+          guardian: guardianVal,
+          voted: votedVal === "हाँ" || votedVal === "Yes" || votedVal === "true" ? "हाँ" : "नहीं",
+          isSupporter: suppVal === "हाँ" || suppVal === "Yes" || suppVal === "true" ? "हाँ" : "नहीं",
+          isOutside: outsideVal === "हाँ" || outsideVal === "Yes" || outsideVal === "true" ? "हाँ" : "नहीं",
+          age: ageVal,
+          gender: genderVal,
+          phone: phoneVal,
+          house: houseVal,
+          address: addressVal,
+          boothAddress: boothAddrVal,
+          epic: epicVal,
+          status: "Pending",
+          worker: "Super Admin",
+          extraData: r,
+        };
+      });
+      setSaParsedVoters(rows);
+    } catch (err: unknown) {
+      alert("Excel फ़ाइल पार्स करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+      setSaUploadFileName("");
+      setSaParsedVoters([]);
+    } finally {
+      setIsParsingSaExcel(false);
+    }
+  };
+
+  const handleSaveSaExcel = () => {
+    if (!saUploadCand || saParsedVoters.length === 0) return;
+    const res = store.importVoters(saUploadCand.id, saParsedVoters);
+    onCandidateCreated();
+    alert(`✅ ${res.imported} मतदाता ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक अपलोड व सुरक्षित हो गए!`);
+    setSaUploadCand(null);
+    setSaUploadFileName("");
+    setSaParsedVoters([]);
+  };
+
+  const handleSaveSaSingleVoter = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saAddVoterCand) return;
+    if (!saVoterForm.name.trim()) {
+      alert("कृपया मतदाता का नाम दर्ज करें");
+      return;
+    }
+    const epicVal = saVoterForm.epic.trim().toUpperCase() || `RJX${String(saVoterForm.booth || "1").padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
+    store.addVoter({
+      candidateId: saAddVoterCand.id,
+      name: saVoterForm.name.trim(),
+      guardian: saVoterForm.guardian.trim(),
+      booth: saVoterForm.booth.trim() || "1",
+      serialNo: saVoterForm.serialNo ? Number(saVoterForm.serialNo) : undefined,
+      epic: epicVal,
+      age: saVoterForm.age.trim() || "35",
+      gender: saVoterForm.gender.trim() || "Male",
+      phone: saVoterForm.phone.trim(),
+      house: saVoterForm.house.trim(),
+      address: saVoterForm.address.trim(),
+      boothAddress: saVoterForm.boothAddress.trim(),
+      voted: saVoterForm.voted,
+      isSupporter: saVoterForm.isSupporter,
+      isOutside: saVoterForm.isOutside,
+      status: "Pending",
+      worker: "Super Admin",
+    });
+    onCandidateCreated();
+    alert(`✅ नया मतदाता ${saVoterForm.name.trim()} (${saAddVoterCand.name}) में सफलतापूर्वक जुड़ गया!`);
+    setSaAddVoterCand(null);
+    setSaVoterForm({
+      name: "",
+      guardian: "",
+      booth: "1",
+      serialNo: "",
+      epic: "",
+      age: "35",
+      gender: "Male",
+      phone: "",
+      house: "",
+      address: "",
+      boothAddress: "",
+      voted: "नहीं",
+      isSupporter: "हाँ",
+      isOutside: "नहीं",
+    });
+  };
 
   // Dynamic Password Generator Formula (1 booth = 4 passwords: 1 candidate + 3 karyakartas)
   const generateCredsList = useCallback((count: number, cName: string, cPhone: string) => {
@@ -1459,7 +1617,47 @@ function SuperAdminView({
                       <span className="status in-favor">{cand.status}</span>
                     </td>
                     <td>
-                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px", background: "#f0fdf4", color: "#166534", borderColor: "#86efac", fontWeight: 700 }}
+                          onClick={() => {
+                            setSaUploadCand(cand);
+                            setSaUploadFileName("");
+                            setSaParsedVoters([]);
+                          }}
+                          title="इस प्रत्याशी के लिए Excel वोटर लिस्ट अपलोड करें (Super Admin Only)"
+                        >
+                          <Upload size={13} /> 📁 Excel अपलोड
+                        </button>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px", background: "#eff6ff", color: "#1d4ed8", borderColor: "#93c5fd", fontWeight: 700 }}
+                          onClick={() => {
+                            setSaAddVoterCand(cand);
+                            setSaVoterForm({
+                              name: "",
+                              guardian: "",
+                              booth: "1",
+                              serialNo: "",
+                              epic: "",
+                              age: "35",
+                              gender: "Male",
+                              phone: "",
+                              house: "",
+                              address: "",
+                              boothAddress: "",
+                              voted: "नहीं",
+                              isSupporter: "हाँ",
+                              isOutside: "नहीं",
+                            });
+                          }}
+                          title="इस प्रत्याशी में नया एकल वोटर जोड़ें (Super Admin Only)"
+                        >
+                          <Plus size={13} /> + नया वोटर
+                        </button>
                         <button
                           type="button"
                           className="outline"
@@ -1630,6 +1828,349 @@ function SuperAdminView({
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin - Dedicated Excel Upload Modal for Existing Candidate */}
+      {saUploadCand && (
+        <div className="modalOverlay" onClick={() => setSaUploadCand(null)}>
+          <div className="modalBox" style={{ maxWidth: "720px", width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <FileSpreadsheet size={20} color="#38bdf8" />
+                <div>
+                  <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px" }}>
+                    Excel वोटर लिस्ट अपलोड - {saUploadCand.name}
+                  </h3>
+                  <small style={{ color: "#94a3b8" }}>
+                    {saUploadCand.wardConstituency} • कुल बूथ: {saUploadCand.boothCount}
+                  </small>
+                </div>
+              </div>
+              <button onClick={() => setSaUploadCand(null)} style={{ color: "#ffffff" }}><X /></button>
+            </div>
+
+            <div className="modalBody" style={{ padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: "14px", color: "#334155", fontWeight: 600 }}>
+                    वोटर लिस्ट (.xlsx, .xls, .csv) चुनें
+                  </p>
+                  <p style={{ margin: "2px 0 0", fontSize: "12px", color: "#64748b" }}>
+                    कैंडिडेट के लिए पूरी वोटर लिस्ट स्वतः पार्स व सिंक होगी
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="outline"
+                  style={{ fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px" }}
+                  onClick={downloadSampleExcelTemplate}
+                >
+                  <Download size={14} /> 11-कॉलम टेम्पलेट (.xlsx)
+                </button>
+              </div>
+
+              {/* Upload Dropzone */}
+              <input
+                type="file"
+                ref={saExcelInputRef}
+                accept=".xlsx,.xls,.csv"
+                style={{ display: "none" }}
+                onChange={handleSaExcelSelect}
+              />
+              <div
+                onClick={() => saExcelInputRef.current?.click()}
+                style={{
+                  border: "2px dashed #94a3b8",
+                  borderRadius: "10px",
+                  padding: "28px 16px",
+                  textAlign: "center",
+                  background: saParsedVoters.length > 0 ? "#f0fdf4" : "#f8fafc",
+                  borderColor: saParsedVoters.length > 0 ? "#16a34a" : "#cbd5e1",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {isParsingSaExcel ? (
+                  <div style={{ color: "#0284c7" }}>
+                    <RefreshCw className="animate-spin" size={32} style={{ margin: "0 auto 8px" }} />
+                    <p style={{ margin: 0, fontWeight: 600 }}>Excel फ़ाइल पार्स की जा रही है...</p>
+                  </div>
+                ) : saParsedVoters.length > 0 ? (
+                  <div>
+                    <CheckCircle2 size={36} color="#16a34a" style={{ margin: "0 auto 8px" }} />
+                    <p style={{ margin: 0, fontWeight: 700, color: "#15803d", fontSize: "15px" }}>
+                      {saUploadFileName}
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#166534" }}>
+                      ✅ {saParsedVoters.length} मतदाता सफलतापूर्वक पार्स हो चुके हैं!
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: "11px", color: "#64748b" }}>
+                      (फ़ाइल बदलने के लिए यहाँ दोबारा क्लिक करें)
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <Upload size={36} color="#64748b" style={{ margin: "0 auto 8px" }} />
+                    <p style={{ margin: 0, fontWeight: 600, color: "#1e293b", fontSize: "14px" }}>
+                      यहाँ क्लिक करके Excel या CSV फ़ाइल चुनें
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#64748b" }}>
+                      समर्थित प्रारूप: .xlsx, .xls, .csv
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Preview of Parsed Voters */}
+              {saParsedVoters.length > 0 && (
+                <div style={{ marginTop: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 600, color: "#334155" }}>
+                      डेटा पूर्वावलोकन (Preview - पहले 5 रिकॉर्ड्स):
+                    </span>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      कुल: <b>{saParsedVoters.length}</b> मतदाता
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "6px" }}>
+                    <table style={{ width: "100%", fontSize: "11px", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: "#f1f5f9", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>
+                          <th style={{ padding: "6px 8px" }}>क्र.</th>
+                          <th style={{ padding: "6px 8px" }}>नाम</th>
+                          <th style={{ padding: "6px 8px" }}>पिता/पति</th>
+                          <th style={{ padding: "6px 8px" }}>आयु</th>
+                          <th style={{ padding: "6px 8px" }}>बूथ</th>
+                          <th style={{ padding: "6px 8px" }}>EPIC</th>
+                          <th style={{ padding: "6px 8px" }}>मोबाइल</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {saParsedVoters.slice(0, 5).map((v, i) => (
+                          <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "6px 8px" }}>{v.serialNo || i + 1}</td>
+                            <td style={{ padding: "6px 8px", fontWeight: 600 }}>{v.name}</td>
+                            <td style={{ padding: "6px 8px" }}>{v.guardian || "-"}</td>
+                            <td style={{ padding: "6px 8px" }}>{v.age || "-"}</td>
+                            <td style={{ padding: "6px 8px" }}>{v.booth}</td>
+                            <td style={{ padding: "6px 8px", fontFamily: "monospace" }}>{v.epic}</td>
+                            <td style={{ padding: "6px 8px" }}>{v.phone || "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="outline"
+                  onClick={() => {
+                    setSaUploadCand(null);
+                    setSaUploadFileName("");
+                    setSaParsedVoters([]);
+                  }}
+                >
+                  ✕ रद्द करें (Cancel)
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={saParsedVoters.length === 0}
+                  style={{
+                    opacity: saParsedVoters.length === 0 ? 0.6 : 1,
+                    cursor: saParsedVoters.length === 0 ? "not-allowed" : "pointer",
+                    background: "#026aa7",
+                    color: "#ffffff",
+                    fontWeight: 600,
+                  }}
+                  onClick={handleSaveSaExcel}
+                >
+                  💾 {saParsedVoters.length > 0 ? `${saParsedVoters.length} मतदाता सुरक्षित करें (Save)` : "मतदाता सुरक्षित करें"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin - Dedicated Add Single Voter Modal for Existing Candidate */}
+      {saAddVoterCand && (
+        <div className="modalOverlay" onClick={() => setSaAddVoterCand(null)}>
+          <div className="modalBox" style={{ maxWidth: "680px", width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Plus size={20} color="#38bdf8" />
+                <div>
+                  <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px" }}>
+                    + नया मतदाता जोड़ें (Super Admin)
+                  </h3>
+                  <small style={{ color: "#94a3b8" }}>
+                    प्रत्याशी: {saAddVoterCand.name} ({saAddVoterCand.wardConstituency})
+                  </small>
+                </div>
+              </div>
+              <button onClick={() => setSaAddVoterCand(null)} style={{ color: "#ffffff" }}><X /></button>
+            </div>
+
+            <form onSubmit={handleSaveSaSingleVoter} className="modalBody" style={{ padding: "20px" }}>
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>मतदाता का पूरा नाम (Full Name) *</label>
+                  <input
+                    required
+                    placeholder="उदा. रमेश कुमार शर्मा"
+                    value={saVoterForm.name}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>EPIC (Voter ID / पहचान पत्र क्र.)</label>
+                  <input
+                    placeholder="उदा. RJX1029384 (खाली रहने पर स्वतः जेनरेट होगा)"
+                    value={saVoterForm.epic}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, epic: e.target.value.toUpperCase() })}
+                  />
+                </div>
+              </div>
+
+              <div className="formGroup">
+                <label>पिता / पति / अभिभावक का नाम (Guardian)</label>
+                <input
+                  placeholder="उदा. सोहन लाल"
+                  value={saVoterForm.guardian}
+                  onChange={(e) => setSaVoterForm({ ...saVoterForm, guardian: e.target.value })}
+                />
+              </div>
+
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>आयु (Age)</label>
+                  <input
+                    type="number"
+                    value={saVoterForm.age}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, age: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>लिंग (Gender)</label>
+                  <select
+                    value={saVoterForm.gender}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, gender: e.target.value })}
+                  >
+                    <option value="Male">पुरुष (Male)</option>
+                    <option value="Female">महिला (Female)</option>
+                    <option value="Other">अन्य (Other)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>बूथ / भाग संख्या (Booth Number) *</label>
+                  <input
+                    required
+                    placeholder="उदा. 1"
+                    value={saVoterForm.booth}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, booth: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>क्रम संख्या (Serial Number)</label>
+                  <input
+                    type="number"
+                    placeholder="उदा. 101 (खाली रहने पर स्वतः)"
+                    value={saVoterForm.serialNo}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, serialNo: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>मकान नंबर (House No.)</label>
+                  <input
+                    placeholder="उदा. 42-A"
+                    value={saVoterForm.house}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, house: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>मोबाइल नंबर (Mobile No.)</label>
+                  <input
+                    placeholder="उदा. 9829012345"
+                    value={saVoterForm.phone}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, phone: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>पता / वार्ड (Address / Ward)</label>
+                  <input
+                    placeholder="उदा. वार्ड 12, मेन मार्केट"
+                    value={saVoterForm.address}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, address: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>मतदान केंद्र पता (Booth Address)</label>
+                  <input
+                    placeholder="उदा. रा.उ.मा.वि., कमरा नं 1"
+                    value={saVoterForm.boothAddress}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, boothAddress: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="inputGrid" style={{ gridTemplateColumns: "repeat(3, 1fr)" }}>
+                <div className="formGroup">
+                  <label>🗳️ वोट डाला (Voted)</label>
+                  <select
+                    value={saVoterForm.voted}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, voted: e.target.value })}
+                  >
+                    <option value="नहीं">नहीं (No)</option>
+                    <option value="हाँ">हाँ (Yes)</option>
+                  </select>
+                </div>
+                <div className="formGroup">
+                  <label>⭐ सपोर्टर है (Supporter)</label>
+                  <select
+                    value={saVoterForm.isSupporter}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, isSupporter: e.target.value })}
+                  >
+                    <option value="हाँ">हाँ (Yes)</option>
+                    <option value="नहीं">नहीं (No)</option>
+                  </select>
+                </div>
+                <div className="formGroup">
+                  <label>🚌 बाहर है (Is Outside)</label>
+                  <select
+                    value={saVoterForm.isOutside}
+                    onChange={(e) => setSaVoterForm({ ...saVoterForm, isOutside: e.target.value })}
+                  >
+                    <option value="नहीं">नहीं (No)</option>
+                    <option value="हाँ">हाँ (Yes)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button type="button" className="outline" onClick={() => setSaAddVoterCand(null)}>
+                  ✕ रद्द करें (Cancel)
+                </button>
+                <button type="submit" className="primary" style={{ background: "#026aa7", color: "#ffffff", fontWeight: 600 }}>
+                  + नया मतदाता जोड़ें (Add Voter)
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -3471,10 +4012,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             setUpdateTab("sync");
             setShowUpdateModal(true);
           }}
-          title="डेटा रिफ्रेश व अपडेट करें"
+          title={lang === "hi" ? (user.role === "SUPER_ADMIN" ? "डेटा रिफ्रेश व अपडेट करें" : "डेटा रिफ्रेश व लाइव सिंक करें") : (user.role === "SUPER_ADMIN" ? "Data Update & Sync" : "Live Data Refresh & Sync")}
         >
           <span>{lang === "hi" ? "डेटा" : "Data"}</span>
-          <span>{lang === "hi" ? "अपडेट" : "Update"}</span>
+          <span>{lang === "hi" ? (user.role === "SUPER_ADMIN" ? "अपडेट" : "सिंक") : (user.role === "SUPER_ADMIN" ? "Update" : "Sync")}</span>
         </button>
 
         <button
@@ -5403,69 +5944,75 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
         <div className="modalOverlay noPrint">
           <div className="modalBox" style={{ maxWidth: "560px" }}>
             <div className="modalHead">
-              <h3>{t.btnDataUpdate}</h3>
+              <h3>
+                {user.role === "SUPER_ADMIN"
+                  ? t.btnDataUpdate
+                  : (lang === "hi" ? "⚡ लाइव डेटा सिंक व रिफ्रेश" : "Live Data Sync & Refresh")}
+              </h3>
               <button onClick={() => setShowUpdateModal(false)}>
                 <X size={18} />
               </button>
             </div>
 
-            {/* Tabs */}
-            <div style={{ display: "flex", borderBottom: "1px solid #cbd5e1", background: "#f8fafc" }}>
-              <button
-                type="button"
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  border: 0,
-                  borderBottom: updateTab === "sync" ? "3px solid #026aa7" : "3px solid transparent",
-                  background: updateTab === "sync" ? "#ffffff" : "transparent",
-                  fontWeight: updateTab === "sync" ? 700 : 500,
-                  color: updateTab === "sync" ? "#026aa7" : "#64748b",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                }}
-                onClick={() => setUpdateTab("sync")}
-              >
-                🔄 {lang === "hi" ? "लाइव सिंक" : "Live Sync"}
-              </button>
-              <button
-                type="button"
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  border: 0,
-                  borderBottom: updateTab === "add" ? "3px solid #026aa7" : "3px solid transparent",
-                  background: updateTab === "add" ? "#ffffff" : "transparent",
-                  fontWeight: updateTab === "add" ? 700 : 500,
-                  color: updateTab === "add" ? "#026aa7" : "#64748b",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                }}
-                onClick={() => setUpdateTab("add")}
-              >
-                + {t.quickAddVoter}
-              </button>
-              <button
-                type="button"
-                style={{
-                  flex: 1,
-                  padding: "12px",
-                  border: 0,
-                  borderBottom: updateTab === "upload" ? "3px solid #026aa7" : "3px solid transparent",
-                  background: updateTab === "upload" ? "#ffffff" : "transparent",
-                  fontWeight: updateTab === "upload" ? 700 : 500,
-                  color: updateTab === "upload" ? "#026aa7" : "#64748b",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                }}
-                onClick={() => setUpdateTab("upload")}
-              >
-                📁 {t.quickUploadExcel}
-              </button>
-            </div>
+            {/* Tabs - ONLY available for Super Admin */}
+            {user.role === "SUPER_ADMIN" && (
+              <div style={{ display: "flex", borderBottom: "1px solid #cbd5e1", background: "#f8fafc" }}>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    border: 0,
+                    borderBottom: updateTab === "sync" ? "3px solid #026aa7" : "3px solid transparent",
+                    background: updateTab === "sync" ? "#ffffff" : "transparent",
+                    fontWeight: updateTab === "sync" ? 700 : 500,
+                    color: updateTab === "sync" ? "#026aa7" : "#64748b",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                  }}
+                  onClick={() => setUpdateTab("sync")}
+                >
+                  🔄 {lang === "hi" ? "लाइव सिंक" : "Live Sync"}
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    border: 0,
+                    borderBottom: updateTab === "add" ? "3px solid #026aa7" : "3px solid transparent",
+                    background: updateTab === "add" ? "#ffffff" : "transparent",
+                    fontWeight: updateTab === "add" ? 700 : 500,
+                    color: updateTab === "add" ? "#026aa7" : "#64748b",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                  }}
+                  onClick={() => setUpdateTab("add")}
+                >
+                  + {t.quickAddVoter}
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: "12px",
+                    border: 0,
+                    borderBottom: updateTab === "upload" ? "3px solid #026aa7" : "3px solid transparent",
+                    background: updateTab === "upload" ? "#ffffff" : "transparent",
+                    fontWeight: updateTab === "upload" ? 700 : 500,
+                    color: updateTab === "upload" ? "#026aa7" : "#64748b",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                  }}
+                  onClick={() => setUpdateTab("upload")}
+                >
+                  📁 {t.quickUploadExcel}
+                </button>
+              </div>
+            )}
 
             <div className="modalBody">
-              {updateTab === "sync" ? (
+              {updateTab === "sync" || user.role !== "SUPER_ADMIN" ? (
                 <div style={{ padding: "6px 0" }}>
                   <div
                     style={{
@@ -5549,9 +6096,11 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                     <button type="button" className="outline" onClick={() => setShowUpdateModal(false)}>
                       ✕ {lang === "hi" ? "बंद करें" : "Close"}
                     </button>
-                    <button type="button" className="primary" onClick={() => setUpdateTab("add")}>
-                      + {lang === "hi" ? "नया मतदाता जोड़ें" : "Add Voter"}
-                    </button>
+                    {user.role === "SUPER_ADMIN" && (
+                      <button type="button" className="primary" onClick={() => setUpdateTab("add")}>
+                        + {lang === "hi" ? "नया मतदाता जोड़ें" : "Add Voter"}
+                      </button>
+                    )}
                   </div>
                 </div>
               ) : updateTab === "add" ? (
@@ -6525,7 +7074,19 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
 // -------------------------------------------------------------
 // 4. CANDIDATE ADMIN DASHBOARD
 // -------------------------------------------------------------
-function CandidateDashboard({ go, candidate, voters, t }: { go: (p: string) => void; candidate: CandidateAccount; voters: VoterRecord[]; t: (typeof translations)["hi"] }) {
+function CandidateDashboard({
+  go,
+  candidate,
+  voters,
+  t,
+  user,
+}: {
+  go: (p: string) => void;
+  candidate: CandidateAccount;
+  voters: VoterRecord[];
+  t: (typeof translations)["hi"];
+  user?: UserAccount | null;
+}) {
   const total = voters.length;
   const contacted = voters.filter((v) => v.status === "Contacted" || v.status === "In-Favor" || v.status === "Slip-Given").length;
   const inFavor = voters.filter((v) => v.status === "In-Favor").length;
@@ -6548,11 +7109,18 @@ function CandidateDashboard({ go, candidate, voters, t }: { go: (p: string) => v
         title={`${t.welcomeBack}, ${candidate.name}`}
         sub={t.dashboardSub}
       >
-        <button className="primary" onClick={() => go("import")}>
-          <Upload size={16} />
-          <span className="desktopOnly">{t.importVotersFull}</span>
-          <span className="mobileOnly">{t.importVoters}</span>
-        </button>
+        {user?.role === "SUPER_ADMIN" ? (
+          <button className="primary" onClick={() => go("import")}>
+            <Upload size={16} />
+            <span className="desktopOnly">{t.importVotersFull}</span>
+            <span className="mobileOnly">{t.importVoters}</span>
+          </button>
+        ) : (
+          <button className="primary" onClick={() => go("boothmanager")}>
+            <Vote size={16} />
+            <span>{t.boothManager} ›</span>
+          </button>
+        )}
       </Title>
 
       <div className="stats">
@@ -6603,11 +7171,21 @@ function CandidateDashboard({ go, candidate, voters, t }: { go: (p: string) => v
 
         <Panel title={t.quickActions} sub="Operations for candidate and managers">
           <div className="actions">
-            <button onClick={() => go("import")}>
-              <i className="blue"><FileSpreadsheet /></i>
+            {user?.role === "SUPER_ADMIN" && (
+              <button onClick={() => go("import")}>
+                <i className="blue"><FileSpreadsheet /></i>
+                <span>
+                  <b>{t.uploadNewList}</b>
+                  <small>{t.uploadSub}</small>
+                </span>
+                ›
+              </button>
+            )}
+            <button onClick={() => go("boothmanager")}>
+              <i className="blue"><Vote /></i>
               <span>
-                <b>{t.uploadNewList}</b>
-                <small>{t.uploadSub}</small>
+                <b>{t.boothManager}</b>
+                <small>वोटर लिस्ट, सर्च, पर्ची व स्लिप प्रबंधन</small>
               </span>
               ›
             </button>
@@ -6642,11 +7220,13 @@ function VotersTable({
   voters,
   onUpdate,
   t,
+  user,
 }: {
   candidateId: string;
   voters: VoterRecord[];
   onUpdate: () => void;
   t: (typeof translations)["hi"];
+  user?: UserAccount | null;
 }) {
   const [q, setQ] = useState("");
   const [boothFilter, setBoothFilter] = useState("ALL");
@@ -6956,15 +7536,19 @@ function VotersTable({
           >
             <Download size={16} /> Current Page Excel ({filtered.length})
           </button>
-          <button className="outline" onClick={downloadSampleExcelTemplate} title="11 कॉलम वाला एक्सेल टेम्पलेट डाउनलोड करें">
-            <Download size={16} /> Download Template (.xlsx)
-          </button>
+          {user?.role === "SUPER_ADMIN" && (
+            <button className="outline" onClick={downloadSampleExcelTemplate} title="11 कॉलम वाला एक्सेल टेम्पलेट डाउनलोड करें">
+              <Download size={16} /> Download Template (.xlsx)
+            </button>
+          )}
           <button className="outline" onClick={handleExportCSV}>
             <Download size={16} /> Export CSV
           </button>
-          <button className="primary" onClick={() => setShowAddModal(true)}>
-            <Plus /> Add Single Voter
-          </button>
+          {user?.role === "SUPER_ADMIN" && (
+            <button className="primary" onClick={() => setShowAddModal(true)}>
+              <Plus /> Add Single Voter
+            </button>
+          )}
         </div>
       </Title>
 
@@ -7530,8 +8114,8 @@ function VotersTable({
         </div>
       </Panel>
 
-      {/* Add Single Voter Modal */}
-      {showAddModal && (
+      {/* Add Single Voter Modal - Super Admin Only */}
+      {showAddModal && user?.role === "SUPER_ADMIN" && (
         <div className="modalOverlay" onClick={() => setShowAddModal(false)}>
           <div className="modalBox" onClick={(e) => e.stopPropagation()}>
             <div className="modalHead">
