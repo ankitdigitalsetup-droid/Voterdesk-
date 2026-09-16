@@ -4327,7 +4327,6 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       type="text"
                       value={advName}
                       onChange={(e) => setAdvName(e.target.value)}
-                      placeholder={lang === "hi" ? "उदा: Gau, Gaurav, गौरव..." : "e.g. Gau, Gaurav..."}
                       style={{
                         width: "100%",
                         height: "34px",
@@ -4369,7 +4368,6 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       type="text"
                       value={advFather}
                       onChange={(e) => setAdvFather(e.target.value)}
-                      placeholder={lang === "hi" ? "उदा: San, Santosh, संतोष..." : "e.g. San, Santosh..."}
                       style={{
                         width: "100%",
                         height: "34px",
@@ -4411,7 +4409,6 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       type="text"
                       value={advAddress}
                       onChange={(e) => setAdvAddress(e.target.value)}
-                      placeholder={lang === "hi" ? "उदा: 12, 64, शांति नगर..." : "e.g. 12, 64, Ward 34..."}
                       style={{
                         width: "100%",
                         height: "34px",
@@ -4453,7 +4450,6 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       type="text"
                       value={advEpic}
                       onChange={(e) => setAdvEpic(e.target.value)}
-                      placeholder={lang === "hi" ? "उदा: RJX..., 1001025..." : "e.g. RJX..., 1001025..."}
                       style={{
                         width: "100%",
                         height: "34px",
@@ -7884,52 +7880,48 @@ function VotersTable({
             >
               <div>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  👤 Voter Name (उदा: Gau, Gaurav)
+                  👤 Voter Name
                 </label>
                 <input
                   type="text"
                   value={advName}
                   onChange={(e) => setAdvName(e.target.value)}
-                  placeholder="e.g. Gau, Gaurav..."
                   style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
                 />
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  👨‍👧 Father / Husband (उदा: San, Santosh)
+                  👨‍👧 Father / Husband
                 </label>
                 <input
                   type="text"
                   value={advFather}
                   onChange={(e) => setAdvFather(e.target.value)}
-                  placeholder="e.g. San, Santosh..."
                   style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
                 />
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  🏠 Address / House (उदा: 12, 64)
+                  🏠 Address / House
                 </label>
                 <input
                   type="text"
                   value={advAddress}
                   onChange={(e) => setAdvAddress(e.target.value)}
-                  placeholder="e.g. 12, 64..."
                   style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
                 />
               </div>
 
               <div>
                 <label style={{ display: "block", fontSize: "11px", fontWeight: 700, color: "#334155", marginBottom: "3px" }}>
-                  🆔 EPIC Number (उदा: RJX..., 1001025)
+                  🆔 EPIC Number
                 </label>
                 <input
                   type="text"
                   value={advEpic}
                   onChange={(e) => setAdvEpic(e.target.value)}
-                  placeholder="e.g. RJX..., 1001025..."
                   style={{ width: "100%", height: "34px", padding: "0 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
                 />
               </div>
