@@ -2442,6 +2442,7 @@ function BoothManagerView({
   const [showFamilySlipModal, setShowFamilySlipModal] = useState(false);
   const [isGeneratingFamilyImage, setIsGeneratingFamilyImage] = useState(false);
   const [familySlipGridCols, setFamilySlipGridCols] = useState<number>(2);
+  const [isGeneratingSingleImage, setIsGeneratingSingleImage] = useState(false);
 
   // Voter Slip Custom Message (1:1 with user screenshot)
   const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
@@ -3087,6 +3088,269 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       alert("इमेज जनरेट करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsGeneratingFamilyImage(false);
+    }
+  };
+
+  // High-Resolution Single Voter Slip Image Generator (Candidate Poster + Dotted Voter Slip) via HTML5 Canvas
+  const generateSingleVoterSlipImage = async (v: VoterRecord): Promise<{ blob: Blob; dataUrl: string } | null> => {
+    try {
+      const canvas = document.createElement("canvas");
+      // Mobile-optimized high-res canvas (850 x 1250 px)
+      const w = 850;
+      const h = 1250;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+
+      // 1. White Background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+
+      // 2. Top Portion: Candidate Election Poster (0 to 650px)
+      const posterSrc = candidate?.posterUrl || "/images/campaign-poster.jpg";
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = posterSrc;
+
+      await new Promise<void>((resolve) => {
+        img.onload = () => {
+          try {
+            const topW = w;
+            const topH = 650;
+            const imgAspect = (img.naturalWidth || img.width || topW) / (img.naturalHeight || img.height || topH);
+            const areaAspect = topW / topH;
+
+            let drawW = topW;
+            let drawH = topH;
+            let drawX = 0;
+            let drawY = 0;
+
+            if (imgAspect > areaAspect) {
+              drawW = topW;
+              drawH = topW / imgAspect;
+              drawY = (topH - drawH) / 2;
+            } else {
+              drawH = topH;
+              drawW = topH * imgAspect;
+              drawX = (topW - drawW) / 2;
+            }
+
+            ctx.fillStyle = "#f8fafc";
+            ctx.fillRect(0, 0, topW, topH);
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+          } catch {}
+          resolve();
+        };
+        img.onerror = () => {
+          ctx.fillStyle = "#0284c7";
+          ctx.fillRect(0, 0, w, 650);
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 42px sans-serif";
+          ctx.textAlign = "center";
+          ctx.fillText(candidate?.name || "प्रत्याशी चुनाव प्रचार", w / 2, 300);
+          ctx.font = "bold 24px sans-serif";
+          ctx.fillText(candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा", w / 2, 360);
+          resolve();
+        };
+      });
+
+      // 3. Campaign Message Strip (650 to 710px)
+      ctx.fillStyle = "#0b224e";
+      ctx.fillRect(0, 650, w, 60);
+      ctx.fillStyle = "#fef08a";
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "center";
+      const msg = activeVoterSlipMsg || `vote for ${candidate?.name || "प्रत्याशी"}`;
+      ctx.fillText(msg.length > 55 ? msg.substring(0, 55) + "..." : msg, w / 2, 688);
+
+      // 4. Divider / Cut Line (710 to 730px)
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([10, 6]);
+      ctx.beginPath();
+      ctx.moveTo(30, 725);
+      ctx.lineTo(w - 30, 725);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 5. Voter Slip Header Card (745 to 1215px)
+      const cardX = 35;
+      const cardY = 745;
+      const cardW = w - 70;
+      const cardH = 475;
+
+      // Card background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(cardX, cardY, cardW, cardH);
+
+      // Card Dotted Border
+      ctx.strokeStyle = "#0062cc";
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 6]);
+      ctx.strokeRect(cardX, cardY, cardW, cardH);
+      ctx.setLineDash([]);
+
+      // Card Top Ribbon: Serial No (Left) & Part/Booth No (Right)
+      ctx.fillStyle = "#eff6ff";
+      ctx.fillRect(cardX + 4, cardY + 4, cardW - 8, 55);
+
+      ctx.fillStyle = "#1e40af";
+      ctx.font = "bold 26px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`क्रम सं : ${v.serialNo || "—"}`, cardX + 20, cardY + 40);
+      ctx.textAlign = "right";
+      ctx.fillText(`भाग सं : ${v.booth || "—"}`, cardX + cardW - 20, cardY + 40);
+
+      // Name (Large Bold)
+      ctx.fillStyle = "#0f172a";
+      ctx.font = "bold 32px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`नाम : ${v.name}`, cardX + 20, cardY + 115);
+
+      // Guardian
+      ctx.fillStyle = "#334155";
+      ctx.font = "24px sans-serif";
+      ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, cardX + 20, cardY + 160);
+
+      // Voter ID (EPIC)
+      ctx.fillStyle = "#0369a1";
+      ctx.font = "bold 26px monospace";
+      ctx.fillText(`वोटर ID : ${v.epic}`, cardX + 20, cardY + 205);
+
+      // Age (Left) & House No (Right)
+      ctx.fillStyle = "#334155";
+      ctx.font = "bold 24px sans-serif";
+      ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, cardX + 20, cardY + 250);
+      ctx.textAlign = "right";
+      ctx.fillText(`मकान नंबर : ${v.house || "—"}`, cardX + cardW - 20, cardY + 250);
+
+      // Thin separator line
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cardX + 16, cardY + 278);
+      ctx.lineTo(cardX + cardW - 16, cardY + 278);
+      ctx.stroke();
+
+      // Booth Address / Polling Station
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#64748b";
+      ctx.font = "bold 18px sans-serif";
+      ctx.fillText("बुथ पता :", cardX + 20, cardY + 312);
+
+      ctx.fillStyle = "#1e293b";
+      ctx.font = "20px sans-serif";
+      const boothAddr = v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर";
+      if (boothAddr.length > 45) {
+        ctx.fillText(boothAddr.substring(0, 45), cardX + 20, cardY + 345);
+        ctx.fillText(boothAddr.substring(45, 90), cardX + 20, cardY + 375);
+      } else {
+        ctx.fillText(boothAddr, cardX + 20, cardY + 345);
+      }
+
+      // Bottom appeal strip inside card
+      ctx.fillStyle = "#f0fdf4";
+      ctx.fillRect(cardX + 4, cardY + cardH - 50, cardW - 8, 46);
+      ctx.fillStyle = "#15803d";
+      ctx.font = "bold 19px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("🗳️ कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏", cardX + cardW / 2, cardY + cardH - 20);
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+      const dataUrl = canvas.toDataURL("image/png");
+      if (!blob) return null;
+      return { blob, dataUrl };
+    } catch (err) {
+      console.error("Single voter slip image error:", err);
+      return null;
+    }
+  };
+
+  // 1. Send Single Voter Slip as Text on WhatsApp
+  const handleSendSingleVoterSlipText = (v: VoterRecord, targetPhone?: string) => {
+    const ph = (targetPhone || activeVoterPhone || v.phone || "").replace(/[^0-9]/g, "");
+    const candName = candidate ? candidate.name : "प्रत्याशी";
+    const candParty = candidate ? candidate.party : "निर्दलीय";
+    const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || `vote for "${candName}"`;
+
+    const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
+*उम्मीदवार:* ${candName} (${candParty})
+🗳️ *${campaignMsg}*
+----------------------------------------
+*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *भाग सं (Part) :* ${v.booth}
+*नाम (Name) :* ${v.name}
+*पिता/पति (Guardian) :* ${v.guardian || "—"}
+*वोटर ID (EPIC) :* ${v.epic}
+*उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *मकान नं :* ${v.house || "—"}
+*बुथ पता :* ${v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
+----------------------------------------
+🙏 कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏`;
+
+    if (ph) {
+      const cleanPh = ph.length === 10 ? `91${ph}` : ph;
+      window.open(`https://wa.me/${cleanPh}?text=${encodeURIComponent(text)}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+    }
+  };
+
+  // 2. Send Single Voter Slip as Image on WhatsApp
+  const handleSendSingleVoterSlipImage = async (v: VoterRecord, targetPhone?: string) => {
+    setIsGeneratingSingleImage(true);
+    setLocalToast("⏳ वोटर स्लिप इमेज तैयार हो रही है...");
+    try {
+      const res = await generateSingleVoterSlipImage(v);
+      if (!res) {
+        alert("इमेज तैयार करने में विफल रहे। कृपया पुनः प्रयास करें।");
+        return;
+      }
+
+      const ph = (targetPhone || activeVoterPhone || v.phone || "").replace(/[^0-9]/g, "");
+      const cleanPh = ph.length === 10 ? `91${ph}` : ph;
+      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*भाग सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
+      const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Part${v.booth}.png`;
+      const file = new File([res.blob], fileName, { type: "image/png" });
+
+      // If Web Share API supports sharing files (Mobile browsers like Android Chrome / iOS Safari)
+      if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: `वोटर पर्ची - ${v.name}`,
+            text: caption,
+          });
+          setLocalToast("✅ पर्ची सफलतापूर्वक शेयर की गई!");
+          setTimeout(() => setLocalToast(""), 3000);
+          return;
+        } catch (shareErr: any) {
+          if (shareErr.name === "AbortError") {
+            return;
+          }
+        }
+      }
+
+      // Fallback for Desktop / unsupported browsers:
+      // 1. Auto-download the high-res image
+      const a = document.createElement("a");
+      a.href = res.dataUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // 2. Open WhatsApp with prefilled text and image prompt
+      const waUrl = cleanPh
+        ? `https://wa.me/${cleanPh}?text=${encodeURIComponent(caption + "\n\n(✅ पर्ची इमेज आपके डिवाइस में डाउनलोड हो गई है, कृपया चैट में अटैच करके भेजें)")}`
+        : `https://api.whatsapp.com/send?text=${encodeURIComponent(caption + "\n\n(✅ पर्ची इमेज आपके डिवाइस में डाउनलोड हो गई है, कृपया चैट में अटैच करके भेजें)")}`;
+
+      window.open(waUrl, "_blank");
+      setLocalToast(`✅ पर्ची इमेज डाउनलोड हो गई! व्हाट्सएप खुल रहा है...`);
+      setTimeout(() => setLocalToast(""), 4000);
+    } catch (err) {
+      alert("इमेज भेजने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsGeneratingSingleImage(false);
     }
   };
 
@@ -5710,32 +5974,91 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               </div>
             </div>
 
-            {/* Full width green Send button */}
-            <button
-              type="button"
-              className="bmGreenSendBtn"
-              onClick={() => {
-                const ph = (activeVoterPhone || activeActionVoter.phone || "").replace(/[^0-9]/g, "");
-                const text = `*वोटर स्लिप / VOTER SLIP*
-${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
+            {/* Recipient Phone Preview / Input */}
+            <div style={{ marginTop: "12px", background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+              <span style={{ fontSize: "12px", color: "#475569", fontWeight: 600 }}>
+                📱 प्राप्तकर्ता मोबाइल (WhatsApp No):
+              </span>
+              <span style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace" }}>
+                {activeVoterPhone || activeActionVoter.phone || "नंबर दर्ज नहीं"}
+              </span>
+            </div>
 
-*क्रम सं :* ${activeActionVoter.serialNo || "—"}     *भाग सं :* ${activeActionVoter.booth}
-*नाम :* ${activeActionVoter.name}
-*पिता/पति :* ${activeActionVoter.guardian || "—"}
-*वोटर ID :* ${activeActionVoter.epic}
-*उम्र :* ${activeActionVoter.age || "—"}     *मकान नंबर :* ${activeActionVoter.house || "—"}
-*बुथ पता :* ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}`;
+            {/* WhatsApp Send Options: 💬 Text vs 🖼️ Image */}
+            <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                {/* 1. Text Button */}
+                <button
+                  type="button"
+                  onClick={() => handleSendSingleVoterSlipText(activeActionVoter)}
+                  style={{
+                    background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "13px 8px",
+                    fontSize: "14px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    boxShadow: "0 3px 10px rgba(22, 163, 74, 0.35)",
+                    transition: "transform 0.1s ease",
+                  }}
+                  title="मतदाता पर्ची उम्मीदवार के नाम व विवरण के साथ टेक्स्ट फॉर्मेट में भेजें"
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Share2 size={17} />
+                    <span>💬 टेक्स्ट पर्ची</span>
+                  </div>
+                  <small style={{ fontSize: "11px", fontWeight: 500, opacity: 0.9 }}>
+                    (Text Format में भेजें)
+                  </small>
+                </button>
 
-                if (ph) {
-                  const cleanPh = ph.length === 10 ? `91${ph}` : ph;
-                  window.open(`https://wa.me/${cleanPh}?text=${encodeURIComponent(text)}`, "_blank");
-                } else {
-                  window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
-                }
-              }}
-            >
-              Send <span style={{ fontSize: "19px" }}>➤</span>
-            </button>
+                {/* 2. Image Button */}
+                <button
+                  type="button"
+                  disabled={isGeneratingSingleImage}
+                  onClick={() => handleSendSingleVoterSlipImage(activeActionVoter)}
+                  style={{
+                    background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "13px 8px",
+                    fontSize: "14px",
+                    fontWeight: 800,
+                    cursor: isGeneratingSingleImage ? "wait" : "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    boxShadow: "0 3px 10px rgba(2, 132, 199, 0.35)",
+                    opacity: isGeneratingSingleImage ? 0.8 : 1,
+                    transition: "transform 0.1s ease",
+                  }}
+                  title="उम्मीदवार के पोस्टर सहित सिंगल वोटर स्लिप फोटो इमेज बनाकर भेजें"
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <ImageIcon size={17} />
+                    <span>{isGeneratingSingleImage ? "⏳ बन रही है..." : "🖼️ इमेज पर्ची"}</span>
+                  </div>
+                  <small style={{ fontSize: "11px", fontWeight: 500, opacity: 0.9 }}>
+                    (पोस्टर + पर्ची फोटो)
+                  </small>
+                </button>
+              </div>
+
+              {/* Helper explanation note */}
+              <p style={{ margin: "2px 0 0", textAlign: "center", fontSize: "11.5px", color: "#64748b" }}>
+                💡 <b>टेक्स्ट पर्ची:</b> उम्मीदवार व वोटर विवरण सीधे टेक्स्ट में जाएगा | <b>इमेज पर्ची:</b> पोस्टर सहित फ़ोटो जाएगी
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -6062,35 +6385,74 @@ ${activeVoterSlipMsg || "vote for " + (candidate?.name || "bb")}
                 </div>
               </div>
 
-              {/* Recipient Phone Input */}
-              <div className="formGroup noPrint">
-                <label>{t.updateMobile}</label>
-                <div style={{ display: "flex", gap: "8px" }}>
+              {/* Recipient Phone Input & WhatsApp Send Buttons */}
+              <div className="formGroup noPrint" style={{ marginTop: "14px" }}>
+                <label style={{ fontWeight: 600, fontSize: "13px", color: "#334155" }}>
+                  📱 {t.updateMobile} (WhatsApp)
+                </label>
+                <div style={{ marginTop: "4px" }}>
                   <input
                     type="tel"
                     placeholder="98290XXXXX"
                     value={recipientPhone}
                     onChange={(e) => setRecipientPhone(e.target.value)}
-                    style={{ flex: 1, padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    style={{ width: "100%", padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
                   />
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "10px" }}>
+                  {/* 1. Text Button */}
                   <button
                     type="button"
                     style={{
-                      background: "#25d366",
+                      background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
                       color: "#fff",
                       border: 0,
                       borderRadius: "8px",
-                      padding: "0 16px",
+                      padding: "10px 12px",
                       fontWeight: 700,
+                      fontSize: "13px",
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "center",
                       gap: "6px",
                       cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(22, 163, 74, 0.3)",
                     }}
-                    onClick={() => handleSendWhatsApp(activeVoterForSlip)}
+                    onClick={() => handleSendSingleVoterSlipText(activeVoterForSlip, recipientPhone)}
+                    title="मतदाता पर्ची टेक्स्ट रूप में WhatsApp पर भेजें"
                   >
-                    <Share2 size={16} /> WhatsApp
+                    <Share2 size={16} /> 💬 टेक्स्ट पर्ची
                   </button>
+
+                  {/* 2. Image Button */}
+                  <button
+                    type="button"
+                    disabled={isGeneratingSingleImage}
+                    style={{
+                      background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                      color: "#fff",
+                      border: 0,
+                      borderRadius: "8px",
+                      padding: "10px 12px",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      cursor: isGeneratingSingleImage ? "wait" : "pointer",
+                      opacity: isGeneratingSingleImage ? 0.8 : 1,
+                      boxShadow: "0 2px 6px rgba(2, 132, 199, 0.3)",
+                    }}
+                    onClick={() => handleSendSingleVoterSlipImage(activeVoterForSlip, recipientPhone)}
+                    title="उम्मीदवार के पोस्टर सहित वोटर स्लिप इमेज WhatsApp पर भेजें"
+                  >
+                    <ImageIcon size={16} /> {isGeneratingSingleImage ? "⏳ बन रही है..." : "🖼️ इमेज पर्ची"}
+                  </button>
+                </div>
+                <div style={{ fontSize: "11px", color: "#64748b", marginTop: "5px", textAlign: "center" }}>
+                  💡 <b>टेक्स्ट पर्ची:</b> केवल विवरण व अपील | <b>इमेज पर्ची:</b> उम्मीदवार पोस्टर सहित फ़ोटो
                 </div>
               </div>
 
