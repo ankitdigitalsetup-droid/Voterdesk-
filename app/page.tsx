@@ -44,7 +44,7 @@ import { store } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
-import { matchesVoter, singleFieldMatches } from "@/lib/transliterate";
+import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
 
 export default function Page() {
   const [user, setUser] = useState<UserAccount | null>(null);
@@ -3201,16 +3201,22 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       return true;
     });
 
-    // Apply Alphabetical Name Sorting (A-Z ABCD / Z-A)
+    // Apply Alphabetical Name Sorting strictly according to English Roman ABCD (A-Z / Z-A)
+    // Works for both Hindi Devanagari (transliterated to English phonetics) and English names
     if (nameSortOrder !== "none") {
       list = [...list].sort((a, b) => {
-        const nameA = (a.name || "").trim();
-        const nameB = (b.name || "").trim();
-        if (!nameA && !nameB) return 0;
-        if (!nameA) return 1;
-        if (!nameB) return -1;
-        const comp = nameA.localeCompare(nameB, ["hi", "en"], { sensitivity: "base", numeric: true });
-        return nameSortOrder === "asc" ? comp : -comp;
+        const keyA = getEnglishSortKey(a.name);
+        const keyB = getEnglishSortKey(b.name);
+        if (!keyA && !keyB) return 0;
+        if (!keyA) return 1;
+        if (!keyB) return -1;
+        const comp = keyA.localeCompare(keyB, "en", { sensitivity: "base", numeric: true });
+        if (comp !== 0) {
+          return nameSortOrder === "asc" ? comp : -comp;
+        }
+        return nameSortOrder === "asc"
+          ? (a.name || "").localeCompare(b.name || "")
+          : (b.name || "").localeCompare(a.name || "");
       });
     }
 
@@ -4662,7 +4668,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       fontWeight: 800,
                       lineHeight: 1,
                     }}
-                    title={lang === "hi" ? "नाम को वर्णमाला (A-Z / ABCD) अनुसार क्रमबद्ध करें" : "Sort Alphabetically (A-Z)"}
+                    title={lang === "hi" ? "अंग्रेज़ी ABCD वर्णमाला क्रम में सेट करें" : "Sort by English ABCD Order"}
                   >
                     <ArrowUpDown size={11} />
                     <span>A-Z</span>
@@ -4693,14 +4699,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                         boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
                         padding: "6px",
                         zIndex: 101,
-                        minWidth: "215px",
+                        minWidth: "220px",
                         textAlign: "left",
                         color: "#0f172a",
                       }}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", padding: "4px 8px", borderBottom: "1px solid #f1f5f9", marginBottom: "4px" }}>
-                        {lang === "hi" ? "वर्णमाला क्रम (Alphabetical Sort)" : "Alphabetical Order"}
+                        {lang === "hi" ? "अंग्रेज़ी ABCD क्रम (English Alphabetical)" : "English Alphabetical Sort"}
                       </div>
                       <button
                         type="button"
@@ -4726,7 +4732,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                         }}
                       >
                         <span>🔤</span>
-                        <span>{lang === "hi" ? "A to Z (बढ़ते क्रम / ABCD)" : "A to Z (Ascending)"}</span>
+                        <span>{lang === "hi" ? "A to Z (English ABCD क्रम)" : "A to Z (English ABCD)"}</span>
                       </button>
                       <button
                         type="button"
@@ -4752,7 +4758,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                         }}
                       >
                         <span>🔠</span>
-                        <span>{lang === "hi" ? "Z to A (उलटे क्रम / DCBA)" : "Z to A (Descending)"}</span>
+                        <span>{lang === "hi" ? "Z to A (English DCBA क्रम)" : "Z to A (English DCBA)"}</span>
                       </button>
                       {nameSortOrder !== "none" && (
                         <button
@@ -7503,16 +7509,22 @@ function VotersTable({
       return true;
     });
 
-    // Apply Alphabetical Name Sorting (A-Z ABCD / Z-A)
+    // Apply Alphabetical Name Sorting strictly according to English Roman ABCD (A-Z / Z-A)
+    // Works for both Hindi Devanagari (transliterated to English phonetics) and English names
     if (nameSortOrder !== "none") {
       list = [...list].sort((a, b) => {
-        const nameA = (a.name || "").trim();
-        const nameB = (b.name || "").trim();
-        if (!nameA && !nameB) return 0;
-        if (!nameA) return 1;
-        if (!nameB) return -1;
-        const comp = nameA.localeCompare(nameB, ["hi", "en"], { sensitivity: "base", numeric: true });
-        return nameSortOrder === "asc" ? comp : -comp;
+        const keyA = getEnglishSortKey(a.name);
+        const keyB = getEnglishSortKey(b.name);
+        if (!keyA && !keyB) return 0;
+        if (!keyA) return 1;
+        if (!keyB) return -1;
+        const comp = keyA.localeCompare(keyB, "en", { sensitivity: "base", numeric: true });
+        if (comp !== 0) {
+          return nameSortOrder === "asc" ? comp : -comp;
+        }
+        return nameSortOrder === "asc"
+          ? (a.name || "").localeCompare(b.name || "")
+          : (b.name || "").localeCompare(a.name || "");
       });
     } else if (ageSortOrder !== "none") {
       const getNumAge = (v: VoterRecord) => {
@@ -7957,7 +7969,7 @@ function VotersTable({
                         fontWeight: 800,
                         lineHeight: 1,
                       }}
-                      title="नाम को वर्णमाला (A-Z / ABCD) अनुसार क्रमबद्ध करें"
+                      title="अंग्रेज़ी ABCD वर्णमाला क्रम में सेट करें"
                     >
                       <ArrowUpDown size={11} />
                       <span>A-Z</span>
@@ -7988,14 +8000,14 @@ function VotersTable({
                           boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
                           padding: "6px",
                           zIndex: 101,
-                          minWidth: "215px",
+                          minWidth: "220px",
                           textAlign: "left",
                           color: "#0f172a",
                         }}
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", padding: "4px 8px", borderBottom: "1px solid #f1f5f9", marginBottom: "4px" }}>
-                          वर्णमाला क्रम (Alphabetical Sort)
+                          अंग्रेज़ी ABCD क्रम (English Alphabetical)
                         </div>
                         <button
                           type="button"
@@ -8021,7 +8033,7 @@ function VotersTable({
                           }}
                         >
                           <span>🔤</span>
-                          <span>A to Z (बढ़ते क्रम / ABCD)</span>
+                          <span>A to Z (English ABCD क्रम)</span>
                         </button>
                         <button
                           type="button"
@@ -8047,7 +8059,7 @@ function VotersTable({
                           }}
                         >
                           <span>🔠</span>
-                          <span>Z to A (उलटे क्रम / DCBA)</span>
+                          <span>Z to A (English DCBA क्रम)</span>
                         </button>
                         {nameSortOrder !== "none" && (
                           <button

@@ -150,6 +150,17 @@ export function devanagariToRoman(text: string): string {
 }
 
 /**
+ * Generates an English Roman alphabetical sort key for any name (Devanagari Hindi or English).
+ * Ensures names sort according to English A-B-C-D alphabetical order, not Hindi क-ख-ग-घ varnamala.
+ */
+export function getEnglishSortKey(name: string): string {
+  if (!name) return "";
+  const trimmed = name.trim();
+  const roman = devanagariToRoman(trimmed);
+  return roman.replace(/^[^a-z0-9]+/, "");
+}
+
+/**
  * Normalizes phonetic string to absorb common English/Hinglish spelling variations.
  * Examples: ee/i, oo/u, w/v, z/j, sh/s, q/k, kh/k, double letters.
  */
