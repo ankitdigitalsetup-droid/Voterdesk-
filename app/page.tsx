@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store } from "@/lib/data-store";
-import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, AccountStatus } from "@/lib/types";
+import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential } from "@/lib/types";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
@@ -130,32 +130,6 @@ export default function Page() {
     return () => clearInterval(timer);
   }, [syncWithServer]);
 
-  // Check active server session on load / refresh
-  useEffect(() => {
-    async function checkSession() {
-      try {
-        const res = await fetch("/api/auth/session");
-        if (res.ok) {
-          const data = await res.json();
-          if (data.authenticated && data.user) {
-            setUser(data.user);
-            if (data.user.candidateId) {
-              setActiveCandidateId(data.user.candidateId);
-            }
-            if (data.user.role === "SUPER_ADMIN") {
-              setPage("superadmin");
-            } else {
-              setPage("boothmanager");
-            }
-          }
-        }
-      } catch {
-        // Session not present or expired
-      }
-    }
-    checkSession();
-  }, []);
-
   // When user logs in, set candidate id and navigate DIRECTLY to voter roll!
   const handleLogin = (authenticatedUser: UserAccount) => {
     setUser(authenticatedUser);
@@ -170,12 +144,7 @@ export default function Page() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } catch {
-      // ignore
-    }
+  const handleLogout = () => {
     setUser(null);
     setPage("boothmanager");
   };
@@ -186,20 +155,6 @@ export default function Page() {
 
   if (!user) {
     return <Login onLogin={handleLogin} lang={lang} toggleLang={toggleLang} t={t} />;
-  }
-
-  // Enforce first-login password creation before any dashboard access
-  if (user.mustChangePassword) {
-    return (
-      <ForceChangePasswordModal
-        user={user}
-        onPasswordChanged={(updatedUser) => {
-          setUser(updatedUser);
-        }}
-        onLogout={handleLogout}
-        lang={lang}
-      />
-    );
   }
 
   // Super Admin Direct View
@@ -430,8 +385,7 @@ export default function Page() {
 }
 
 // -------------------------------------------------------------
-// -------------------------------------------------------------
-// 1. PRODUCTION SECURE LOGIN COMPONENT (CLEAN - NO DEMO CREDS)
+// 1. LOGIN COMPONENT (WITH 3-ROLE QUICK TABS)
 // -------------------------------------------------------------
 function Login({
   onLogin,
@@ -444,10 +398,26 @@ function Login({
   toggleLang: () => void;
   t: (typeof translations)["hi"];
 }) {
-  const [loginId, setLoginId] = useState("");
-  const [password, setPassword] = useState("");
+  const [roleTab, setRoleTab] = useState<"CANDIDATE_ADMIN" | "SUPER_ADMIN" | "KARYAKARTA">("CANDIDATE_ADMIN");
+  const [phone, setPhone] = useState("94141 14497");
+  const [password, setPassword] = useState("voterdesk");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const selectRole = (role: "CANDIDATE_ADMIN" | "SUPER_ADMIN" | "KARYAKARTA") => {
+    setRoleTab(role);
+    setError("");
+    if (role === "SUPER_ADMIN") {
+      setPhone("99999 99999");
+      setPassword("superadmin");
+    } else if (role === "CANDIDATE_ADMIN") {
+      setPhone("94141 14497");
+      setPassword("voterdesk");
+    } else {
+      setPhone("98290 12345");
+      setPassword("karyakarta");
+    }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -455,21 +425,49 @@ function Login({
     setError("");
 
     try {
+      // Try API route first
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ loginId: loginId.trim(), password }),
+        body: JSON.stringify({ phone, password }),
       });
 
       const data = await res.json();
-      if (res.ok && data.success && data.user) {
+      if (res.ok && data.success) {
         onLogin(data.user);
         return;
       }
 
-      setError(data.error || "अमान्य मोबाइल नंबर या पासवर्ड।");
+      // Fallback to client-side store
+      const localUser = store.authenticate(phone, password);
+      if (localUser) {
+        onLogin({
+          id: localUser.id,
+          name: localUser.name,
+          phone: localUser.phone,
+          role: localUser.role,
+          candidateId: localUser.candidateId,
+          assignedBooths: localUser.assignedBooths,
+        });
+        return;
+      }
+
+      setError(data.error || "Invalid mobile number or password. Check demo credentials.");
     } catch {
-      setError("सर्वर से कनेक्ट करने में त्रुटि हुई। कृपया इंटरनेट कनेक्शन जांचें।");
+      // Fallback if fetch fails
+      const localUser = store.authenticate(phone, password);
+      if (localUser) {
+        onLogin({
+          id: localUser.id,
+          name: localUser.name,
+          phone: localUser.phone,
+          role: localUser.role,
+          candidateId: localUser.candidateId,
+          assignedBooths: localUser.assignedBooths,
+        });
+      } else {
+        setError("Login failed. Please check credentials.");
+      }
     } finally {
       setLoading(false);
     }
@@ -509,58 +507,69 @@ function Login({
         </button>
 
         <div className="loginCopy">
-          <h1>{lang === "hi" ? "सुरक्षित लॉगिन" : "Secure Sign In"}</h1>
-          <p>{lang === "hi" ? "अपने अधिकृत क्रेडेंशियल्स दर्ज कर पोर्टल में प्रवेश करें" : "Enter your authorized credentials to access portal"}</p>
+          <em>{t.loginRoleLabel}</em>
+          <h1>{t.loginTitle}</h1>
+          <p>{t.loginSubtitle}</p>
+        </div>
+
+        {/* 3-Role Switcher Tabs */}
+        <div className="roleTabs">
+          <button
+            type="button"
+            className={`roleTab ${roleTab === "CANDIDATE_ADMIN" ? "active" : ""}`}
+            onClick={() => selectRole("CANDIDATE_ADMIN")}
+          >
+            {t.loginRoleCandidate}
+          </button>
+          <button
+            type="button"
+            className={`roleTab ${roleTab === "SUPER_ADMIN" ? "active" : ""}`}
+            onClick={() => selectRole("SUPER_ADMIN")}
+          >
+            {t.loginRoleSuper}
+          </button>
+          <button
+            type="button"
+            className={`roleTab ${roleTab === "KARYAKARTA" ? "active" : ""}`}
+            onClick={() => selectRole("KARYAKARTA")}
+          >
+            {t.loginRoleKaryakarta}
+          </button>
         </div>
 
         {error && (
-          <div
-            style={{
-              background: "#fee2e2",
-              color: "#b91c1c",
-              border: "1px solid #f87171",
-              padding: "10px 14px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              marginBottom: "16px",
-              fontWeight: 600,
-            }}
-          >
-            ⚠️ {error}
+          <div style={{ background: "#fee2e2", color: "#b91c1c", padding: "10px 14px", borderRadius: "8px", fontSize: "13px", marginBottom: "14px" }}>
+            {error}
           </div>
         )}
 
         <form onSubmit={handleSignIn}>
-          <label>{lang === "hi" ? "मोबाइल नंबर या लॉगिन आईडी" : "Mobile Number or Login ID"}</label>
-          <div className="phone" style={{ marginTop: "4px", marginBottom: "14px" }}>
-            <input
-              type="text"
-              value={loginId}
-              onChange={(e) => setLoginId(e.target.value)}
-              placeholder={lang === "hi" ? "जैसे: 90793XXXXX या Login ID" : "e.g. 90793XXXXX or Login ID"}
-              required
-              autoFocus
-              style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-            />
+          <label>{t.loginPhoneLabel}</label>
+          <div className="phone">
+            <span>+91</span>
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" required />
           </div>
 
-          <div className="passLabel" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <label>{lang === "hi" ? "पासवर्ड" : "Password"}</label>
+          <div className="passLabel">
+            <label>{t.loginPasswordLabel}</label>
+            <span style={{ fontSize: "11px", color: "var(--muted)" }}>{t.loginPasswordHint}</span>
           </div>
           <input
             className="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder={lang === "hi" ? "अपना गुप्त पासवर्ड दर्ज करें" : "Enter password"}
             required
-            style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", marginTop: "4px", marginBottom: "16px" }}
           />
 
-          <button className="primary wide" disabled={loading} style={{ padding: "12px", fontSize: "15px", fontWeight: 700 }}>
-            {loading ? (lang === "hi" ? "प्रमाणीकरण हो रहा है..." : "Signing in...") : (lang === "hi" ? "लॉगिन करें / Sign In" : "Sign In")}
+          <button className="primary wide" disabled={loading}>
+            {loading ? t.loginSigningIn : `${t.loginPrimaryLabel} ${roleTab === "SUPER_ADMIN" ? t.loginRoleSuper : roleTab === "CANDIDATE_ADMIN" ? t.loginRoleCandidate : t.loginRoleKaryakarta}`}
           </button>
         </form>
+
+        <p className="demo">
+          <ShieldCheck /> {t.loginDemoTip}
+        </p>
       </section>
 
       <section className="loginArt">
@@ -579,196 +588,6 @@ function Login({
         </article>
       </section>
     </main>
-  );
-}
-
-// -------------------------------------------------------------
-// 1.5 MANDATORY FIRST-LOGIN PASSWORD CREATION COMPONENT
-// -------------------------------------------------------------
-function ForceChangePasswordModal({
-  user,
-  onPasswordChanged,
-  onLogout,
-  lang,
-}: {
-  user: UserAccount;
-  onPasswordChanged: (u: UserAccount) => void;
-  onLogout: () => void;
-  lang: Lang;
-}) {
-  const [oldPassword, setOldPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      setError("कृपया सभी फ़ील्ड भरें।");
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setError("नया पासवर्ड और पुष्टि पासवर्ड मेल नहीं खाते हैं।");
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setError("नया पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ oldPassword, newPassword }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success && data.user) {
-        onPasswordChanged(data.user);
-      } else {
-        setError(data.error || "पासवर्ड बदलने में त्रुटि हुई।");
-      }
-    } catch {
-      setError("सर्वर से कनेक्ट करने में त्रुटि।");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: "linear-gradient(135deg, #0b192c 0%, #1e3e62 100%)",
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          background: "#ffffff",
-          borderRadius: "16px",
-          padding: "32px",
-          width: "100%",
-          maxWidth: "440px",
-          boxShadow: "0 20px 50px rgba(0,0,0,0.5)",
-        }}
-      >
-        <div style={{ textAlign: "center", marginBottom: "20px" }}>
-          <div style={{ fontSize: "42px", marginBottom: "8px" }}>🔐</div>
-          <h2 style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a", margin: "0 0 6px" }}>
-            नया पासवर्ड बनाएं (Create New Password)
-          </h2>
-          <p style={{ fontSize: "13px", color: "#64748b", margin: 0 }}>
-            नमस्ते <b>{user.name}</b>, यह आपकी पहली लॉगिन है। सुरक्षा नियमों के अनुसार कृपया अपना नया सुरक्षित पासवर्ड सेट करें।
-          </p>
-        </div>
-
-        {error && (
-          <div
-            style={{
-              background: "#fee2e2",
-              color: "#b91c1c",
-              border: "1px solid #f87171",
-              padding: "10px 14px",
-              borderRadius: "8px",
-              fontSize: "13px",
-              marginBottom: "16px",
-              fontWeight: 600,
-            }}
-          >
-            ⚠️ {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
-              अस्थायी पासवर्ड (Temporary Password)
-            </label>
-            <input
-              type="password"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              placeholder="सुपर एडमिन द्वारा दिया गया 8-अंकीय पासवर्ड"
-              required
-              style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
-              नया पासवर्ड (New Password)
-            </label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="नया गुप्त पासवर्ड दर्ज करें"
-              required
-              style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
-            />
-          </div>
-
-          <div>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
-              नए पासवर्ड की पुष्टि (Confirm New Password)
-            </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="नया पासवर्ड दोबारा दर्ज करें"
-              required
-              style={{ width: "100%", padding: "10px 14px", borderRadius: "8px", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              background: "linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)",
-              color: "#ffffff",
-              border: 0,
-              borderRadius: "10px",
-              padding: "13px",
-              fontSize: "15px",
-              fontWeight: 800,
-              cursor: loading ? "wait" : "pointer",
-              marginTop: "8px",
-              boxShadow: "0 4px 12px rgba(29, 78, 216, 0.35)",
-            }}
-          >
-            {loading ? "सुरक्षित किया जा रहा है..." : "पासवर्ड सेव करें व आगे बढ़ें ➤"}
-          </button>
-
-          <button
-            type="button"
-            onClick={onLogout}
-            style={{
-              background: "transparent",
-              border: 0,
-              color: "#64748b",
-              fontSize: "13px",
-              cursor: "pointer",
-              textDecoration: "underline",
-              marginTop: "4px",
-            }}
-          >
-            लॉगआउट करें (Cancel & Logout)
-          </button>
-        </form>
-      </div>
-    </div>
   );
 }
 
@@ -795,52 +614,14 @@ function SuperAdminView({
   t: (typeof translations)["hi"];
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newCand, setNewCand] = useState<{
-    name: string;
-    phone: string;
-    party: string;
-    electionName: string;
-    wardConstituency: string;
-    boothCount: string;
-    status: AccountStatus;
-  }>({
+  const [newCand, setNewCand] = useState({
     name: "",
     phone: "",
     party: "Independent (निर्दलीय)",
     electionName: "Municipal Election 2026",
     wardConstituency: "Ward 01",
-    boothCount: "1",
-    status: "ACTIVE",
-  });
-
-  // One-Time Credentials Modal State (Temporary Password shown only once!)
-  const [oneTimeCreds, setOneTimeCreds] = useState<{
-    name: string;
-    phone: string;
-    tempPassword: string;
-    roleTitle: string;
-    ward?: string;
-  } | null>(null);
-  const [copiedOneTimeCreds, setCopiedOneTimeCreds] = useState(false);
-
-  // Dedicated Karyakarta Creation Modal
-  const [showAddKaryakartaModal, setShowAddKaryakartaModal] = useState<CandidateAccount | null>(null);
-  const [karyakartaForm, setKaryakartaForm] = useState<{
-    name: string;
-    phone: string;
-    roleTitle: string;
-    ward: string;
-    booth: string;
-    area: string;
-    status: AccountStatus;
-  }>({
-    name: "",
-    phone: "",
-    roleTitle: "Field Worker",
-    ward: "",
-    booth: "1",
-    area: "",
-    status: "ACTIVE",
+    boothCount: "10",
+    password: "voterdesk",
   });
 
   // Dedicated Ward Onboarding Card States
@@ -849,7 +630,7 @@ function SuperAdminView({
   const [candName, setCandName] = useState("");
   const [candParty, setCandParty] = useState("Independent (निर्दलीय)");
   const [candPhone, setCandPhone] = useState("");
-  const [boothCount, setBoothCount] = useState<number>(3); // default 3 booths
+  const [boothCount, setBoothCount] = useState<number>(3); // default 3 booths = 12 passwords
 
   // Poster Upload state
   const [posterPreview, setPosterPreview] = useState<string>("");
@@ -867,11 +648,10 @@ function SuperAdminView({
   const [credentials, setCredentials] = useState<Array<{
     name: string;
     phone: string;
+    password: string;
     role: "CANDIDATE_ADMIN" | "KARYAKARTA";
     boothNumber: string;
     roleTitle: string;
-    status: AccountStatus;
-    mustChangePassword: boolean;
   }>>([]);
   const [previewBoothFilter, setPreviewBoothFilter] = useState<string>("ALL");
   const [isActivating, setIsActivating] = useState<boolean>(false);
@@ -1026,16 +806,15 @@ function SuperAdminView({
     });
   };
 
-  // Dynamic Accounts Formula (1 booth = 4 accounts: 1 candidate + 3 karyakartas)
+  // Dynamic Password Generator Formula (1 booth = 4 passwords: 1 candidate + 3 karyakartas)
   const generateCredsList = useCallback((count: number, cName: string, cPhone: string) => {
     const list: Array<{
       name: string;
       phone: string;
+      password: string;
       role: "CANDIDATE_ADMIN" | "KARYAKARTA";
       boothNumber: string;
       roleTitle: string;
-      status: AccountStatus;
-      mustChangePassword: boolean;
     }> = [];
 
     const baseName = cName.trim() || "प्रत्याशी";
@@ -1047,27 +826,27 @@ function SuperAdminView({
       const bStr = String(b);
       const bPad = b < 10 ? `0${b}` : `${b}`;
 
-      // 1. Candidate Account for Booth b
+      // 1. Candidate Password for Booth b
+      const candPin = Math.floor(1000 + Math.random() * 9000);
       list.push({
         name: b === 1 ? baseName : `${baseName} (बूथ ${b})`,
         phone: b === 1 && cleanPhone.length === 10 ? cleanPhone : `${prefix}${bPad}0`,
+        password: `CAND@B${b}_${candPin}`,
         role: "CANDIDATE_ADMIN",
         boothNumber: bStr,
         roleTitle: `बूथ ${b} प्रत्याशी प्रभारी`,
-        status: "ACTIVE",
-        mustChangePassword: true,
       });
 
-      // 2. Three Karyakarta Accounts for Booth b
+      // 2. Three Karyakarta Passwords for Booth b
       for (let k = 1; k <= 3; k++) {
+        const karyPin = Math.floor(1000 + Math.random() * 9000);
         list.push({
           name: `कार्यकर्ता ${k} (बूथ ${b})`,
           phone: `${prefix}${bPad}${k}`,
+          password: `WORK@B${b}K${k}_${karyPin}`,
           role: "KARYAKARTA",
           boothNumber: bStr,
           roleTitle: `बूथ ${b} कार्यकर्ता ${k}`,
-          status: "ACTIVE",
-          mustChangePassword: true,
         });
       }
     }
@@ -1226,7 +1005,7 @@ function SuperAdminView({
     }
   };
 
-  // Download Credentials as Excel Sheet (NO PASSWORDS EXPORTED)
+  // Download Credentials as Excel Sheet
   const downloadCredentialsExcel = (cand: CandidateAccount, creds: CandidateCredential[]) => {
     const data = creds.map((c) => ({
       "वार्ड / क्षेत्र": cand.wardConstituency,
@@ -1237,84 +1016,41 @@ function SuperAdminView({
       "पद / पदनाम": c.roleTitle,
       "आवंटित बूथ": `बूथ ${c.boothNumber}`,
       "मोबाइल / लॉगिन आईडी": c.phone,
-      "खाता स्थिति": c.status || "ACTIVE",
-      "पासवर्ड स्थिति": c.mustChangePassword ? "अस्थायी पासवर्ड (बदलना अनिवार्य)" : "सक्रिय पासवर्ड (सेट)",
+      "पासवर्ड": c.password,
     }));
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Accounts");
-    XLSX.writeFile(workbook, `VoterDesk_Accounts_${cand.wardConstituency.replace(/\s+/g, "_")}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Passwords");
+    XLSX.writeFile(workbook, `VoterDesk_Passwords_${cand.wardConstituency.replace(/\s+/g, "_")}.xlsx`);
   };
 
-  // Status Change Handler for Team User
-  const handleUpdateStatus = (userId: string, newStatus: AccountStatus) => {
-    try {
-      store.updateUserStatus(userId, newStatus, user.id, user.name);
-      if (viewCredsModal) {
-        setViewCredsModal({
-          ...viewCredsModal,
-          creds: store.getCandidateUsers(viewCredsModal.candidate.id),
-        });
-      }
-      onCandidateCreated();
-    } catch (err: unknown) {
-      alert("खाता स्थिति बदलने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
-    }
-  };
+  // Copy Credentials formatted for WhatsApp sharing
+  const copyCredentialsForWhatsApp = (cand: CandidateAccount, creds: CandidateCredential[]) => {
+    const text =
+      `🇮🇳 *वोटर डेस्क - चुनाव प्रबंधन पोर्टल* 🇮🇳\n` +
+      `*वार्ड / क्षेत्र:* ${cand.wardConstituency}\n` +
+      `*चुनाव:* ${cand.electionName}\n` +
+      `*प्रत्याशी:* ${cand.name} (${cand.party})\n` +
+      `*कुल पोलिंग बूथ:* ${cand.boothCount} | *कुल क्रेडेंशियल्स:* ${creds.length}\n` +
+      `----------------------------------------\n` +
+      creds
+        .map(
+          (c) =>
+            `🔑 *${c.roleTitle}* (${c.role === "CANDIDATE_ADMIN" ? "कैंडिडेट" : "कार्यकर्ता"})\n` +
+            `👤 नाम: ${c.name}\n` +
+            `📱 मोबाइल: ${c.phone}\n` +
+            `🔒 पासवर्ड: ${c.password}\n` +
+            `📍 बूथ: बूथ ${c.boothNumber}`
+        )
+        .join("\n----------------------------------------\n") +
+      `\n----------------------------------------\n` +
+      `🌐 लॉगिन वेबसाइट: ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
+      `⚠️ *नोट:* अपने मोबाइल नंबर और दिए गए पासवर्ड से लॉगिन करें।`;
 
-  // Status Change Handler for Candidate Campaign
-  const handleUpdateCandidateStatus = (candidateId: string, newStatus: AccountStatus) => {
-    try {
-      store.updateCandidateStatus(candidateId, newStatus, user.id, user.name);
-      onCandidateCreated();
-    } catch (err: unknown) {
-      alert("प्रत्याशी अभियान स्थिति बदलने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
-    }
-  };
-
-  // Password Reset Handler for Individual User
-  const handleResetPassword = (userId: string, name: string, roleTitle: string, phone: string) => {
-    if (!confirm(`क्या आप ${name} (${roleTitle}) का पासवर्ड रीसेट करना चाहते हैं?\n\nनया 8-अंकीय अस्थायी पासवर्ड जारी होगा और सभी सक्रिय सत्र समाप्त हो जाएंगे।`)) {
-      return;
-    }
-    try {
-      const res = store.resetUserPassword(userId, user.id, user.name);
-      if (viewCredsModal) {
-        setViewCredsModal({
-          ...viewCredsModal,
-          creds: store.getCandidateUsers(viewCredsModal.candidate.id),
-        });
-      }
-      onCandidateCreated();
-      setOneTimeCreds({
-        name,
-        phone,
-        tempPassword: res.tempPassword,
-        roleTitle,
-        ward: viewCredsModal?.candidate.wardConstituency,
-      });
-    } catch (err: unknown) {
-      alert("पासवर्ड रीसेट करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
-    }
-  };
-
-  // Password Reset Handler for Candidate
-  const handleResetCandidatePassword = (cand: CandidateAccount) => {
-    if (!confirm(`क्या आप प्रत्याशी ${cand.name} (${cand.wardConstituency}) का एडमिन पासवर्ड रीसेट करना चाहते हैं?\n\nनया 8-अंकीय अस्थायी संख्यात्मक पासवर्ड जारी होगा और प्रत्याशी का वर्तमान लॉगिन सत्र तुरंत समाप्त हो जाएगा।`)) {
-      return;
-    }
-    try {
-      const res = store.resetCandidatePassword(cand.id, user.id, user.name);
-      onCandidateCreated();
-      setOneTimeCreds({
-        name: cand.name,
-        phone: cand.phone,
-        tempPassword: res.tempPassword,
-        roleTitle: "प्रत्याशी एडमिन (Candidate Admin)",
-        ward: cand.wardConstituency,
-      });
-    } catch (err: unknown) {
-      alert("प्रत्याशी पासवर्ड रीसेट करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      setCopiedSuccess(true);
+      setTimeout(() => setCopiedSuccess(false), 3000);
     }
   };
 
@@ -1322,44 +1058,28 @@ function SuperAdminView({
     e.preventDefault();
     if (!newCand.name || !newCand.phone) return;
 
-    try {
-      const result = store.createCandidateWithAdmin(
-        {
-          name: newCand.name,
-          phone: newCand.phone,
-          party: newCand.party,
-          electionName: newCand.electionName,
-          wardConstituency: newCand.wardConstituency,
-          boothCount: Number(newCand.boothCount) || 1,
-          status: newCand.status || "ACTIVE",
-        },
-        user.id,
-        user.name
-      );
+    store.addCandidate({
+      name: newCand.name,
+      phone: newCand.phone,
+      party: newCand.party,
+      electionName: newCand.electionName,
+      wardConstituency: newCand.wardConstituency,
+      boothCount: Number(newCand.boothCount) || 10,
+      status: "ACTIVE",
+      password: newCand.password,
+    });
 
-      setShowAddModal(false);
-      setNewCand({
-        name: "",
-        phone: "",
-        party: "Independent (निर्दलीय)",
-        electionName: "Municipal Election 2026",
-        wardConstituency: "Ward 01",
-        boothCount: "1",
-        status: "ACTIVE",
-      });
-      onCandidateCreated();
-
-      // Show One-Time Temporary Credentials Modal!
-      setOneTimeCreds({
-        name: result.candidate.name,
-        phone: result.candidate.phone,
-        tempPassword: result.tempPassword,
-        roleTitle: "प्रत्याशी एडमिन (Candidate Admin)",
-        ward: result.candidate.wardConstituency,
-      });
-    } catch (err: unknown) {
-      alert("प्रत्याशी खाता बनाने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
-    }
+    setShowAddModal(false);
+    setNewCand({
+      name: "",
+      phone: "",
+      party: "Independent (निर्दलीय)",
+      electionName: "Municipal Election 2026",
+      wardConstituency: "Ward 01",
+      boothCount: "10",
+      password: "voterdesk",
+    });
+    onCandidateCreated();
   };
 
   const totalVotersAcross = candidates.reduce((acc, c) => acc + (c.voterCount || 0), 0);
@@ -1827,9 +1547,7 @@ function SuperAdminView({
 
                       <div className="saCredRow">
                         <span style={{ color: "#64748b" }}>🔒 पासवर्ड:</span>
-                        <span className="saCredPassBox" style={{ letterSpacing: "0.5px", fontSize: "11px", color: "#0369a1", background: "#f0f9ff", border: "1px dashed #7dd3fc" }}>
-                          [8-अंकीय पिन स्वतः जनरेट होगा]
-                        </span>
+                        <span className="saCredPassBox">{c.password}</span>
                       </div>
                     </div>
                   ))}
@@ -1896,25 +1614,7 @@ function SuperAdminView({
                       <b>{(cand.voterCount || 0).toLocaleString()}</b>
                     </td>
                     <td>
-                      <select
-                        value={cand.status || "ACTIVE"}
-                        onChange={(e) => handleUpdateCandidateStatus(cand.id, e.target.value as AccountStatus)}
-                        style={{
-                          padding: "4px 8px",
-                          borderRadius: "6px",
-                          fontSize: "12px",
-                          fontWeight: 700,
-                          border: "1px solid",
-                          borderColor: cand.status === "ACTIVE" ? "#86efac" : cand.status === "SUSPENDED" ? "#fde047" : "#fca5a5",
-                          background: cand.status === "ACTIVE" ? "#f0fdf4" : cand.status === "SUSPENDED" ? "#fefce8" : "#fef2f2",
-                          color: cand.status === "ACTIVE" ? "#166534" : cand.status === "SUSPENDED" ? "#854d0e" : "#991b1b",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <option value="ACTIVE">✅ Active</option>
-                        <option value="SUSPENDED">⏸️ Suspended</option>
-                        <option value="DISABLED">❌ Disabled</option>
-                      </select>
+                      <span className="status in-favor">{cand.status}</span>
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
@@ -1966,28 +1666,9 @@ function SuperAdminView({
                             const creds = store.getCandidateUsers(cand.id);
                             setViewCredsModal({ candidate: cand, creds });
                           }}
-                          title="इस प्रत्याशी के टीम खाते व पासवर्ड स्थिति देखें"
+                          title="इस प्रत्याशी के सभी लॉगिन पासवर्ड देखें व कॉपी करें"
                         >
-                          <Key size={13} /> 👥 टीम खाते
-                        </button>
-                        <button
-                          type="button"
-                          className="outline"
-                          style={{
-                            padding: "6px 10px",
-                            fontSize: "12px",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: "4px",
-                            color: "#b91c1c",
-                            borderColor: "#fca5a5",
-                            background: "#fef2f2",
-                            fontWeight: 700,
-                          }}
-                          onClick={() => handleResetCandidatePassword(cand)}
-                          title="इस प्रत्याशी के लिए नया 8-अंकीय पासवर्ड रीसेट करें (सत्र तुरंत समाप्त होगा)"
-                        >
-                          <Key size={13} /> 🔄 Reset Password
+                          <Key size={13} /> 🔑 पासवर्ड
                         </button>
                         <button
                           className="primary"
@@ -2028,38 +1709,26 @@ function SuperAdminView({
                     {viewCredsModal.candidate.name} ({viewCredsModal.candidate.party})
                   </div>
                   <div style={{ fontSize: "12px", color: "#64748b" }}>
-                    {viewCredsModal.candidate.electionName} • कुल {viewCredsModal.candidate.boothCount} बूथ • {viewCredsModal.creds.length} टीम खाते
+                    {viewCredsModal.candidate.electionName} • कुल {viewCredsModal.candidate.boothCount} बूथ • {viewCredsModal.creds.length} एक्टिव पासवर्ड
                   </div>
                 </div>
 
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    className="primary"
-                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#0284c7", borderColor: "#0284c7" }}
-                    onClick={() => {
-                      setKaryakartaForm({
-                        name: "",
-                        phone: "",
-                        roleTitle: "Booth Worker",
-                        ward: viewCredsModal.candidate.wardConstituency,
-                        booth: "1",
-                        area: "",
-                        status: "ACTIVE",
-                      });
-                      setShowAddKaryakartaModal(viewCredsModal.candidate);
-                    }}
-                  >
-                    <Plus size={14} /> + नया कार्यकर्ता जोड़ें
-                  </button>
-
-                  <button
-                    type="button"
                     className="outline"
                     style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#ffffff" }}
                     onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
                   >
-                    <Download size={14} /> 📥 टीम लिस्ट Excel (.xlsx)
+                    <Download size={14} /> 📥 Excel डाउनलोड (.xlsx)
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    style={{ padding: "6px 14px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#16a34a", borderColor: "#16a34a" }}
+                    onClick={() => copyCredentialsForWhatsApp(viewCredsModal.candidate, viewCredsModal.creds)}
+                  >
+                    <Share2 size={14} /> {copiedSuccess ? "✓ कॉपी हो गया!" : "💬 WhatsApp कॉपी"}
                   </button>
                   <button
                     type="button"
@@ -2083,14 +1752,14 @@ function SuperAdminView({
                   onChange={(e) => setModalBoothFilter(e.target.value)}
                   style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
                 >
-                  <option value="ALL">सभी बूथ ({viewCredsModal.creds.length} खाते)</option>
+                  <option value="ALL">सभी बूथ ({viewCredsModal.creds.length} पासवर्ड)</option>
                   {Array.from(new Set(viewCredsModal.creds.map((c) => c.boothNumber))).map((b) => (
                     <option key={b} value={b}>बूथ {b}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Table of Credentials (NO PASSWORDS DISPLAYED) */}
+              {/* Table of Credentials */}
               <div style={{ maxHeight: "400px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
                   <thead style={{ background: "#f1f5f9", position: "sticky", top: 0, zIndex: 2 }}>
@@ -2099,9 +1768,8 @@ function SuperAdminView({
                       <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>नाम</th>
                       <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>बूथ</th>
                       <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>मोबाइल / लॉगिन</th>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>खाता स्थिति</th>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>पासवर्ड स्थिति</th>
-                      <th style={{ padding: "8px 12px", textAlign: "center", borderBottom: "1px solid #cbd5e1" }}>कार्रवाई</th>
+                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>पासवर्ड</th>
+                      <th style={{ padding: "8px 12px", textAlign: "center", borderBottom: "1px solid #cbd5e1" }}>कॉपी</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2128,65 +1796,24 @@ function SuperAdminView({
                             </span>
                           </td>
                           <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: "#0369a1" }}>{c.phone}</td>
-                          
-                          {/* Account Status Switcher */}
                           <td style={{ padding: "8px 12px" }}>
-                            <select
-                              value={c.status || "ACTIVE"}
-                              onChange={(e) => handleUpdateStatus(c.id, e.target.value as AccountStatus)}
-                              style={{
-                                padding: "4px 8px",
-                                borderRadius: "6px",
-                                fontSize: "11.5px",
-                                fontWeight: 700,
-                                border: "1px solid",
-                                borderColor: c.status === "ACTIVE" ? "#86efac" : c.status === "SUSPENDED" ? "#fde047" : "#fca5a5",
-                                background: c.status === "ACTIVE" ? "#f0fdf4" : c.status === "SUSPENDED" ? "#fefce8" : "#fef2f2",
-                                color: c.status === "ACTIVE" ? "#166534" : c.status === "SUSPENDED" ? "#854d0e" : "#991b1b",
-                                cursor: "pointer",
-                              }}
-                            >
-                              <option value="ACTIVE">✅ Active</option>
-                              <option value="SUSPENDED">⏸️ Suspended</option>
-                              <option value="DISABLED">❌ Disabled</option>
-                            </select>
+                            <code style={{ background: "#f1f5f9", padding: "3px 6px", borderRadius: "4px", fontWeight: 700, color: "#0f172a" }}>
+                              {c.password}
+                            </code>
                           </td>
-
-                          {/* Password Status */}
-                          <td style={{ padding: "8px 12px" }}>
-                            {c.mustChangePassword ? (
-                              <span style={{ background: "#fef3c7", color: "#92400e", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700 }}>
-                                ⚠️ अस्थायी जारी
-                              </span>
-                            ) : (
-                              <span style={{ background: "#ecfdf5", color: "#065f46", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700 }}>
-                                ✅ सक्रिय सेट
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Reset Password Action */}
                           <td style={{ padding: "8px 12px", textAlign: "center" }}>
                             <button
                               type="button"
                               className="outline"
-                              style={{
-                                padding: "4px 10px",
-                                fontSize: "11.5px",
-                                color: "#b91c1c",
-                                borderColor: "#fca5a5",
-                                background: "#fef2f2",
-                                fontWeight: 700,
-                                borderRadius: "6px",
-                                cursor: "pointer",
-                                display: "inline-flex",
-                                alignItems: "center",
-                                gap: "4px",
+                              style={{ padding: "2px 6px", fontSize: "11px" }}
+                              onClick={() => {
+                                navigator.clipboard.writeText(`मोबाइल: ${c.phone}\nपासवर्ड: ${c.password}`);
+                                setActivationToast(`लॉगिन क्रेडेंशियल कॉपी हो गया!`);
+                                setTimeout(() => setActivationToast(""), 2500);
                               }}
-                              onClick={() => handleResetPassword(c.id, c.name, c.roleTitle, c.phone)}
-                              title="पुराना पासवर्ड हटाकर नया 8-अंकीय अस्थायी पासवर्ड जारी करें"
+                              title="कॉपी करें"
                             >
-                              <Key size={12} /> Reset Password
+                              <Copy size={12} />
                             </button>
                           </td>
                         </tr>
@@ -2201,305 +1828,6 @@ function SuperAdminView({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          ONE-TIME TEMPORARY CREDENTIALS DISPLAY MODAL (SHOWN ONLY ONCE!)
-          ===================================================================== */}
-      {oneTimeCreds && (
-        <div className="modalOverlay" style={{ zIndex: 9999999 }}>
-          <div
-            className="modalBox"
-            style={{
-              maxWidth: "520px",
-              width: "95%",
-              textAlign: "center",
-              border: "2px solid #2563eb",
-              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)",
-              animation: "fadeIn 0.2s ease-out",
-            }}
-          >
-            <div style={{ fontSize: "44px", marginBottom: "4px" }}>🔐</div>
-            <h3 style={{ fontSize: "19px", fontWeight: 900, color: "#0f172a", margin: "0 0 6px" }}>
-              अस्थायी लॉगिन क्रेडेंशियल (Temporary Credentials)
-            </h3>
-
-            {/* Crucial Security Warning */}
-            <div
-              style={{
-                background: "#fef3c7",
-                border: "1.5px solid #f59e0b",
-                color: "#92400e",
-                padding: "12px 14px",
-                borderRadius: "10px",
-                fontSize: "13px",
-                fontWeight: 600,
-                textAlign: "left",
-                margin: "12px 0 16px",
-                lineHeight: "1.5",
-              }}
-            >
-              ⚠️ <b>महत्वपूर्ण सुरक्षा निर्देश / Security Notice:</b>
-              <p style={{ margin: "4px 0 0", fontSize: "12.5px" }}>
-                These temporary credentials will be shown only once. Please share them securely with the authorized user.
-              </p>
-              <small style={{ display: "block", marginTop: "4px", color: "#b45309" }}>
-                (यह 8-अंकीय पासवर्ड केवल एक बार स्क्रीन पर दिखेगा। विंडो बंद करने के बाद इसे दोबारा देखना संभव नहीं होगा।)
-              </small>
-            </div>
-
-            {/* Credential Details Card */}
-            <div
-              style={{
-                background: "#f8fafc",
-                border: "1px solid #cbd5e1",
-                borderRadius: "12px",
-                padding: "16px",
-                textAlign: "left",
-                display: "flex",
-                flexDirection: "column",
-                gap: "10px",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#64748b", fontSize: "12px", fontWeight: 700 }}>नाम (Name):</span>
-                <b style={{ color: "#0f172a", fontSize: "14px" }}>{oneTimeCreds.name}</b>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#64748b", fontSize: "12px", fontWeight: 700 }}>भूमिका (Role):</span>
-                <span style={{ color: "#1d4ed8", fontWeight: 800, fontSize: "13px" }}>{oneTimeCreds.roleTitle}</span>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ color: "#64748b", fontSize: "12px", fontWeight: 700 }}>लॉगिन आईडी / मोबाइल:</span>
-                <span style={{ fontFamily: "monospace", fontWeight: 900, fontSize: "16px", color: "#0f172a" }}>
-                  {oneTimeCreds.phone}
-                </span>
-              </div>
-
-              <div style={{ marginTop: "6px", paddingTop: "10px", borderTop: "1.5px dashed #cbd5e1" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <span style={{ color: "#b91c1c", fontSize: "12.5px", fontWeight: 800 }}>
-                    🔒 जनरेटेड 8-अंकीय पासवर्ड:
-                  </span>
-                  <span style={{ fontSize: "11px", color: "#64748b" }}>(Numeric 8-Digits)</span>
-                </div>
-                <div
-                  style={{
-                    background: "#ecfdf5",
-                    border: "2px solid #10b981",
-                    borderRadius: "8px",
-                    padding: "10px",
-                    fontSize: "24px",
-                    fontWeight: 900,
-                    fontFamily: "monospace",
-                    letterSpacing: "4px",
-                    color: "#065f46",
-                    textAlign: "center",
-                  }}
-                >
-                  {oneTimeCreds.tempPassword}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Buttons */}
-            <div style={{ display: "flex", gap: "10px", marginTop: "18px" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  const msg =
-                    `🇮🇳 *VoterDesk लॉगिन क्रेडेंशियल*\n` +
-                    `👤 *नाम:* ${oneTimeCreds.name}\n` +
-                    `👑 *भूमिका:* ${oneTimeCreds.roleTitle}\n` +
-                    `📱 *लॉगिन आईडी / मोबाइल:* ${oneTimeCreds.phone}\n` +
-                    `🔒 *अस्थायी पासवर्ड:* ${oneTimeCreds.tempPassword}\n` +
-                    `🌐 *लॉगिन लिंक:* ${window.location.origin}\n\n` +
-                    `⚠️ *नोट:* प्रथम लॉगिन पर आपको नया पासवर्ड बनाना अनिवार्य होगा।`;
-                  navigator.clipboard.writeText(msg);
-                  setCopiedOneTimeCreds(true);
-                  setTimeout(() => setCopiedOneTimeCreds(false), 3000);
-                }}
-                style={{
-                  flex: 1,
-                  background: "#16a34a",
-                  color: "#ffffff",
-                  border: 0,
-                  borderRadius: "10px",
-                  padding: "12px",
-                  fontWeight: 800,
-                  fontSize: "14px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                  boxShadow: "0 3px 8px rgba(22, 163, 74, 0.3)",
-                }}
-              >
-                <Copy size={16} /> {copiedOneTimeCreds ? "✓ कॉपी हो गया!" : "Copy Credentials"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setOneTimeCreds(null);
-                  setCopiedOneTimeCreds(false);
-                }}
-                style={{
-                  background: "#1e293b",
-                  color: "#ffffff",
-                  border: 0,
-                  borderRadius: "10px",
-                  padding: "12px 18px",
-                  fontWeight: 700,
-                  fontSize: "13.5px",
-                  cursor: "pointer",
-                }}
-              >
-                मैंने नोट कर लिया (Close)
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* =====================================================================
-          ADD KARYAKARTA MODAL (SUPER ADMIN EXCLUSIVE)
-          ===================================================================== */}
-      {showAddKaryakartaModal && (
-        <div className="modalOverlay" onClick={() => setShowAddKaryakartaModal(null)}>
-          <div className="modalBox" style={{ maxWidth: "520px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Plus size={18} color="#38bdf8" />
-                <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px" }}>
-                  नया कार्यकर्ता जोड़ें - {showAddKaryakartaModal.name}
-                </h3>
-              </div>
-              <button onClick={() => setShowAddKaryakartaModal(null)} style={{ color: "#ffffff" }}><X /></button>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!karyakartaForm.name.trim() || !karyakartaForm.phone.trim()) {
-                  alert("कृपया कार्यकर्ता का नाम और मोबाइल नंबर भरें!");
-                  return;
-                }
-
-                try {
-                  const result = store.createKaryakartaWithUser(
-                    {
-                      name: karyakartaForm.name.trim(),
-                      phone: karyakartaForm.phone.trim(),
-                      candidateId: showAddKaryakartaModal.id,
-                      roleTitle: karyakartaForm.roleTitle || "Field Worker",
-                      assignedBooths: [karyakartaForm.booth || "1"],
-                      status: karyakartaForm.status,
-                    },
-                    user.id,
-                    user.name
-                  );
-
-                  // Refresh creds in viewCredsModal if open
-                  if (viewCredsModal) {
-                    setViewCredsModal({
-                      ...viewCredsModal,
-                      creds: store.getCandidateUsers(showAddKaryakartaModal.id),
-                    });
-                  }
-
-                  setShowAddKaryakartaModal(null);
-
-                  // Open One-Time Credentials Modal
-                  setOneTimeCreds({
-                    name: result.teamMember.name,
-                    phone: result.teamMember.phone,
-                    tempPassword: result.tempPassword,
-                    roleTitle: result.teamMember.roleTitle,
-                    ward: showAddKaryakartaModal.wardConstituency,
-                  });
-                } catch (err) {
-                  alert("कार्यकर्ता जोड़ने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
-                }
-              }}
-              className="modalBody"
-            >
-              <div className="formGroup">
-                <label>कार्यकर्ता का पूरा नाम (Full Name) *</label>
-                <input
-                  required
-                  placeholder="उदा: रमेश कुमार"
-                  value={karyakartaForm.name}
-                  onChange={(e) => setKaryakartaForm({ ...karyakartaForm, name: e.target.value })}
-                />
-              </div>
-
-              <div className="inputGrid">
-                <div className="formGroup">
-                  <label>मोबाइल नंबर (Login Mobile) *</label>
-                  <input
-                    required
-                    placeholder="उदा: 98290XXXXX"
-                    value={karyakartaForm.phone}
-                    onChange={(e) => setKaryakartaForm({ ...karyakartaForm, phone: e.target.value })}
-                  />
-                </div>
-
-                <div className="formGroup">
-                  <label>आवंटित पोलिंग बूथ (Booth No) *</label>
-                  <input
-                    required
-                    placeholder="उदा: 1 या 14"
-                    value={karyakartaForm.booth}
-                    onChange={(e) => setKaryakartaForm({ ...karyakartaForm, booth: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="inputGrid">
-                <div className="formGroup">
-                  <label>पद / पदनाम (Role Title)</label>
-                  <select
-                    value={karyakartaForm.roleTitle}
-                    onChange={(e) => setKaryakartaForm({ ...karyakartaForm, roleTitle: e.target.value })}
-                  >
-                    <option value="Booth Supervisor">बूथ प्रभारी (Booth Supervisor)</option>
-                    <option value="Field Worker">फील्ड कार्यकर्ता (Field Worker)</option>
-                    <option value="Data Operator">डाटा ऑपरेटर (Data Operator)</option>
-                  </select>
-                </div>
-
-                <div className="formGroup">
-                  <label>खाता स्थिति (Account Status)</label>
-                  <select
-                    value={karyakartaForm.status}
-                    onChange={(e) => setKaryakartaForm({ ...karyakartaForm, status: e.target.value as AccountStatus })}
-                  >
-                    <option value="ACTIVE">सक्रिय (Active)</option>
-                    <option value="SUSPENDED">निलंबित (Suspended)</option>
-                    <option value="DISABLED">निष्क्रिय (Disabled)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ background: "#f8fafc", border: "1px solid #cbd5e1", padding: "10px", borderRadius: "8px", fontSize: "12px", color: "#475569" }}>
-                🔒 सिस्टम इस कार्यकर्ता के लिए एक विशिष्ट <b>8-अंकीय रैंडम पासवर्ड</b> जनरेट करेगा जो केवल एक बार स्क्रीन पर प्रदर्शित होगा।
-              </div>
-
-              <div className="formFoot" style={{ marginTop: "18px" }}>
-                <button type="button" className="outline" onClick={() => setShowAddKaryakartaModal(null)}>
-                  रद्द करें (Cancel)
-                </button>
-                <button type="submit" className="primary">
-                  कार्यकर्ता खाता बनाएं व पासवर्ड जनरेट करें ➤
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
@@ -2868,7 +2196,7 @@ function SuperAdminView({
 
               <div className="inputGrid">
                 <div className="formGroup">
-                  <label>Mobile Number / Login ID *</label>
+                  <label>Mobile Number</label>
                   <input
                     required
                     placeholder="e.g. 9829012345"
@@ -2877,20 +2205,14 @@ function SuperAdminView({
                   />
                 </div>
                 <div className="formGroup">
-                  <label>Account Status</label>
-                  <select
-                    value={newCand.status}
-                    onChange={(e) => setNewCand({ ...newCand, status: e.target.value as AccountStatus })}
-                  >
-                    <option value="ACTIVE">✅ Active</option>
-                    <option value="SUSPENDED">⏸️ Suspended</option>
-                    <option value="DISABLED">❌ Disabled</option>
-                  </select>
+                  <label>Initial Password</label>
+                  <input
+                    required
+                    type="password"
+                    value={newCand.password}
+                    onChange={(e) => setNewCand({ ...newCand, password: e.target.value })}
+                  />
                 </div>
-              </div>
-
-              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 12px", borderRadius: "8px", fontSize: "12px", color: "#166534", marginBottom: "16px" }}>
-                🔒 <b>सुरक्षा निर्देश:</b> प्रत्याशी के लिए 8-अंकीय रैंडम संख्यात्मक पासवर्ड सर्वर द्वारा स्वतः जनरेट होगा तथा खाता बनने पर केवल एक बार स्क्रीन पर सुरक्षित शेयर करने हेतु प्रदर्शित होगा।
               </div>
 
               <div className="inputGrid">
@@ -9982,14 +9304,8 @@ function TeamManagement({
     phone: "",
     roleTitle: "Booth Supervisor",
     assignedBooths: "12, 13",
+    password: "karyakarta",
   });
-  const [createdCreds, setCreatedCreds] = useState<{
-    name: string;
-    phone: string;
-    tempPassword: string;
-    roleTitle: string;
-  } | null>(null);
-  const [copiedCreds, setCopiedCreds] = useState(false);
 
   const handleAddMember = (e: React.FormEvent) => {
     e.preventDefault();
@@ -10000,34 +9316,25 @@ function TeamManagement({
       .map((b) => b.trim())
       .filter(Boolean);
 
-    try {
-      const res = store.addTeamMember({
-        name: newMember.name.trim(),
-        phone: newMember.phone.trim(),
-        roleTitle: newMember.roleTitle,
-        assignedBooths: boothsArray,
-        status: "Active",
-        candidateId,
-      });
+    store.addTeamMember({
+      name: newMember.name,
+      phone: newMember.phone,
+      roleTitle: newMember.roleTitle,
+      assignedBooths: boothsArray,
+      status: "Active",
+      candidateId,
+      password: newMember.password,
+    });
 
-      setShowAddModal(false);
-      setNewMember({
-        name: "",
-        phone: "",
-        roleTitle: "Booth Supervisor",
-        assignedBooths: "12, 13",
-      });
-      onUpdate();
-
-      setCreatedCreds({
-        name: res.member.name,
-        phone: res.member.phone,
-        tempPassword: res.tempPassword,
-        roleTitle: res.member.roleTitle,
-      });
-    } catch (err: unknown) {
-      alert("कार्यकर्ता जोड़ने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
-    }
+    setShowAddModal(false);
+    setNewMember({
+      name: "",
+      phone: "",
+      roleTitle: "Booth Supervisor",
+      assignedBooths: "12, 13",
+      password: "karyakarta",
+    });
+    onUpdate();
   };
 
   return (
@@ -10104,18 +9411,25 @@ function TeamManagement({
                 />
               </div>
 
-              <div className="formGroup">
-                <label>Mobile Number (For Login ID) *</label>
-                <input
-                  required
-                  placeholder="e.g. 9829012345"
-                  value={newMember.phone}
-                  onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })}
-                />
-              </div>
-
-              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", padding: "10px 12px", borderRadius: "8px", fontSize: "12px", color: "#166534" }}>
-                🔒 <b>सुरक्षा निर्देश:</b> कार्यकर्ता के लिए 8-अंकीय रैंडम संख्यात्मक पासवर्ड स्वतः जनरेट होगा तथा केवल एक बार स्क्रीन पर सुरक्षित कॉपी करने हेतु प्रदर्शित होगा।
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>Mobile Number (For Login) *</label>
+                  <input
+                    required
+                    placeholder="e.g. 9829012345"
+                    value={newMember.phone}
+                    onChange={(e) => setNewMember({ ...newMember, phone: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>Initial Password</label>
+                  <input
+                    required
+                    type="password"
+                    value={newMember.password}
+                    onChange={(e) => setNewMember({ ...newMember, password: e.target.value })}
+                  />
+                </div>
               </div>
 
               <div className="inputGrid">
@@ -10149,143 +9463,6 @@ function TeamManagement({
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* One-Time Temporary Credentials Display Modal for newly created Karyakarta */}
-      {createdCreds && (
-        <div className="modalOverlay" style={{ zIndex: 9999999 }}>
-          <div
-            className="modalBox"
-            style={{
-              maxWidth: "500px",
-              width: "95%",
-              textAlign: "center",
-              border: "2px solid #2563eb",
-              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)",
-            }}
-          >
-            <div style={{ fontSize: "40px", marginBottom: "4px" }}>🔐</div>
-            <h3 style={{ fontSize: "18px", fontWeight: 900, color: "#0f172a", margin: "0 0 6px" }}>
-              कार्यकर्ता अस्थायी क्रेडेंशियल
-            </h3>
-
-            <div
-              style={{
-                background: "#fef3c7",
-                border: "1.5px solid #f59e0b",
-                color: "#92400e",
-                padding: "10px 12px",
-                borderRadius: "8px",
-                fontSize: "12.5px",
-                fontWeight: 600,
-                textAlign: "left",
-                margin: "10px 0 14px",
-              }}
-            >
-              ⚠️ <b>Security Notice:</b>
-              <p style={{ margin: "2px 0 0", fontSize: "12px" }}>
-                These temporary credentials will be shown only once. Please share them securely with the authorized user.
-              </p>
-            </div>
-
-            <div
-              style={{
-                background: "#f8fafc",
-                border: "1px solid #cbd5e1",
-                borderRadius: "10px",
-                padding: "14px",
-                textAlign: "left",
-                display: "flex",
-                flexDirection: "column",
-                gap: "8px",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#64748b", fontSize: "12px" }}>नाम:</span>
-                <b style={{ color: "#0f172a" }}>{createdCreds.name}</b>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#64748b", fontSize: "12px" }}>भूमिका:</span>
-                <span style={{ color: "#1d4ed8", fontWeight: 700 }}>{createdCreds.roleTitle}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: "#64748b", fontSize: "12px" }}>लॉगिन मोबाइल:</span>
-                <span style={{ fontFamily: "monospace", fontWeight: 800, color: "#0f172a" }}>{createdCreds.phone}</span>
-              </div>
-              <div style={{ marginTop: "4px", paddingTop: "8px", borderTop: "1px dashed #cbd5e1" }}>
-                <span style={{ color: "#b91c1c", fontSize: "12px", fontWeight: 800 }}>🔒 अस्थायी पासवर्ड:</span>
-                <div
-                  style={{
-                    background: "#ecfdf5",
-                    border: "1.5px solid #10b981",
-                    borderRadius: "6px",
-                    padding: "8px",
-                    fontSize: "22px",
-                    fontWeight: 900,
-                    fontFamily: "monospace",
-                    letterSpacing: "4px",
-                    color: "#065f46",
-                    textAlign: "center",
-                    marginTop: "4px",
-                  }}
-                >
-                  {createdCreds.tempPassword}
-                </div>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  const msg =
-                    `🇮🇳 *VoterDesk कार्यकर्ता लॉगिन*\n` +
-                    `👤 *नाम:* ${createdCreds.name}\n` +
-                    `📱 *लॉगिन आईडी:* ${createdCreds.phone}\n` +
-                    `🔒 *अस्थायी पासवर्ड:* ${createdCreds.tempPassword}\n` +
-                    `🌐 *वेबसाइट:* ${window.location.origin}\n` +
-                    `⚠️ *नोट:* प्रथम लॉगिन पर पासवर्ड बदलना अनिवार्य होगा।`;
-                  navigator.clipboard.writeText(msg);
-                  setCopiedCreds(true);
-                  setTimeout(() => setCopiedCreds(false), 3000);
-                }}
-                style={{
-                  flex: 1,
-                  background: "#16a34a",
-                  color: "#ffffff",
-                  border: 0,
-                  borderRadius: "8px",
-                  padding: "10px",
-                  fontWeight: 800,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "6px",
-                }}
-              >
-                <Copy size={15} /> {copiedCreds ? "✓ कॉपी हो गया!" : "Copy Credentials"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setCreatedCreds(null)}
-                style={{
-                  background: "#1e293b",
-                  color: "#ffffff",
-                  border: 0,
-                  borderRadius: "8px",
-                  padding: "10px 16px",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  cursor: "pointer",
-                }}
-              >
-                बंद करें
-              </button>
-            </div>
           </div>
         </div>
       )}

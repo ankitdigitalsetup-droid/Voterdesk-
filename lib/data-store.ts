@@ -1,43 +1,11 @@
-import {
-  AccountStatus,
-  AuditLogEntry,
-  CandidateAccount,
-  CandidateCredential,
-  Role,
-  TeamMember,
-  UserAccount,
-  VoterRecord,
-  WorkerLocation,
-} from "./types";
+import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
-import {
-  generateSessionToken,
-  generateUnique8DigitPassword,
-  hashPassword,
-  SESSION_MAX_AGE,
-  verifyPassword,
-} from "./auth-server";
-
-export interface StoredUser extends UserAccount {
-  passwordHash: string;
-}
-
-export interface SessionData {
-  token: string;
-  userId: string;
-  role: Role;
-  candidateId?: string;
-  createdAt: number;
-  expiresAt: number;
-}
 
 // In-Memory & Persistent global store for high-speed multi-mobile synchronization
 class DataStore {
   private version: number = Date.now();
   private heartbeats: Map<string, { name: string; time: number; booth?: string }> = new Map();
   private workerLocations: Map<string, WorkerLocation> = new Map();
-  private sessions: Map<string, SessionData> = new Map();
-  private auditLogs: AuditLogEntry[] = [];
 
   constructor() {
     this.loadFromDisk();
@@ -79,7 +47,7 @@ class DataStore {
       const fs = require("fs");
       const os = require("os");
       const path = require("path");
-      const filePath = path.join(os.tmpdir(), "voterdesk_store_v2.json");
+      const filePath = path.join(os.tmpdir(), "voterdesk_store_v1.json");
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, "utf-8");
         const parsed = JSON.parse(raw);
@@ -89,15 +57,11 @@ class DataStore {
           if (Array.isArray(parsed.candidates)) this.candidates = parsed.candidates;
           if (Array.isArray(parsed.team)) this.team = parsed.team;
           if (Array.isArray(parsed.users)) this.users = parsed.users;
-          if (Array.isArray(parsed.auditLogs)) this.auditLogs = parsed.auditLogs;
         }
       }
     } catch {
       // Fallback silently if file read fails
     }
-
-    // Ensure Super Admin exists with secure bcrypt hash
-    this.ensureSuperAdmin();
   }
 
   private saveToDisk() {
@@ -106,7 +70,7 @@ class DataStore {
       const fs = require("fs");
       const os = require("os");
       const path = require("path");
-      const filePath = path.join(os.tmpdir(), "voterdesk_store_v2.json");
+      const filePath = path.join(os.tmpdir(), "voterdesk_store_v1.json");
       fs.writeFileSync(
         filePath,
         JSON.stringify({
@@ -115,7 +79,6 @@ class DataStore {
           candidates: this.candidates,
           users: this.users,
           team: this.team,
-          auditLogs: this.auditLogs,
         })
       );
     } catch {
@@ -123,44 +86,40 @@ class DataStore {
     }
   }
 
-  private ensureSuperAdmin() {
-    const superPhone = process.env.SUPER_ADMIN_PHONE || "9079342510";
-    const superHash =
-      process.env.SUPER_ADMIN_PASSWORD_HASH ||
-      "$2b$10$FrtWcfyk.wtI4EMU/U2r6OzOhsjmaJFEFTAOCOZUcVS3vtvaOY3VO";
-
-    const idx = this.users.findIndex((u) => u.phone === superPhone || u.role === "SUPER_ADMIN");
-    if (idx === -1) {
-      this.users.unshift({
-        id: "usr_super_admin",
-        name: "Super Admin",
-        phone: superPhone,
-        passwordHash: superHash,
-        role: "SUPER_ADMIN",
-        status: "ACTIVE",
-        mustChangePassword: false,
-      });
-    } else {
-      this.users[idx].phone = superPhone;
-      this.users[idx].passwordHash = superHash;
-      this.users[idx].role = "SUPER_ADMIN";
-      this.users[idx].status = "ACTIVE";
-    }
-  }
-
-  // Purely hashed users list - no raw passwords stored anywhere
-  private users: StoredUser[] = [
+  private users: (UserAccount & { password: string })[] = [
     {
-      id: "usr_super_admin",
-      name: "Super Admin",
-      phone: process.env.SUPER_ADMIN_PHONE || "9079342510",
-      passwordHash:
-        process.env.SUPER_ADMIN_PASSWORD_HASH ||
-        "$2b$10$FrtWcfyk.wtI4EMU/U2r6OzOhsjmaJFEFTAOCOZUcVS3vtvaOY3VO",
+      id: "usr_super_1",
+      name: "Master Super Admin",
+      phone: "9999999999",
+      password: "superadmin",
       role: "SUPER_ADMIN",
-      status: "ACTIVE",
-      mustChangePassword: false,
     },
+    {
+      id: "usr_cand_1",
+      name: "Abhay Kumar",
+      phone: "9414114497",
+      password: "voterdesk",
+      role: "CANDIDATE_ADMIN",
+      candidateId: "cand_1",
+    },
+    {
+      id: "usr_work_1",
+      name: "Amit Joshi",
+      phone: "9829012345",
+      password: "karyakarta",
+      role: "KARYAKARTA",
+      candidateId: "cand_1",
+      assignedBooths: ["1", "12", "13"],
+    },
+    {
+      id: "usr_work_2",
+      name: "Neha Saini",
+      phone: "9829054321",
+      password: "karyakarta",
+      role: "KARYAKARTA",
+      candidateId: "cand_1",
+      assignedBooths: ["15"],
+    }
   ];
 
   private candidates: CandidateAccount[] = [
@@ -618,479 +577,53 @@ class DataStore {
     }
   ];
 
-  // -------------------------------------------------------------
-  // AUTHENTICATION, SESSIONS & PASSWORD POLICY (NO RAW PASSWORDS)
-  // -------------------------------------------------------------
-  public getAllPasswordHashes(): string[] {
-    return this.users.map((u) => u.passwordHash).filter(Boolean);
+  // Auth
+  authenticate(phone: string, password?: string) {
+    const cleanPhone = phone.replace(/\D/g, "");
+    return this.users.find(
+      (u) =>
+        u.phone.replace(/\D/g, "") === cleanPhone &&
+        (!password || u.password === password)
+    );
   }
 
-  public sanitizeUser(u: StoredUser): UserAccount {
-    return {
-      id: u.id,
-      name: u.name,
-      phone: u.phone,
-      role: u.role,
-      candidateId: u.candidateId,
-      assignedBooths: u.assignedBooths || [],
-      status: u.status || "ACTIVE",
-      mustChangePassword: !!u.mustChangePassword,
-      passwordChangedAt: u.passwordChangedAt,
-      passwordResetBy: u.passwordResetBy,
-      passwordResetAt: u.passwordResetAt,
-    };
-  }
-
-  public authenticate(phoneOrLoginId: string, password?: string): { user?: UserAccount; error?: string; status?: AccountStatus } {
-    if (!phoneOrLoginId || !password) {
-      return { error: "कृपया मोबाइल नंबर/लॉगिन आईडी और पासवर्ड दोनों दर्ज करें।" };
-    }
-
-    const cleanInput = phoneOrLoginId.trim().replace(/\D/g, "");
-    const rawInput = phoneOrLoginId.trim().toLowerCase();
-
-    const user = this.users.find((u) => {
-      const uClean = (u.phone || "").replace(/\D/g, "");
-      const uRaw = (u.phone || "").trim().toLowerCase();
-      const idMatch = (u.id || "").trim().toLowerCase() === rawInput;
-      return (cleanInput && uClean === cleanInput) || uRaw === rawInput || idMatch;
-    });
-
-    if (!user) {
-      return { error: "अमान्य मोबाइल नंबर/लॉगिन आईडी या पासवर्ड।" };
-    }
-
-    if (user.status !== "ACTIVE") {
-      return {
-        error: `यह खाता वर्तमान में ${user.status === "SUSPENDED" ? "निलंबित (Suspended)" : "निष्क्रिय (Disabled)"} है। कृपया सुपर एडमिन से संपर्क करें।`,
-        status: user.status,
-      };
-    }
-
-    const isMatch = verifyPassword(password, user.passwordHash);
-    if (!isMatch) {
-      return { error: "अमान्य मोबाइल नंबर/लॉगिन आईडी या पासवर्ड।" };
-    }
-
-    return { user: this.sanitizeUser(user) };
-  }
-
-  public getUser(id: string): UserAccount | undefined {
-    const user = this.users.find((u) => u.id === id);
-    return user ? this.sanitizeUser(user) : undefined;
-  }
-
-  public getUserByIdRaw(id: string): StoredUser | undefined {
+  getUser(id: string) {
     return this.users.find((u) => u.id === id);
   }
 
-  // Session Management (HTTP-only secure token tracking)
-  public createSession(userId: string): SessionData | null {
-    const user = this.users.find((u) => u.id === userId);
-    if (!user || user.status !== "ACTIVE") return null;
-
-    const token = generateSessionToken();
-    const session: SessionData = {
-      token,
-      userId: user.id,
-      role: user.role,
-      candidateId: user.candidateId,
-      createdAt: Date.now(),
-      expiresAt: Date.now() + SESSION_MAX_AGE * 1000,
-    };
-
-    this.sessions.set(token, session);
-    return session;
-  }
-
-  public getSession(token: string): { user: UserAccount; session: SessionData } | null {
-    if (!token) return null;
-    const session = this.sessions.get(token);
-    if (!session) return null;
-
-    if (Date.now() > session.expiresAt) {
-      this.sessions.delete(token);
-      return null;
-    }
-
-    const user = this.users.find((u) => u.id === session.userId);
-    if (!user || user.status !== "ACTIVE") {
-      this.sessions.delete(token);
-      return null;
-    }
-
-    return { user: this.sanitizeUser(user), session };
-  }
-
-  public revokeUserSessions(userId: string): void {
-    for (const [token, s] of this.sessions.entries()) {
-      if (s.userId === userId) {
-        this.sessions.delete(token);
-      }
-    }
-  }
-
-  public deleteSession(token: string): void {
-    this.sessions.delete(token);
-  }
-
-  // Account Status Modification
-  public updateUserStatus(
-    userId: string,
-    status: AccountStatus,
-    performedBy: string,
-    performedByName: string
-  ): UserAccount {
-    const user = this.users.find((u) => u.id === userId);
-    if (!user) throw new Error("उपयोगकर्ता खाता नहीं मिला।");
-
-    const oldStatus = user.status;
-    user.status = status;
-
-    // Also update candidate account status if candidate admin
-    if (user.candidateId) {
-      const cand = this.candidates.find((c) => c.id === user.candidateId);
-      if (cand) {
-        cand.status = status;
-      }
-    }
-
-    // Suspending or disabling immediately revokes all active sessions
-    if (status !== "ACTIVE") {
-      this.revokeUserSessions(userId);
-    }
-
-    this.logActivity({
-      action: "UPDATE_STATUS",
-      targetUserId: user.id,
-      targetUserName: user.name,
-      targetUserRole: user.role,
-      performedBy,
-      performedByName,
-      details: `स्थिति बदली गई: ${oldStatus} -> ${status}`,
-    });
-
-    this.touchVersion();
-    return this.sanitizeUser(user);
-  }
-
-  // First-Login / Mandatory Password Change
-  public changeUserPassword(userId: string, oldPassword: string, newPassword: string): UserAccount {
-    const user = this.users.find((u) => u.id === userId);
-    if (!user) throw new Error("उपयोगकर्ता खाता नहीं मिला।");
-
-    if (!verifyPassword(oldPassword, user.passwordHash)) {
-      throw new Error("वर्तमान / अस्थायी पासवर्ड सही नहीं है।");
-    }
-
-    if (!newPassword || newPassword.length < 6) {
-      throw new Error("नया पासवर्ड कम से कम 6 अक्षरों का होना चाहिए।");
-    }
-
-    user.passwordHash = hashPassword(newPassword);
-    user.mustChangePassword = false;
-    user.passwordChangedAt = new Date().toISOString();
-
-    this.logActivity({
-      action: "CHANGE_PASSWORD",
-      targetUserId: user.id,
-      targetUserName: user.name,
-      targetUserRole: user.role,
-      performedBy: user.id,
-      performedByName: user.name,
-      details: "पासवर्ड सफलतापूर्वक बदला गया।",
-    });
-
-    this.touchVersion();
-    return this.sanitizeUser(user);
-  }
-
-  // Super Admin: Reset Password (generates new unique 8-digit password)
-  public resetUserPassword(
-    userId: string,
-    performedBy: string,
-    performedByName: string
-  ): { tempPassword: string; user: UserAccount } {
-    const user = this.users.find((u) => u.id === userId);
-    if (!user) throw new Error("उपयोगकर्ता खाता नहीं मिला।");
-
-    const tempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
-    user.passwordHash = hashPassword(tempPassword);
-    user.mustChangePassword = true;
-    user.passwordResetBy = performedBy;
-    user.passwordResetAt = new Date().toISOString();
-
-    // Revoke all existing sessions
-    this.revokeUserSessions(userId);
-
-    this.logActivity({
-      action: "RESET_PASSWORD",
-      targetUserId: user.id,
-      targetUserName: user.name,
-      targetUserRole: user.role,
-      performedBy,
-      performedByName,
-      details: `सुपर एडमिन द्वारा पासवर्ड रीसेट किया गया। नया अस्थायी 8-अंकीय पासवर्ड जारी।`,
-    });
-
-    this.touchVersion();
-    return { tempPassword, user: this.sanitizeUser(user) };
-  }
-
-  // Super Admin: Update Candidate Campaign Status (also updates all users for this candidate)
-  public updateCandidateStatus(
-    candidateId: string,
-    status: AccountStatus,
-    performedBy: string,
-    performedByName: string
-  ): CandidateAccount {
-    const cand = this.candidates.find((c) => c.id === candidateId);
-    if (!cand) throw new Error("प्रत्याशी खाता नहीं मिला।");
-
-    cand.status = status;
-
-    // Update all user accounts tied to this candidate
-    const candUsers = this.users.filter((u) => u.candidateId === candidateId);
-    for (const u of candUsers) {
-      u.status = status;
-      if (status !== "ACTIVE") {
-        this.revokeUserSessions(u.id);
-      }
-    }
-
-    this.logActivity({
-      action: "UPDATE_STATUS",
-      targetUserId: cand.id,
-      targetUserName: cand.name,
-      targetUserRole: "CANDIDATE_ADMIN",
-      performedBy,
-      performedByName,
-      details: `प्रत्याशी अभियान स्थिति अपडेट: ${status} (सभी संबद्ध उपयोगकर्ताओं के सत्र रीसेट किए गए)`,
-    });
-
-    this.touchVersion();
-    return cand;
-  }
-
-  // Super Admin: Reset Candidate Admin Password directly
-  public resetCandidatePassword(
-    candidateId: string,
-    performedBy: string,
-    performedByName: string
-  ): { tempPassword: string; user: UserAccount } {
-    const cand = this.candidates.find((c) => c.id === candidateId);
-    if (!cand) throw new Error("प्रत्याशी खाता नहीं मिला।");
-
-    let candUser = this.users.find(
-      (u) => u.candidateId === candidateId && u.role === "CANDIDATE_ADMIN"
-    );
-
-    const tempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
-
-    if (!candUser) {
-      candUser = {
-        id: "usr_" + cand.id,
-        name: cand.name,
-        phone: cand.phone,
-        passwordHash: hashPassword(tempPassword),
-        role: "CANDIDATE_ADMIN",
-        candidateId: cand.id,
-        status: cand.status || "ACTIVE",
-        mustChangePassword: true,
-        passwordResetBy: performedBy,
-        passwordResetAt: new Date().toISOString(),
-      };
-      this.users.push(candUser);
-    } else {
-      candUser.passwordHash = hashPassword(tempPassword);
-      candUser.mustChangePassword = true;
-      candUser.passwordResetBy = performedBy;
-      candUser.passwordResetAt = new Date().toISOString();
-      this.revokeUserSessions(candUser.id);
-    }
-
-    this.logActivity({
-      action: "RESET_PASSWORD",
-      targetUserId: candUser.id,
-      targetUserName: candUser.name,
-      targetUserRole: "CANDIDATE_ADMIN",
-      performedBy,
-      performedByName,
-      details: `प्रत्याशी एडमिन पासवर्ड रीसेट किया गया (${cand.name})। नया 8-अंकीय अस्थायी पासवर्ड जारी।`,
-    });
-
-    this.touchVersion();
-    return { tempPassword, user: this.sanitizeUser(candUser) };
-  }
-
-  // Audit Logs
-  public logActivity(entry: Omit<AuditLogEntry, "id" | "timestamp">) {
-    this.auditLogs.unshift({
-      ...entry,
-      id: "log_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
-      timestamp: new Date().toISOString(),
-    });
-    if (this.auditLogs.length > 500) {
-      this.auditLogs = this.auditLogs.slice(0, 500);
-    }
-  }
-
-  public getAuditLogs(): AuditLogEntry[] {
-    return [...this.auditLogs];
-  }
-
   // Candidates
-  public getCandidates(): CandidateAccount[] {
+  getCandidates() {
     return this.candidates;
   }
 
-  public getCandidate(id: string): CandidateAccount | undefined {
+  getCandidate(id: string) {
     return this.candidates.find((c) => c.id === id);
   }
 
-  // Super Admin: Create Candidate Admin Account with unique 8-digit password
-  public createCandidateWithAdmin(
-    data: {
-      name: string;
-      phone: string;
-      party?: string;
-      electionName?: string;
-      wardConstituency?: string;
-      boothCount?: number;
-      status?: AccountStatus;
-      posterUrl?: string;
-    },
-    performedBy: string,
-    performedByName: string
-  ): { candidate: CandidateAccount; tempPassword: string; user: UserAccount } {
-    const cleanPhone = data.phone.trim().replace(/\D/g, "");
-    if (!cleanPhone) throw new Error("मान्य मोबाइल नंबर आवश्यक है।");
-
-    // Check if phone already registered
-    const existing = this.users.find((u) => u.phone.replace(/\D/g, "") === cleanPhone);
-    if (existing) {
-      throw new Error(`मोबाइल नंबर ${data.phone} पहले से पंजीकृत है (${existing.name} - ${existing.role})।`);
-    }
-
-    const candId = "cand_" + Date.now();
-    const tempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
-    const initialStatus = data.status || "ACTIVE";
-
+  addCandidate(cand: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string }) {
+    const id = "cand_" + Date.now();
     const newCand: CandidateAccount = {
-      id: candId,
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      party: data.party?.trim() || "Independent (निर्दलीय)",
-      electionName: data.electionName?.trim() || "Municipal Election 2026",
-      wardConstituency: data.wardConstituency?.trim() || "Ward 01",
-      boothCount: Number(data.boothCount) || 1,
-      status: initialStatus,
+      ...cand,
+      id,
       voterCount: 0,
       createdAt: new Date().toISOString().split("T")[0],
-      posterUrl: data.posterUrl,
     };
     this.candidates.unshift(newCand);
 
-    const newUser: StoredUser = {
-      id: "usr_" + candId,
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      passwordHash: hashPassword(tempPassword),
+    // Also create candidate user
+    this.users.push({
+      id: "usr_" + id,
+      name: cand.name,
+      phone: cand.phone,
+      password: cand.password || "voterdesk",
       role: "CANDIDATE_ADMIN",
-      candidateId: candId,
-      status: initialStatus,
-      mustChangePassword: true,
-    };
-    this.users.push(newUser);
-
-    this.logActivity({
-      action: "CREATE_USER",
-      targetUserId: newUser.id,
-      targetUserName: newUser.name,
-      targetUserRole: "CANDIDATE_ADMIN",
-      performedBy,
-      performedByName,
-      details: `प्रत्याशी एडमिन खाता बनाया गया: ${newCand.name} (${newCand.wardConstituency})`,
+      candidateId: id,
     });
 
-    this.touchVersion();
-    return {
-      candidate: newCand,
-      tempPassword,
-      user: this.sanitizeUser(newUser),
-    };
+    return newCand;
   }
 
-  // Super Admin: Create Karyakarta Account with unique 8-digit password
-  public createKaryakartaWithUser(
-    data: {
-      name: string;
-      phone: string;
-      candidateId: string;
-      roleTitle: string;
-      assignedBooths: string[];
-      status?: AccountStatus;
-    },
-    performedBy: string,
-    performedByName: string
-  ): { teamMember: TeamMember; tempPassword: string; user: UserAccount } {
-    const cleanPhone = data.phone.trim().replace(/\D/g, "");
-    if (!cleanPhone) throw new Error("मान्य मोबाइल नंबर आवश्यक है।");
-
-    const existing = this.users.find((u) => u.phone.replace(/\D/g, "") === cleanPhone);
-    if (existing) {
-      throw new Error(`मोबाइल नंबर ${data.phone} पहले से पंजीकृत है (${existing.name} - ${existing.role})।`);
-    }
-
-    const tempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
-    const initialStatus = data.status || "ACTIVE";
-    const userId = "usr_work_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
-
-    const newUser: StoredUser = {
-      id: userId,
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      passwordHash: hashPassword(tempPassword),
-      role: "KARYAKARTA",
-      candidateId: data.candidateId,
-      assignedBooths: data.assignedBooths && data.assignedBooths.length > 0 ? data.assignedBooths : ["1"],
-      status: initialStatus,
-      mustChangePassword: true,
-    };
-    this.users.push(newUser);
-
-    const newTeamMember: TeamMember = {
-      id: "team_" + userId,
-      name: data.name.trim(),
-      phone: data.phone.trim(),
-      roleTitle: data.roleTitle || "Field Worker",
-      assignedBooths: newUser.assignedBooths || ["1"],
-      status: initialStatus === "ACTIVE" ? "Active" : "Inactive",
-      candidateId: data.candidateId,
-      contactedCount: 0,
-    };
-    this.team.push(newTeamMember);
-
-    this.logActivity({
-      action: "CREATE_USER",
-      targetUserId: newUser.id,
-      targetUserName: newUser.name,
-      targetUserRole: "KARYAKARTA",
-      performedBy,
-      performedByName,
-      details: `कार्यकर्ता खाता बनाया गया: ${newTeamMember.name} (बूथ: ${newTeamMember.assignedBooths.join(", ")})`,
-    });
-
-    this.touchVersion();
-    return {
-      teamMember: newTeamMember,
-      tempPassword,
-      user: this.sanitizeUser(newUser),
-    };
-  }
-
-  // Get credentials list for candidate - WITHOUT RAW PASSWORDS
-  public getCandidateUsers(candidateId: string): CandidateCredential[] {
+  getCandidateUsers(candidateId: string): CandidateCredential[] {
     const matching = this.users.filter((u) => u.candidateId === candidateId);
     return matching.map((u) => {
       const booth = u.assignedBooths && u.assignedBooths.length > 0 ? u.assignedBooths[0] : "1";
@@ -1099,125 +632,61 @@ class DataStore {
         id: u.id,
         name: u.name,
         phone: u.phone,
+        password: u.password,
         role: u.role,
         candidateId: u.candidateId || candidateId,
         assignedBooths: u.assignedBooths || [booth],
         boothNumber: booth,
         roleTitle: isCand ? "प्रत्याशी / कैंडिडेट" : "बूथ कार्यकर्ता",
-        status: u.status || "ACTIVE",
-        mustChangePassword: !!u.mustChangePassword,
       };
     });
   }
 
-  // Super Admin: Create Candidate & Karyakartas with secure 8-digit passwords
-  public createCandidateBatchWithPasswords(data: {
+  createCandidateBatchWithPasswords(data: {
     candidate: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string };
     voters?: Omit<VoterRecord, "id">[];
-    credentials?: Array<{
+    credentials: Array<{
       name: string;
       phone: string;
+      password: string;
       role: "SUPER_ADMIN" | "CANDIDATE_ADMIN" | "KARYAKARTA";
       boothNumber: string;
       roleTitle: string;
     }>;
   }) {
     const id = "cand_" + Date.now();
-    const initialStatus = data.candidate.status || "ACTIVE";
     const newCand: CandidateAccount = {
       ...data.candidate,
       id,
-      status: initialStatus,
       voterCount: 0,
       createdAt: new Date().toISOString().split("T")[0],
     };
     this.candidates.unshift(newCand);
 
-    const generatedCreds: CandidateCredential[] = [];
-
-    // 1. Primary Candidate Admin Account
-    const candPhoneClean = (data.candidate.phone || "").replace(/\D/g, "");
-    const candTempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
-    const candUserId = "usr_" + id;
-
-    // Only add if phone not already registered
-    const existingCandUser = this.users.find((u) => u.phone.replace(/\D/g, "") === candPhoneClean);
-    if (!existingCandUser) {
-      const candUser: StoredUser = {
-        id: candUserId,
-        name: data.candidate.name,
-        phone: data.candidate.phone,
-        passwordHash: hashPassword(candTempPassword),
-        role: "CANDIDATE_ADMIN",
+    // Register all generated credentials
+    for (const cred of data.credentials) {
+      const userId = "usr_" + id + "_" + cred.boothNumber + "_" + Math.random().toString(36).substring(2, 7);
+      this.users.push({
+        id: userId,
+        name: cred.name,
+        phone: cred.phone,
+        password: cred.password,
+        role: cred.role,
         candidateId: id,
-        status: initialStatus,
-        mustChangePassword: true,
-      };
-      this.users.push(candUser);
-      generatedCreds.push({
-        id: candUserId,
-        name: data.candidate.name,
-        phone: data.candidate.phone,
-        role: "CANDIDATE_ADMIN",
-        candidateId: id,
-        assignedBooths: ["1"],
-        boothNumber: "1",
-        roleTitle: "प्रत्याशी / Candidate Admin",
-        status: initialStatus,
-        mustChangePassword: true,
-        temporaryPassword: candTempPassword,
+        assignedBooths: [cred.boothNumber],
       });
-    }
 
-    // 2. Karyakarta Accounts (if provided)
-    if (Array.isArray(data.credentials)) {
-      for (const cred of data.credentials) {
-        if (cred.role === "CANDIDATE_ADMIN") continue; // Already created above
-
-        const kPhoneClean = (cred.phone || "").replace(/\D/g, "");
-        if (this.users.some((u) => u.phone.replace(/\D/g, "") === kPhoneClean)) {
-          continue; // Skip duplicate phone
-        }
-
-        const kTempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
-        const kUserId = "usr_" + id + "_" + cred.boothNumber + "_" + Math.random().toString(36).substring(2, 7);
-
-        const newUser: StoredUser = {
-          id: kUserId,
-          name: cred.name,
-          phone: cred.phone,
-          passwordHash: hashPassword(kTempPassword),
-          role: "KARYAKARTA",
-          candidateId: id,
-          assignedBooths: [cred.boothNumber],
-          status: initialStatus,
-          mustChangePassword: true,
-        };
-        this.users.push(newUser);
-
+      // Also register in team if karyakarta
+      if (cred.role === "KARYAKARTA") {
         this.team.push({
-          id: "team_" + kUserId,
+          id: "team_" + userId,
           name: cred.name,
           phone: cred.phone,
           roleTitle: cred.roleTitle || `बूथ ${cred.boothNumber} कार्यकर्ता`,
           assignedBooths: [cred.boothNumber],
-          status: initialStatus === "ACTIVE" ? "Active" : "Inactive",
+          status: "Active",
           candidateId: id,
           contactedCount: 0,
-        });
-
-        generatedCreds.push({
-          id: kUserId,
-          name: cred.name,
-          phone: cred.phone,
-          role: "KARYAKARTA",
-          candidateId: id,
-          assignedBooths: [cred.boothNumber],
-          boothNumber: cred.boothNumber,
-          roleTitle: cred.roleTitle || `बूथ ${cred.boothNumber} कार्यकर्ता`,
-          status: initialStatus,
-          mustChangePassword: true,
-          temporaryPassword: kTempPassword,
         });
       }
     }
@@ -1229,19 +698,12 @@ class DataStore {
       imported = result.imported;
     }
 
-    this.logActivity({
-      action: "CREATE_USER",
-      performedBy: "usr_super_admin",
-      performedByName: "Super Admin",
-      details: `प्रत्याशी एवं टीम बनाई गई: ${newCand.name} (${generatedCreds.length} क्रेडेंशियल)`,
-    });
-
     this.touchVersion();
     return {
       candidate: newCand,
       importedVoters: imported,
-      credentialsCount: generatedCreds.length,
-      credentials: generatedCreds,
+      credentialsCount: data.credentials.length,
+      credentials: this.getCandidateUsers(id),
     };
   }
 
@@ -1387,22 +849,18 @@ class DataStore {
     };
     this.team.push(newMember);
 
-    // Also register karyakarta user with secure 8-digit temporary password
-    const tempPassword = generateUnique8DigitPassword(this.getAllPasswordHashes());
+    // Also register karyakarta user
     this.users.push({
       id: "usr_" + id,
       name: member.name,
       phone: member.phone,
-      passwordHash: hashPassword(tempPassword),
+      password: member.password || "karyakarta",
       role: "KARYAKARTA",
       candidateId: member.candidateId,
       assignedBooths: member.assignedBooths,
-      status: "ACTIVE",
-      mustChangePassword: true,
     });
 
-    this.touchVersion();
-    return { member: newMember, tempPassword };
+    return newMember;
   }
 
   // Stats
