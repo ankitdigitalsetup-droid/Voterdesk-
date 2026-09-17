@@ -1,4 +1,5 @@
 export type Role = "SUPER_ADMIN" | "CANDIDATE_ADMIN" | "KARYAKARTA";
+export type AccountStatus = "ACTIVE" | "SUSPENDED" | "DISABLED";
 
 export interface UserAccount {
   id: string;
@@ -7,6 +8,12 @@ export interface UserAccount {
   role: Role;
   candidateId?: string;
   assignedBooths?: string[]; // for Karyakarta
+  status: AccountStatus;
+  mustChangePassword: boolean;
+  passwordChangedAt?: string;
+  passwordResetBy?: string;
+  passwordResetAt?: string;
+  passwordHash?: string; // Server-side internal only
 }
 
 export interface CandidateAccount {
@@ -16,7 +23,7 @@ export interface CandidateAccount {
   party: string;
   electionName: string;
   wardConstituency: string;
-  status: "ACTIVE" | "EXPIRED" | "SUSPENDED";
+  status: AccountStatus;
   voterCount: number;
   boothCount: number;
   createdAt: string;
@@ -27,12 +34,26 @@ export interface CandidateCredential {
   id: string;
   name: string;
   phone: string;
-  password: string;
   role: Role;
   candidateId: string;
   assignedBooths: string[];
   boothNumber: string;
   roleTitle: string;
+  status: AccountStatus;
+  mustChangePassword: boolean;
+  temporaryPassword?: string; // Only populated ONCE upon creation/reset for Super Admin modal
+}
+
+export interface AuditLogEntry {
+  id: string;
+  action: "CREATE_USER" | "RESET_PASSWORD" | "CHANGE_PASSWORD" | "UPDATE_STATUS" | "LOGIN";
+  targetUserId?: string;
+  targetUserName?: string;
+  targetUserRole?: Role;
+  performedBy: string;
+  performedByName: string;
+  timestamp: string;
+  details?: string;
 }
 
 export interface VoterRecord {
