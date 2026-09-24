@@ -750,7 +750,7 @@ class DataStore {
     return list;
   }
 
-  addVoter(voter: Omit<VoterRecord, "id">) {
+  addVoter(voter: Omit<VoterRecord, "id"> & { id?: string }) {
     let serialNo = voter.serialNo;
     if (!serialNo) {
       const boothVoters = this.voters.filter((v) => v.candidateId === voter.candidateId && v.booth === voter.booth);
@@ -759,7 +759,7 @@ class DataStore {
     const newVoter: VoterRecord = {
       ...voter,
       serialNo,
-      id: "v_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
+      id: voter.id || "v_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
     };
     this.voters.unshift(newVoter);
 

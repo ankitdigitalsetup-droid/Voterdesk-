@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { store } from "@/lib/data-store";
+import { getVoters, updateVoter, createVoter } from "@/lib/db/voters";
 
 export async function GET(req: Request) {
   try {
@@ -28,14 +29,16 @@ export async function GET(req: Request) {
       });
     }
 
-    // Return fresh voter records
-    const voters = store.getVoters({ candidateId });
+    // Return fresh voter records from database (with in-memory fallback)
+    const result = await getVoters({ candidateId });
+
     return NextResponse.json({
       success: true,
       hasUpdates: true,
       version: serverVersion,
-      voters,
-      total: voters.length,
+      voters: result.voters,
+      total: result.total,
+      source: result.source,
       activeWorkers,
       timestamp: Date.now(),
     });
@@ -68,13 +71,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // 1. Single voter patch (e.g. voted, isSupporter, isOutside, phone)
+    // 1. Single voter patch (persisted to Neon DB)
     if (voterId && updates) {
-      store.updateVoter(voterId, updates);
+      await updateVoter(voterId, updates);
     }
-    // 2. Add single new voter
+    // 2. Add single new voter (persisted to Neon DB)
     else if (newVoter) {
-      store.addVoter({
+      await createVoter({
         ...newVoter,
         candidateId: cId,
       });
@@ -82,14 +85,15 @@ export async function POST(req: Request) {
 
     const newVersion = store.getVersion();
     const activeWorkers = store.getLiveWorkerCount(cId);
-    const voters = store.getVoters({ candidateId: cId });
+    const result = await getVoters({ candidateId: cId });
 
     return NextResponse.json({
       success: true,
       version: newVersion,
       activeWorkers,
-      total: voters.length,
-      voters,
+      total: result.total,
+      voters: result.voters,
+      source: result.source,
     });
   } catch (err: unknown) {
     return NextResponse.json(

@@ -1,25 +1,29 @@
-// Database interface for VoterDesk
-// Connects to PrismaClient when configured, or provides safe fallback
+// Database client for VoterDesk
+// Next.js Singleton PrismaClient with safe fallback
 
-export type DatabaseClient = any;
+import { PrismaClient } from "@prisma/client";
 
-let globalDb: DatabaseClient = null;
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-export async function getDatabase(): Promise<DatabaseClient> {
-  if (globalDb) return globalDb;
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+  });
 
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
+
+export async function getDatabase(): Promise<PrismaClient | null> {
   try {
-    // Dynamic import to avoid build-time errors before prisma generate is run
-    // @ts-ignore
-    const { PrismaClient } = await import("@prisma/client");
-    globalDb = new PrismaClient({
-      log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-    });
-    return globalDb;
-  } catch {
-    // Falls back gracefully to memory store in lib/data-store.ts
+    return prisma;
+  } catch (err) {
+    console.error("Database connection error:", err);
     return null;
   }
 }
 
-export default getDatabase;
+export default prisma;

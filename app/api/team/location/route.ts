@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { store } from "@/lib/data-store";
+import { updateWorkerLocation } from "@/lib/db/team";
 
 export async function GET(req: Request) {
   try {
@@ -27,13 +28,10 @@ export async function POST(req: Request) {
     const { workerName, workerId, phone, roleTitle, assignedBooths, candidateId, lat, lng, accuracy, address } = body;
 
     if (!workerName || lat === undefined || lng === undefined) {
-      return NextResponse.json(
-        { error: "workerName, lat, and lng are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "workerName, lat, and lng are required" }, { status: 400 });
     }
 
-    const updated = store.recordWorkerLocation({
+    const updated = await updateWorkerLocation({
       workerName,
       workerId,
       phone,

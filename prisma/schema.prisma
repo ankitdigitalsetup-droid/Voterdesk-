@@ -4,8 +4,9 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // User Roles: SUPER_ADMIN, CANDIDATE_ADMIN, KARYAKARTA
@@ -33,6 +34,8 @@ model Candidate {
   wardConstituency String   @default("Ward 34")
   status           String   @default("ACTIVE") // ACTIVE | EXPIRED | SUSPENDED
   voterLimit       Int      @default(50000)
+  posterUrl        String?  // Candidate Campaign Poster Image
+  symbolName       String?  // Election Voting Symbol
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -58,38 +61,52 @@ model Booth {
   @@unique([candidateId, boothNumber])
 }
 
-// Voter Record
+// Voter Record (With all 11 Extended Fields)
 model Voter {
-  id          String   @id @default(cuid())
-  name        String
-  epic        String   // Voter ID / EPIC
-  guardian    String?  // Father / Husband Name
-  age         String?
-  gender      String?  // Male | Female | Other
-  house       String?  // House / Plot No
-  booth       String   // Booth / Part number
-  phone       String?
-  status      String   @default("Pending") // Pending | Contacted | In-Favor | Doubtful | Opposed | Slip-Given
-  workerName  String?  // Assigned Karyakarta name
-  notes       String?
-  candidateId String
-  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String
+  epic         String   // Voter ID / EPIC
+  guardian     String?  // Father / Husband Name
+  age          String?
+  gender       String?  // Male | Female | Other
+  house        String?  // House / Plot No
+  booth        String   // Booth / Part number
+  serialNo     String?  // Serial No in voter roll (क्रम संख्या)
+  phone        String?  // Mobile Number (मोबाइल नो)
+  address      String?  // Residential Address (एड्रेस)
+  boothAddress String?  // Polling Station Address (बूथ पता)
+  voted        String?  @default("नहीं") // वोट डाला (हाँ / नहीं)
+  isSupporter  String?  @default("हाँ")  // सपोर्टर है (हाँ / नहीं / संशयित)
+  isOutside    String?  @default("नहीं") // बाहर है (हाँ / नहीं)
+  status       String   @default("Pending") // Pending | Contacted | In-Favor | Doubtful | Opposed | Slip-Given
+  workerName   String?  // Assigned Karyakarta name
+  notes        String?
+  slipMessage  String?  // Custom voter slip message
+  candidateId  String
+  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([candidateId, booth])
   @@index([candidateId, epic])
+  @@index([candidateId, status])
+  @@index([candidateId, phone])
 }
 
-// Karyakarta / Volunteer Profile
+// Karyakarta / Volunteer Profile (With GPS Tracking fields)
 model KaryakartaProfile {
-  id             String   @id @default(cuid())
-  userId         String   @unique
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   candidateId    String
   candidate      Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  roleTitle      String   @default("Booth Worker") // Booth In-Charge | Field Worker | Data Operator
-  assignedBooths String   @default("[]") // JSON string array of booth numbers e.g. ["12", "14"]
-  status         String   @default("Active")
-  createdAt      DateTime @default(now())
+  roleTitle      String    @default("Booth Worker") // Booth In-Charge | Field Worker | Data Operator
+  assignedBooths String    @default("[]") // JSON string array of booth numbers e.g. ["12", "14"]
+  status         String    @default("Active")
+  lastLat        Float?    // Live GPS Latitude
+  lastLng        Float?    // Live GPS Longitude
+  lastSeen       DateTime? // GPS timestamp
+  createdAt      DateTime  @default(now())
+
+  @@index([candidateId])
 }

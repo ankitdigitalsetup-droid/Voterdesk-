@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
-import { store } from "@/lib/data-store";
+import { getCampaignStats } from "@/lib/db/candidates";
+import { getSessionFromRequest } from "@/lib/auth/session";
 
 export async function GET(req: Request) {
   try {
+    const session = getSessionFromRequest(req);
     const { searchParams } = new URL(req.url);
-    const candidateId = searchParams.get("candidateId") || "cand_1";
-    const stats = store.getStats(candidateId);
+
+    const candidateId = session?.candidateId || searchParams.get("candidateId") || "cand_1";
+    const stats = await getCampaignStats(candidateId);
+
     return NextResponse.json({ success: true, stats });
   } catch (err: unknown) {
     return NextResponse.json(

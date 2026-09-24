@@ -21,6 +21,7 @@ export interface CandidateAccount {
   boothCount: number;
   createdAt: string;
   posterUrl?: string;
+  symbolName?: string;
 }
 
 export interface CandidateCredential {
