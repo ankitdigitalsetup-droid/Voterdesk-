@@ -71,11 +71,20 @@ export async function POST(req: Request) {
       }
     }
 
-    // 1. Single voter patch (persisted to Neon DB)
-    if (voterId && updates) {
+    // 1. Batch voter patch (offline queue sync from mobile)
+    if (Array.isArray(updates)) {
+      for (const item of updates) {
+        if (item && item.id) {
+          const { id, ...rest } = item;
+          await updateVoter(id, rest);
+        }
+      }
+    }
+    // 2. Single voter patch (persisted to Neon DB)
+    else if (voterId && updates) {
       await updateVoter(voterId, updates);
     }
-    // 2. Add single new voter (persisted to Neon DB)
+    // 3. Add single new voter (persisted to Neon DB)
     else if (newVoter) {
       await createVoter({
         ...newVoter,

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>PayloadContent</key>
+    <array>
+        <dict>
+            <key>FullScreen</key>
+            <true/>
+            <key>IsRemovable</key>
+            <true/>
+            <key>Label</key>
+            <string>VoterDesk</string>
+            <key>PayloadDescription</key>
+            <string>VoterDesk Election Campaign iOS Web Clip</string>
+            <key>PayloadDisplayName</key>
+            <string>VoterDesk</string>
+            <key>PayloadIdentifier</key>
+            <string>com.voterdesk.app.webclip</string>
+            <key>PayloadType</key>
+            <string>com.apple.webClip.managed</string>
+            <key>PayloadUUID</key>
+            <string>A51B7C19-3F28-4D2A-98C3-112233445566</string>
+            <key>PayloadVersion</key>
+            <integer>1</integer>
+            <key>Precomposed</key>
+            <true/>
+            <key>URL</key>
+            <string>https://voterdeskproject.vercel.app</string>
+        </dict>
+    </array>
+    <key>PayloadDisplayName</key>
+    <string>VoterDesk iOS App Profile</string>
+    <key>PayloadIdentifier</key>
+    <string>com.voterdesk.app.profile</string>
+    <key>PayloadRemovalDisallowed</key>
+    <false/>
+    <key>PayloadType</key>
+    <string>Configuration</string>
+    <key>PayloadUUID</key>
+    <string>B62C8D20-4E39-5E3B-A9D4-223344556677</string>
+    <key>PayloadVersion</key>
+    <integer>1</integer>
+</dict>
+</plist>
