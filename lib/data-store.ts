@@ -1,4 +1,4 @@
-import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation } from "./types";
+import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 
 // In-Memory & Persistent global store for high-speed multi-mobile synchronization
@@ -102,27 +102,74 @@ class DataStore {
 
   private voters: VoterRecord[] = [];
 
-  // Auth
+  private accessPasswords: BoothAccessPassword[] = [];
+
+  // Auth: Password determines whether the user is ADMIN or MEMBER
   authenticate(phone: string, password?: string, name?: string) {
     const cleanPhone = phone.replace(/\D/g, "");
     const trimmedPass = (password || "").trim();
     const enteredName = (name || "").trim();
 
-    // 1. Direct match in users list
+    // 1. Direct match in users list (e.g. Master Super Admin)
     const found = this.users.find(
       (u) =>
         u.phone.replace(/\D/g, "") === cleanPhone &&
         (!trimmedPass || u.password === trimmedPass)
     );
     if (found) {
-      if (enteredName && found.role === "KARYAKARTA") {
+      if (enteredName && found.role !== "SUPER_ADMIN") {
         found.name = enteredName;
       }
       return found;
     }
 
-    // 2. Dynamic Karyakarta login using candidate workerPassword
-    if (trimmedPass && cleanPhone) {
+    // 2. Check 9-digit + 1 special char Booth Access Passwords
+    if (trimmedPass) {
+      const matchedPwd = this.accessPasswords.find((p) => p.password === trimmedPass);
+      if (matchedPwd) {
+        const cand = this.candidates.find((c) => c.id === matchedPwd.candidateId);
+        if (matchedPwd.role === "CANDIDATE_ADMIN") {
+          const candAdminName = enteredName || cand?.name || "Candidate Admin";
+          const newAdmin: UserAccount & { password: string } = {
+            id: "usr_" + cleanPhone,
+            name: candAdminName,
+            phone: cleanPhone,
+            password: trimmedPass,
+            role: "CANDIDATE_ADMIN",
+            candidateId: matchedPwd.candidateId,
+            assignedBooths: [matchedPwd.boothNumber],
+          };
+          this.users = this.users.filter((u) => u.phone !== cleanPhone);
+          this.users.push(newAdmin);
+          return newAdmin;
+        } else {
+          // MEMBER (Karyakarta)
+          const workerName = enteredName || "कार्यकर्ता";
+          const newWorker: UserAccount & { password: string } = {
+            id: "usr_" + cleanPhone,
+            name: workerName,
+            phone: cleanPhone,
+            password: trimmedPass,
+            role: "KARYAKARTA",
+            candidateId: matchedPwd.candidateId,
+            assignedBooths: [matchedPwd.boothNumber],
+          };
+          this.users = this.users.filter((u) => u.phone !== cleanPhone);
+          this.users.push(newWorker);
+          this.addTeamMember({
+            name: workerName,
+            phone: cleanPhone,
+            roleTitle: "MEMBER",
+            assignedBooths: [matchedPwd.boothNumber],
+            candidateId: matchedPwd.candidateId,
+            status: "Active",
+          });
+          this.recordHeartbeat(workerName, matchedPwd.boothNumber);
+          return newWorker;
+        }
+      }
+
+      // Legacy fallback: check candidate.workerPassword or candidate.password
       const cand = this.candidates.find(
         (c: any) => c.workerPassword === trimmedPass || c.password === trimmedPass
       );
@@ -137,11 +184,12 @@ class DataStore {
           candidateId: cand.id,
           assignedBooths: ["1"],
         };
+        this.users = this.users.filter((u) => u.phone !== cleanPhone);
         this.users.push(newWorker);
         this.addTeamMember({
           name: workerName,
           phone: cleanPhone,
-          roleTitle: "Field Worker",
+          roleTitle: "MEMBER",
           assignedBooths: ["1"],
           candidateId: cand.id,
           status: "Active",
@@ -152,6 +200,32 @@ class DataStore {
     }
 
     return undefined;
+  }
+
+  addAccessPasswords(passwords: BoothAccessPassword[]) {
+    for (const p of passwords) {
+      if (!this.accessPasswords.some((x) => x.password === p.password)) {
+        this.accessPasswords.push(p);
+      }
+    }
+  }
+
+  getCandidatePasswords(candidateId: string): BoothAccessPassword[] {
+    const fromList = this.accessPasswords.filter((p) => p.candidateId === candidateId);
+    if (fromList.length > 0) {
+      return fromList.map((p, idx) => ({ ...p, serialNumber: idx + 1 }));
+    }
+    // Check candidate passwordsJson
+    const cand = this.candidates.find((c) => c.id === candidateId);
+    if (cand?.passwordsJson) {
+      try {
+        const parsed = JSON.parse(cand.passwordsJson);
+        if (Array.isArray(parsed)) {
+          return parsed.map((p, idx) => ({ ...p, serialNumber: idx + 1 }));
+        }
+      } catch {}
+    }
+    return [];
   }
 
   getUser(id: string) {
@@ -210,9 +284,16 @@ class DataStore {
   }
 
   createCandidateBatchWithPasswords(data: {
-    candidate: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string; workerPassword?: string };
+    candidate: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & {
+      password?: string;
+      workerPassword?: string;
+      nikay?: string;
+      symbolName?: string;
+      passwordsJson?: string;
+    };
     voters?: Omit<VoterRecord, "id">[];
-    credentials: Array<{
+    passwords?: BoothAccessPassword[];
+    credentials?: Array<{
       name: string;
       phone: string;
       password: string;
@@ -222,39 +303,56 @@ class DataStore {
     }>;
   }) {
     const id = "cand_" + Date.now();
+    const candidatePasswords = data.passwords || [];
+    const passwordsJsonStr =
+      data.candidate.passwordsJson || (candidatePasswords.length > 0 ? JSON.stringify(candidatePasswords) : undefined);
+
     const newCand: CandidateAccount & { workerPassword?: string; password?: string } = {
       ...data.candidate,
       id,
+      nikay: data.candidate.nikay || "3000039",
+      passwordsJson: passwordsJsonStr,
       voterCount: 0,
       createdAt: new Date().toISOString().split("T")[0],
     };
     this.candidates.unshift(newCand);
 
-    // Register all generated credentials
-    for (const cred of data.credentials) {
-      const userId = "usr_" + id + "_" + cred.boothNumber + "_" + Math.random().toString(36).substring(2, 7);
-      this.users.push({
-        id: userId,
-        name: cred.name,
-        phone: cred.phone,
-        password: cred.password,
-        role: cred.role,
+    // Register Booth Access Passwords if provided (1 booth = 4 passwords, 2 booths = 8 passwords)
+    if (candidatePasswords.length > 0) {
+      const boundPasswords = candidatePasswords.map((p) => ({
+        ...p,
         candidateId: id,
-        assignedBooths: [cred.boothNumber],
-      });
+      }));
+      this.addAccessPasswords(boundPasswords);
+    }
 
-      // Also register in team if karyakarta
-      if (cred.role === "KARYAKARTA") {
-        this.team.push({
-          id: "team_" + userId,
+    // Register any legacy credentials if provided
+    if (data.credentials && data.credentials.length > 0) {
+      for (const cred of data.credentials) {
+        const userId = "usr_" + id + "_" + cred.boothNumber + "_" + Math.random().toString(36).substring(2, 7);
+        this.users.push({
+          id: userId,
           name: cred.name,
           phone: cred.phone,
-          roleTitle: cred.roleTitle || `बूथ ${cred.boothNumber} कार्यकर्ता`,
-          assignedBooths: [cred.boothNumber],
-          status: "Active",
+          password: cred.password,
+          role: cred.role,
           candidateId: id,
-          contactedCount: 0,
+          assignedBooths: [cred.boothNumber],
         });
+
+        // Also register in team if karyakarta
+        if (cred.role === "KARYAKARTA") {
+          this.team.push({
+            id: "team_" + userId,
+            name: cred.name,
+            phone: cred.phone,
+            roleTitle: cred.roleTitle || `बूथ ${cred.boothNumber} कार्यकर्ता`,
+            assignedBooths: [cred.boothNumber],
+            status: "Active",
+            candidateId: id,
+            contactedCount: 0,
+          });
+        }
       }
     }
 
@@ -269,7 +367,8 @@ class DataStore {
     return {
       candidate: newCand,
       importedVoters: imported,
-      credentialsCount: data.credentials.length,
+      credentialsCount: candidatePasswords.length > 0 ? candidatePasswords.length : (data.credentials?.length || 0),
+      passwords: candidatePasswords,
       credentials: this.getCandidateUsers(id),
     };
   }

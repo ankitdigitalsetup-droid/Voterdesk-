@@ -41,7 +41,8 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store } from "@/lib/data-store";
-import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential } from "@/lib/types";
+import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword } from "@/lib/types";
+import { generateCandidateBoothPasswords, generateBoothPassword } from "@/lib/password-helper";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
@@ -599,7 +600,7 @@ function Login({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={roleTab === "SUPER_ADMIN" ? "Super Admin" : roleTab === "CANDIDATE_ADMIN" ? "उम्मीदवार का नाम" : "कार्यकर्ता का पूरा नाम"}
+              placeholder="अपना पूरा नाम दर्ज करें"
               required
             />
           </div>
@@ -618,24 +619,28 @@ function Login({
 
           <div className="passLabel">
             <label>{t.loginPasswordLabel}</label>
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>{t.loginPasswordHint}</span>
+            <span style={{ fontSize: "11px", color: "var(--muted)" }}>9-अंक + 1 स्पेशल कैरेक्टर या एडमिन पासवर्ड</span>
           </div>
           <input
             className="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="पासवर्ड दर्ज करें"
+            placeholder="पासवर्ड दर्ज करें (उदा. 363705912@)"
             required
           />
 
+          <div style={{ fontSize: "12px", color: "#0369a1", background: "#f0f9ff", padding: "8px 12px", borderRadius: "8px", border: "1px solid #bae6fd", marginBottom: "16px" }}>
+            🔒 <b>लॉगिन नियम:</b> नाम और मोबाइल नंबर आप अपना कोई भी दर्ज कर सकते हैं। केवल आपका पासवर्ड ही तय करेगा कि आप एडमिन (ADMIN) हैं या कार्यकर्ता (MEMBER)।
+          </div>
+
           <button className="primary wide" disabled={loading}>
-            {loading ? t.loginSigningIn : `${t.loginPrimaryLabel} ${roleTab === "SUPER_ADMIN" ? t.loginRoleSuper : roleTab === "CANDIDATE_ADMIN" ? t.loginRoleCandidate : t.loginRoleKaryakarta}`}
+            {loading ? "सत्यापित किया जा रहा है..." : "लॉगिन करें (Sign In) ›"}
           </button>
         </form>
 
         <p className="demo">
-          <ShieldCheck /> {roleTab === "SUPER_ADMIN" ? "मास्टर सुपर एडमिन लॉगिन: 9999999999 / SuperAdmin@2026" : roleTab === "CANDIDATE_ADMIN" ? "सुपर एडमिन द्वारा बनाए गए प्रत्याशी मोबाइल व पासवर्ड से लॉगिन करें।" : "कार्यकर्ता: अपना नाम, मोबाइल नंबर और प्रत्याशी का कार्यकर्ता ऐप पासवर्ड दर्ज करें।"}
+          <ShieldCheck /> {roleTab === "SUPER_ADMIN" ? "मास्टर सुपर एडमिन लॉगिन: 9999999999 / SuperAdmin@2026" : "बूथ पासवर्ड कार्ड से प्राप्त 9-अंकीय पासवर्ड से किसी भी नाम व मोबाइल नंबर द्वारा सीधे लॉगिन करें।"}
         </p>
       </section>
 
@@ -691,15 +696,26 @@ function SuperAdminView({
     password: "voterdesk",
   });
 
-  // Dedicated Ward Onboarding Card States
-  const [wardNo, setWardNo] = useState("Ward 34");
-  const [electionName, setElectionName] = useState("Municipal Election 2026");
+  // Dedicated Ward Onboarding Card States (1 Booth = 4 Passwords, 2 Booths = 8 Passwords)
+  const [nikay, setNikay] = useState("3000039");
+  const [wardNo, setWardNo] = useState("39");
+  const [electionName, setElectionName] = useState("BHILWARA-39");
   const [candName, setCandName] = useState("");
-  const [candParty, setCandParty] = useState("Independent (निर्दलीय)");
+  const [candParty, setCandParty] = useState("निर्दलीय");
+  const [symbolName, setSymbolName] = useState("गुब्बारा");
   const [candPhone, setCandPhone] = useState("");
   const [candPassword, setCandPassword] = useState("Cand@2026");
   const [workerPassword, setWorkerPassword] = useState("Worker@2026");
-  const [boothCount, setBoothCount] = useState<number>(3); // default 3 booths = 12 passwords
+  const [boothCount, setBoothCount] = useState<number>(1); // Default 1 booth = 4 passwords (1 Admin + 3 Member)
+
+  // 9-digit + 1 special char Booth Access Passwords
+  const [boothPasswords, setBoothPasswords] = useState<BoothAccessPassword[]>([]);
+  const [copiedPwdId, setCopiedPwdId] = useState<string>("");
+
+  // Synchronize booth passwords whenever boothCount changes (1 booth = 4, 2 booths = 8)
+  useEffect(() => {
+    setBoothPasswords(generateCandidateBoothPasswords(boothCount));
+  }, [boothCount]);
 
   // Poster Upload state
   const [posterPreview, setPosterPreview] = useState<string>("");
@@ -713,23 +729,15 @@ function SuperAdminView({
   const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
   const excelInputRef = useRef<HTMLInputElement>(null);
 
-  // Credentials Generation state
-  const [credentials, setCredentials] = useState<Array<{
-    name: string;
-    phone: string;
-    password: string;
-    role: "CANDIDATE_ADMIN" | "KARYAKARTA";
-    boothNumber: string;
-    roleTitle: string;
-  }>>([]);
   const [previewBoothFilter, setPreviewBoothFilter] = useState<string>("ALL");
   const [isActivating, setIsActivating] = useState<boolean>(false);
   const [activationToast, setActivationToast] = useState<string>("");
 
-  // Credentials Export / View Modal State
+  // Credentials Export / View Modal State (Booth Passwords Card)
   const [viewCredsModal, setViewCredsModal] = useState<{
     candidate: CandidateAccount;
-    creds: CandidateCredential[];
+    creds: (BoothAccessPassword | CandidateCredential)[];
+    createdAtStr?: string;
   } | null>(null);
   const [modalBoothFilter, setModalBoothFilter] = useState<string>("ALL");
   const [copiedSuccess, setCopiedSuccess] = useState<boolean>(false);
@@ -875,57 +883,10 @@ function SuperAdminView({
     });
   };
 
-  // Dynamic Password Generator Formula using Super Admin specified passwords
-  const generateCredsList = useCallback((count: number, cName: string, cPhone: string, cPass: string, wPass: string) => {
-    const list: Array<{
-      name: string;
-      phone: string;
-      password: string;
-      role: "CANDIDATE_ADMIN" | "KARYAKARTA";
-      boothNumber: string;
-      roleTitle: string;
-    }> = [];
-
-    const baseName = cName.trim() || "प्रत्याशी";
-    const cleanPhone = cPhone.replace(/\D/g, "");
-    const basePhone = cleanPhone.length === 10 ? cleanPhone : "9829012345";
-    const prefix = basePhone.substring(0, 6);
-    const chosenCandPass = cPass.trim() || "Cand@2026";
-    const chosenWorkerPass = wPass.trim() || "Worker@2026";
-
-    for (let b = 1; b <= count; b++) {
-      const bStr = String(b);
-      const bPad = b < 10 ? `0${b}` : `${b}`;
-
-      // 1. Candidate Password for Booth b
-      list.push({
-        name: b === 1 ? baseName : `${baseName} (बूथ ${b})`,
-        phone: b === 1 && cleanPhone.length === 10 ? cleanPhone : `${prefix}${bPad}0`,
-        password: chosenCandPass,
-        role: "CANDIDATE_ADMIN",
-        boothNumber: bStr,
-        roleTitle: `बूथ ${b} प्रत्याशी प्रभारी`,
-      });
-
-      // 2. Three Karyakarta Passwords for Booth b
-      for (let k = 1; k <= 3; k++) {
-        list.push({
-          name: `कार्यकर्ता ${k} (बूथ ${b})`,
-          phone: `${prefix}${bPad}${k}`,
-          password: chosenWorkerPass,
-          role: "KARYAKARTA",
-          boothNumber: bStr,
-          roleTitle: `बूथ ${b} कार्यकर्ता ${k}`,
-        });
-      }
-    }
-    return list;
-  }, []);
-
-  // Synchronize credentials whenever boothCount, candName, candPhone, candPassword, or workerPassword change
-  useEffect(() => {
-    setCredentials(generateCredsList(boothCount, candName, candPhone, candPassword, workerPassword));
-  }, [boothCount, candName, candPhone, candPassword, workerPassword, generateCredsList]);
+  // Re-generate booth passwords (9 numeric digits + 1 special character)
+  const refreshBoothPasswords = useCallback(() => {
+    setBoothPasswords(generateCandidateBoothPasswords(boothCount));
+  }, [boothCount]);
 
   // Poster File Handler
   const handlePosterUpload = (file: File) => {
@@ -1022,18 +983,8 @@ function SuperAdminView({
       alert("कृपया प्रत्याशी का नाम दर्ज करें!");
       return;
     }
-    if (!candPhone.trim()) {
-      alert("कृपया मुख्य मोबाइल नंबर दर्ज करें!");
-      return;
-    }
-    if (!candPassword.trim()) {
-      alert("कृपया प्रत्याशी लॉगिन पासवर्ड दर्ज करें!");
-      return;
-    }
-    if (!workerPassword.trim()) {
-      alert("कृपया कार्यकर्ता ऐप पासवर्ड दर्ज करें!");
-      return;
-    }
+    const cleanPhone = candPhone.replace(/\D/g, "");
+    const finalPhone = cleanPhone.length === 10 ? cleanPhone : "9829012345";
     if (boothCount < 1) {
       alert("कम से कम 1 बूथ होना आवश्यक है!");
       return;
@@ -1041,6 +992,9 @@ function SuperAdminView({
 
     setIsActivating(true);
     try {
+      const pwdsToSave = boothPasswords.length > 0 ? boothPasswords : generateCandidateBoothPasswords(boothCount);
+      const serializedPwds = JSON.stringify(pwdsToSave);
+
       // 1. Send to Neon PostgreSQL API
       let createdCandidateId = "";
       try {
@@ -1049,14 +1003,16 @@ function SuperAdminView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             name: candName.trim(),
-            phone: candPhone.trim(),
+            phone: finalPhone,
             party: candParty.trim(),
             electionName: electionName.trim(),
             wardConstituency: wardNo.trim(),
             boothCount: Number(boothCount),
             posterUrl: posterPreview || undefined,
-            candidatePassword: candPassword.trim(),
-            workerPassword: workerPassword.trim(),
+            symbolName: symbolName.trim(),
+            nikay: nikay.trim() || "3000039",
+            passwords: pwdsToSave,
+            passwordsJson: serializedPwds,
             voters: parsedVoters,
           }),
         });
@@ -1074,18 +1030,19 @@ function SuperAdminView({
       const result = store.createCandidateBatchWithPasswords({
         candidate: {
           name: candName.trim(),
-          phone: candPhone.trim(),
+          phone: finalPhone,
           party: candParty.trim(),
           electionName: electionName.trim(),
           wardConstituency: wardNo.trim(),
           boothCount: Number(boothCount),
           status: "ACTIVE",
           posterUrl: posterPreview || undefined,
-          password: candPassword.trim(),
-          workerPassword: workerPassword.trim(),
-        } as any,
+          symbolName: symbolName.trim(),
+          nikay: nikay.trim() || "3000039",
+          passwordsJson: serializedPwds,
+        },
+        passwords: pwdsToSave,
         voters: parsedVoters,
-        credentials: credentials,
       });
 
       if (createdCandidateId) {
@@ -1094,13 +1051,29 @@ function SuperAdminView({
 
       onCandidateCreated();
 
-      setActivationToast(`🎉 ${wardNo} के लिए प्रत्याशी एवं ${result.credentialsCount} पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`);
+      const createdTime = new Date().toLocaleString("hi-IN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+
+      setActivationToast(`🎉 ${wardNo} के लिए प्रत्याशी एवं ${pwdsToSave.length} बूथ पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`);
       setTimeout(() => setActivationToast(""), 4000);
 
-      // Open credentials export modal so admin can immediately copy/download
+      // Open credentials export modal so admin can immediately print / copy / download
       setViewCredsModal({
-        candidate: result.candidate,
-        creds: result.credentials,
+        candidate: {
+          ...result.candidate,
+          nikay: nikay.trim() || "3000039",
+          symbolName: symbolName.trim() || "गुब्बारा",
+          wardConstituency: wardNo.trim(),
+          electionName: electionName.trim(),
+        },
+        creds: pwdsToSave,
+        createdAtStr: createdTime,
       });
 
       // Clear form
@@ -1118,47 +1091,53 @@ function SuperAdminView({
     }
   };
 
-  // Download Credentials as Excel Sheet
-  const downloadCredentialsExcel = (cand: CandidateAccount, creds: CandidateCredential[]) => {
-    const data = creds.map((c) => ({
-      "वार्ड / क्षेत्र": cand.wardConstituency,
-      "चुनाव का नाम": cand.electionName,
-      "प्रत्याशी का नाम": cand.name,
-      "पार्टी": cand.party,
-      "भूमिका": c.role === "CANDIDATE_ADMIN" ? "प्रत्याशी (Candidate Admin)" : "कार्यकर्ता (Karyakarta)",
-      "पद / पदनाम": c.roleTitle,
-      "आवंटित बूथ": `बूथ ${c.boothNumber}`,
-      "मोबाइल / लॉगिन आईडी": c.phone,
-      "पासवर्ड": c.password,
-    }));
+  // Download Booth Passwords as Excel Sheet matching the card format
+  const downloadCredentialsExcel = (cand: CandidateAccount, creds: (BoothAccessPassword | CandidateCredential)[]) => {
+    const data = creds.map((c, idx) => {
+      const serial = (c as any).serialNumber || (idx + 1);
+      const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+      return {
+        "#": serial,
+        "निकाय": cand.nikay || nikay || "3000039",
+        "वार्ड": cand.wardConstituency || wardNo,
+        "विवरण": cand.electionName || electionName,
+        "प्रत्याशी": cand.name,
+        "चुनाव चिन्ह": cand.symbolName || symbolName || "गुब्बारा",
+        "बूथ": `बूथ ${c.boothNumber}`,
+        "भूमिका": roleTitle,
+        "पासवर्ड": c.password,
+      };
+    });
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Passwords");
-    XLSX.writeFile(workbook, `VoterDesk_Passwords_${cand.wardConstituency.replace(/\s+/g, "_")}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Booth_Passwords");
+    XLSX.writeFile(workbook, `Booth_Passwords_Ward_${(cand.wardConstituency || wardNo).replace(/\s+/g, "_")}.xlsx`);
   };
 
-  // Copy Credentials formatted for WhatsApp sharing
-  const copyCredentialsForWhatsApp = (cand: CandidateAccount, creds: CandidateCredential[]) => {
+  // Copy Booth Passwords formatted for WhatsApp sharing matching the card format
+  const copyCredentialsForWhatsApp = (cand: CandidateAccount, creds: (BoothAccessPassword | CandidateCredential)[]) => {
+    const totalCount = creds.length;
     const text =
-      `🇮🇳 *वोटर डेस्क - चुनाव प्रबंधन पोर्टल* 🇮🇳\n` +
-      `*वार्ड / क्षेत्र:* ${cand.wardConstituency}\n` +
-      `*चुनाव:* ${cand.electionName}\n` +
-      `*प्रत्याशी:* ${cand.name} (${cand.party})\n` +
-      `*कुल पोलिंग बूथ:* ${cand.boothCount} | *कुल क्रेडेंशियल्स:* ${creds.length}\n` +
-      `----------------------------------------\n` +
+      `🗳️ *वोटर डेस्क - बूथ पासवर्ड कार्ड* 🗳️\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `🏛️ *निकाय:* ${cand.nikay || nikay || "3000039"}\n` +
+      `📍 *वार्ड:* ${cand.wardConstituency || wardNo}\n` +
+      `📋 *विवरण:* ${cand.electionName || electionName}\n` +
+      `👤 *प्रत्याशी:* ${cand.name}\n` +
+      `🎈 *चुनाव चिन्ह:* ${cand.symbolName || symbolName || "गुब्बारा"}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `*कुल बूथ:* ${cand.boothCount || boothCount} | *कुल पासवर्ड:* ${totalCount}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
       creds
-        .map(
-          (c) =>
-            `🔑 *${c.roleTitle}* (${c.role === "CANDIDATE_ADMIN" ? "कैंडिडेट" : "कार्यकर्ता"})\n` +
-            `👤 नाम: ${c.name}\n` +
-            `📱 मोबाइल: ${c.phone}\n` +
-            `🔒 पासवर्ड: ${c.password}\n` +
-            `📍 बूथ: बूथ ${c.boothNumber}`
-        )
-        .join("\n----------------------------------------\n") +
-      `\n----------------------------------------\n` +
-      `🌐 लॉगिन वेबसाइट: ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
-      `⚠️ *नोट:* अपने मोबाइल नंबर और दिए गए पासवर्ड से लॉगिन करें।`;
+        .map((c, idx) => {
+          const serial = (c as any).serialNumber || (idx + 1);
+          const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+          return `${serial}. [${roleTitle}] : *${c.password}* (बूथ ${c.boothNumber})`;
+        })
+        .join("\n") +
+      `\n━━━━━━━━━━━━━━━━━━━━\n` +
+      `🌐 *लॉगिन वेबसाइट:* ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
+      `ℹ️ *लॉगिन नियम:* कोई भी नाम और मोबाइल नंबर लिखकर पासवर्ड से लॉगिन करें। पासवर्ड ही तय करेगा कि आप ADMIN हैं या MEMBER।`;
 
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text);
@@ -1343,11 +1322,11 @@ function SuperAdminView({
             {/* Live Formula Banner */}
             <div className="saFormulaBanner">
               <div className="saFormulaText">
-                <span>⚡ <b>पासवर्ड नियम:</b></span>
-                <span>1 बूथ पर 4 पासवर्ड | 2 बूथ पर 8 | 3 बूथ पर 12 | (प्रत्येक बूथ: 1 प्रत्याशी + 3 कार्यकर्ता)</span>
+                <span>⚡ <b>बूथ पासवर्ड नियम:</b></span>
+                <span>1 बूथ पर 4 पासवर्ड | 2 बूथ पर 8 | 3 बूथ पर 12 | (प्रति बूथ: 1 ADMIN + 3 MEMBER)</span>
               </div>
               <div className="saFormulaBadge">
-                कुल {boothCount} बूथ = {credentials.length} सक्रिय क्रेडेंशियल्स
+                कुल {boothCount} बूथ = {boothPasswords.length} पासवर्ड (9 अंक + 1 स्पेशल कैरेक्टर)
               </div>
             </div>
 
@@ -1360,25 +1339,39 @@ function SuperAdminView({
                   🏛️ 1. वार्ड एवं प्रत्याशी विवरण
                 </h4>
 
-                <div className="formGroup" style={{ margin: 0 }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700 }}>वार्ड / क्षेत्र का नाम या संख्या</label>
-                  <input
-                    type="text"
-                    value={wardNo}
-                    onChange={(e) => setWardNo(e.target.value)}
-                    placeholder="उदा. Ward 34 / वार्ड 34"
-                    required
-                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                  />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>निकाय संख्या (Nikay)</label>
+                    <input
+                      type="text"
+                      value={nikay}
+                      onChange={(e) => setNikay(e.target.value)}
+                      placeholder="उदा. 3000039"
+                      required
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                    />
+                  </div>
+
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>वार्ड संख्या (Ward No.)</label>
+                    <input
+                      type="text"
+                      value={wardNo}
+                      onChange={(e) => setWardNo(e.target.value)}
+                      placeholder="उदा. 39"
+                      required
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                    />
+                  </div>
                 </div>
 
                 <div className="formGroup" style={{ margin: 0 }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700 }}>चुनाव का नाम</label>
+                  <label style={{ fontSize: "12px", fontWeight: 700 }}>विवरण / चुनाव का नाम</label>
                   <input
                     type="text"
                     value={electionName}
                     onChange={(e) => setElectionName(e.target.value)}
-                    placeholder="उदा. Municipal Election 2026"
+                    placeholder="उदा. BHILWARA-39"
                     required
                     style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                   />
@@ -1390,62 +1383,45 @@ function SuperAdminView({
                     type="text"
                     value={candName}
                     onChange={(e) => setCandName(e.target.value)}
-                    placeholder="उदा. रमेश कुमार शर्मा"
+                    placeholder="उदा. लखन सोनी"
                     required
-                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                   />
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>चुनाव चिन्ह (Symbol)</label>
+                    <input
+                      type="text"
+                      value={symbolName}
+                      onChange={(e) => setSymbolName(e.target.value)}
+                      placeholder="उदा. गुब्बारा"
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                    />
+                  </div>
+
                   <div className="formGroup" style={{ margin: 0 }}>
                     <label style={{ fontSize: "12px", fontWeight: 700 }}>पार्टी / दल</label>
                     <input
                       type="text"
                       value={candParty}
                       onChange={(e) => setCandParty(e.target.value)}
-                      placeholder="निर्दलीय / BJP / Congress"
-                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                    />
-                  </div>
-
-                  <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700 }}>मुख्य मोबाइल नं. (लॉगिन हेतु)</label>
-                    <input
-                      type="tel"
-                      value={candPhone}
-                      onChange={(e) => setCandPhone(e.target.value)}
-                      placeholder="98290XXXXX"
-                      required
+                      placeholder="निर्दलीय / BJP / INC"
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
                 </div>
 
-                {/* Custom Passwords for Candidate and Karyakarta Mobile App */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#0062cc" }}>🔑 प्रत्याशी लॉगिन पासवर्ड *</label>
-                    <input
-                      type="text"
-                      value={candPassword}
-                      onChange={(e) => setCandPassword(e.target.value)}
-                      placeholder="उदा. Cand@2026"
-                      required
-                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #0062cc", fontWeight: 700, background: "#f8fafc" }}
-                    />
-                  </div>
-
-                  <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#059669" }}>📱 कार्यकर्ता ऐप पासवर्ड *</label>
-                    <input
-                      type="text"
-                      value={workerPassword}
-                      onChange={(e) => setWorkerPassword(e.target.value)}
-                      placeholder="उदा. Worker@2026"
-                      required
-                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #059669", fontWeight: 700, background: "#f8fafc" }}
-                    />
-                  </div>
+                <div className="formGroup" style={{ margin: 0 }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी संपर्क मोबाइल नं. (लॉगिन व डेटाबेस हेतु)</label>
+                  <input
+                    type="tel"
+                    value={candPhone}
+                    onChange={(e) => setCandPhone(e.target.value)}
+                    placeholder="उदा. 98290XXXXX"
+                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                  />
                 </div>
 
                 {/* Booth Count Selector */}
@@ -1453,7 +1429,7 @@ function SuperAdminView({
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                     <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>वार्ड में कुल बूथ संख्या (Total Booths)</label>
                     <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7" }}>
-                      {boothCount} बूथ = {boothCount * 4} पासवर्ड
+                      {boothCount} बूथ = {boothPasswords.length} पासवर्ड (प्रति बूथ 1 ADMIN + 3 MEMBER)
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -1487,6 +1463,10 @@ function SuperAdminView({
                       title="कस्टम बूथ संख्या"
                     />
                   </div>
+                </div>
+
+                <div style={{ fontSize: "11.5px", color: "#0369a1", background: "#f0f9ff", padding: "8px 10px", borderRadius: "8px", border: "1px solid #bae6fd" }}>
+                  🔒 <b>पासवर्ड नियम:</b> कोई नाम या नंबर जनरेट नहीं होंगे। केवल 9 अंक + 1 स्पेशल कैरेक्टर पासवर्ड तैयार होंगे। पासवर्ड ही तय करेगा कि कौन ADMIN है और कौन MEMBER।
                 </div>
               </div>
 
@@ -1623,26 +1603,25 @@ function SuperAdminView({
               </div>
             </div>
 
-            {/* Credentials Live Preview Section */}
+            {/* Booth Passwords Live Preview Card - Matching the exact uploaded image */}
             <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #e2e8f0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
                 <div>
-                  <h4 style={{ margin: "0 0 2px", fontSize: "15px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
-                    🔑 4. जनरेट होने वाले पासवर्ड्स प्रीव्यू ({credentials.length} Accounts)
+                  <h4 style={{ margin: "0 0 2px", fontSize: "16px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                    🔑 4. बूथ पासवर्ड कार्ड प्रीव्यू ({boothPasswords.length} पासवर्ड्स)
                   </h4>
                   <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
-                    हर बूथ पर 1 कैंडिडेट पासवर्ड और 3 कार्यकर्ता पासवर्ड तैयार हैं।
+                    {boothCount} बूथ = {boothPasswords.length} पासवर्ड (प्रति बूथ 1 ADMIN + 3 MEMBER)। कोई नाम व नंबर जनरेट नहीं होंगे।
                   </p>
                 </div>
 
                 <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                  {/* Booth Filter Chips */}
                   <select
                     value={previewBoothFilter}
                     onChange={(e) => setPreviewBoothFilter(e.target.value)}
                     style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700, color: "#334155" }}
                   >
-                    <option value="ALL">सभी बूथ देखें ({credentials.length})</option>
+                    <option value="ALL">सभी बूथ देखें ({boothPasswords.length} पासवर्ड)</option>
                     {Array.from({ length: boothCount }, (_, i) => i + 1).map((b) => (
                       <option key={b} value={String(b)}>बूथ {b} के 4 पासवर्ड्स</option>
                     ))}
@@ -1652,45 +1631,99 @@ function SuperAdminView({
                     type="button"
                     className="outline"
                     style={{ padding: "6px 10px", fontSize: "12px" }}
-                    onClick={() => setCredentials(generateCredsList(boothCount, candName, candPhone, candPassword, workerPassword))}
-                    title="रैंडम पिन री-जनरेट करें"
+                    onClick={refreshBoothPasswords}
+                    title="नये 9-अंकीय पासवर्ड री-जनरेट करें"
                   >
-                    <RefreshCw size={12} /> री-जनरेट
+                    <RefreshCw size={12} /> नये पासवर्ड
                   </button>
                 </div>
               </div>
 
-              {/* Grid of Credentials */}
-              <div className="saCredGrid">
-                {credentials
-                  .filter((c) => previewBoothFilter === "ALL" || c.boothNumber === previewBoothFilter)
-                  .map((c, idx) => (
-                    <div
-                      key={idx}
-                      className={`saCredCard ${c.role === "CANDIDATE_ADMIN" ? "candidate" : "karyakarta"}`}
-                    >
-                      <div className="saCredHeader">
-                        <span className={`saCredRoleBadge ${c.role === "CANDIDATE_ADMIN" ? "cand" : "kary"}`}>
-                          {c.role === "CANDIDATE_ADMIN" ? "👑 कैंडिडेट पासवर्ड" : "👤 कार्यकर्ता पासवर्ड"}
-                        </span>
-                        <span className="saCredBoothBadge">बूथ {c.boothNumber}</span>
-                      </div>
+              {/* Visual Card (Identical to uploaded image) */}
+              <div className="boothPassCard">
+                <div className="boothPassHeader">
+                  <Key size={18} />
+                  <span>बूथ पासवर्ड</span>
+                </div>
 
-                      <div style={{ fontSize: "13px", fontWeight: 800, color: "#0f172a" }}>
-                        {c.name}
-                      </div>
-
-                      <div className="saCredRow">
-                        <span style={{ color: "#64748b" }}>📱 मोबाइल / लॉगिन:</span>
-                        <b style={{ color: "#0f172a" }}>{c.phone}</b>
-                      </div>
-
-                      <div className="saCredRow">
-                        <span style={{ color: "#64748b" }}>🔒 पासवर्ड:</span>
-                        <span className="saCredPassBox">{c.password}</span>
-                      </div>
+                <div className="boothPassCandidateStrip">
+                  {posterPreview ? (
+                    <img src={posterPreview} alt="Candidate Poster" className="boothPassPoster" />
+                  ) : (
+                    <div className="boothPassPosterPlaceholder">
+                      <ImageIcon size={22} color="#94a3b8" />
+                      <span>पोस्टर</span>
                     </div>
-                  ))}
+                  )}
+                  <div className="boothPassCandidateInfo">
+                    <span className="boothPassWardTag">वार्ड नं. {wardNo || "39"}</span>
+                    <h3 className="boothPassCandidateName">{candName || "लखन सोनी"}</h3>
+                    <div className="boothPassSymbol">
+                      <span>चुनाव चिन्ह:</span>
+                      <b>{symbolName || "गुब्बारा"}</b>
+                      {candParty && <span style={{ color: "#64748b", fontSize: "11px" }}>({candParty})</span>}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="boothPassMetaStrip">
+                  <div>निकाय : {nikay || "3000039"}</div>
+                  <div>वार्ड : {wardNo || "39"}</div>
+                  <div>विवरण : {electionName || `BHILWARA-${wardNo || "39"}`}</div>
+                </div>
+
+                <table className="boothPassTable">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "45px", textAlign: "center" }}>#</th>
+                      <th style={{ width: "120px", textAlign: "center" }}>भूमिका</th>
+                      <th style={{ textAlign: "left" }}>पासवर्ड</th>
+                      <th style={{ width: "65px", textAlign: "center" }}>कॉपी</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {boothPasswords
+                      .filter((p) => previewBoothFilter === "ALL" || p.boothNumber === previewBoothFilter)
+                      .map((p, idx) => (
+                        <tr key={p.id || idx} style={{ background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
+                          <td style={{ textAlign: "center", fontWeight: 800, color: "#64748b", fontSize: "13px" }}>
+                            {p.serialNumber || idx + 1}
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <span className={p.roleTitle === "ADMIN" ? "pillAdmin" : "pillMember"}>
+                              {p.roleTitle}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                              <span className="boothPassCode">{p.password}</span>
+                              <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>(बूथ {p.boothNumber})</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: "center" }}>
+                            <button
+                              type="button"
+                              className="outline"
+                              style={{ padding: "3px 7px", fontSize: "11px" }}
+                              onClick={() => {
+                                navigator.clipboard.writeText(p.password);
+                                setCopiedPwdId(p.id);
+                                setTimeout(() => setCopiedPwdId(""), 2000);
+                              }}
+                              title="पासवर्ड कॉपी करें"
+                            >
+                              {copiedPwdId === p.id ? "✓" : <Copy size={12} />}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+
+                <div className="boothPassFooter">
+                  <span>बनाया गया : {new Date().toLocaleString("hi-IN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                  <span>कुल : {boothPasswords.length}</span>
+                </div>
               </div>
             </div>
 
@@ -1698,7 +1731,7 @@ function SuperAdminView({
             <div style={{ marginTop: "24px", paddingTop: "18px", borderTop: "1.5px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
               <div style={{ fontSize: "13px", color: "#475569" }}>
                 {parsedVoters.length > 0 ? (
-                  <span>✅ <b>{parsedVoters.length}</b> वोटर्स + <b>{posterPreview ? "1 पोस्टर" : "डिफ़ॉल्ट पोस्टर"}</b> + <b>{credentials.length}</b> पासवर्ड्स तैयार</span>
+                  <span>✅ <b>{parsedVoters.length}</b> वोटर्स + <b>{posterPreview ? "1 पोस्टर" : "डिफ़ॉल्ट पोस्टर"}</b> + <b>{boothPasswords.length}</b> पासवर्ड्स तैयार</span>
                 ) : (
                   <span>⚠️ एक्सेल फ़ाइल वैकल्पिक है। यदि अभी अपलोड नहीं करेंगे तो बाद में भी कर सकते हैं।</span>
                 )}
@@ -1713,7 +1746,7 @@ function SuperAdminView({
                   onClick={handleActivateSetup}
                 >
                   <Sparkles size={16} />
-                  {isActivating ? "सक्रिय किया जा रहा है..." : `🚀 वार्ड डेटा, पोस्टर एवं सभी ${credentials.length} पासवर्ड एक्टिवेट करें`}
+                  {isActivating ? "सक्रिय किया जा रहा है..." : `🚀 वार्ड डेटा, पोस्टर एवं सभी ${boothPasswords.length} पासवर्ड एक्टिवेट करें`}
                 </button>
               </div>
             </div>
@@ -1802,11 +1835,31 @@ function SuperAdminView({
                           type="button"
                           className="outline"
                           style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}
-                          onClick={() => {
-                            const creds = store.getCandidateUsers(cand.id);
-                            setViewCredsModal({ candidate: cand, creds });
+                          onClick={async () => {
+                            let creds: (BoothAccessPassword | CandidateCredential)[] = store.getCandidatePasswords(cand.id);
+                            if (!creds || creds.length === 0) {
+                              try {
+                                const res = await fetch(`/api/candidates/passwords?candidateId=${cand.id}`);
+                                if (res.ok) {
+                                  const d = await res.json();
+                                  if (Array.isArray(d.passwords) && d.passwords.length > 0) {
+                                    creds = d.passwords;
+                                    store.addAccessPasswords(d.passwords);
+                                  }
+                                }
+                              } catch {}
+                            }
+                            if (!creds || creds.length === 0) {
+                              creds = generateCandidateBoothPasswords(cand.boothCount || 1, cand.id);
+                              store.addAccessPasswords(creds as BoothAccessPassword[]);
+                            }
+                            setViewCredsModal({
+                              candidate: cand,
+                              creds,
+                              createdAtStr: new Date(cand.createdAt || Date.now()).toLocaleDateString("hi-IN"),
+                            });
                           }}
-                          title="इस प्रत्याशी के सभी लॉगिन पासवर्ड देखें व कॉपी करें"
+                          title="इस प्रत्याशी के सभी बूथ पासवर्ड देखें व कॉपी करें"
                         >
                           <Key size={13} /> 🔑 पासवर्ड
                         </button>
@@ -1827,48 +1880,65 @@ function SuperAdminView({
         </Panel>
       </div>
 
-      {/* Credentials Export & View Modal */}
+      {/* Credentials Export & View Modal (Booth Passwords Card) */}
       {viewCredsModal && (
         <div className="modalOverlay" onClick={() => setViewCredsModal(null)}>
-          <div className="modalBox" style={{ maxWidth: "850px", width: "95%" }} onClick={(e) => e.stopPropagation()}>
-            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff" }}>
+          <div className="modalBox boothPassPrintArea" style={{ maxWidth: "650px", width: "95%", background: "#ffffff", padding: 0, overflow: "hidden", borderRadius: "14px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff", padding: "12px 18px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <Key size={18} color="#38bdf8" />
-                <h3 style={{ margin: 0, color: "#ffffff", fontSize: "17px" }}>
-                  🔑 {viewCredsModal.candidate.name} ({viewCredsModal.candidate.wardConstituency}) - लॉगिन क्रेडेंशियल्स
+                <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px", fontWeight: 800 }}>
+                  बूथ पासवर्ड कार्ड - {viewCredsModal.candidate.name} ({viewCredsModal.candidate.wardConstituency})
                 </h3>
               </div>
               <button onClick={() => setViewCredsModal(null)} style={{ color: "#ffffff" }}><X /></button>
             </div>
 
-            <div className="modalBody">
-              {/* Top Details & Action Row */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "16px", background: "#f8fafc", padding: "12px 14px", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-                <div>
-                  <div style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a" }}>
-                    {viewCredsModal.candidate.name} ({viewCredsModal.candidate.party})
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#64748b" }}>
-                    {viewCredsModal.candidate.electionName} • कुल {viewCredsModal.candidate.boothCount} बूथ • {viewCredsModal.creds.length} एक्टिव पासवर्ड
-                  </div>
+            <div className="modalBody" style={{ padding: "16px 18px" }}>
+              {/* Action Toolbar */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#475569" }}>बूथ:</span>
+                  <select
+                    value={modalBoothFilter}
+                    onChange={(e) => setModalBoothFilter(e.target.value)}
+                    style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+                  >
+                    <option value="ALL">सभी ({viewCredsModal.creds.length})</option>
+                    {Array.from(new Set(viewCredsModal.creds.map((c) => c.boothNumber))).map((b) => (
+                      <option key={b} value={b}>बूथ {b}</option>
+                    ))}
+                  </select>
                 </div>
 
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                   <button
                     type="button"
                     className="outline"
-                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#ffffff" }}
-                    onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
+                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
+                    onClick={() => {
+                      document.body.classList.add("printing-booth-card");
+                      window.print();
+                      setTimeout(() => document.body.classList.remove("printing-booth-card"), 1000);
+                    }}
                   >
-                    <Download size={14} /> 📥 Excel डाउनलोड (.xlsx)
+                    <Printer size={13} /> 🖨️ प्रिंट / PDF
                   </button>
                   <button
                     type="button"
                     className="primary"
-                    style={{ padding: "6px 14px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "6px", background: "#16a34a", borderColor: "#16a34a" }}
+                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#16a34a", borderColor: "#16a34a" }}
                     onClick={() => copyCredentialsForWhatsApp(viewCredsModal.candidate, viewCredsModal.creds)}
                   >
-                    <Share2 size={14} /> {copiedSuccess ? "✓ कॉपी हो गया!" : "💬 WhatsApp कॉपी"}
+                    <Share2 size={13} /> {copiedSuccess ? "✓ कॉपी हो गया!" : "💬 WhatsApp"}
+                  </button>
+                  <button
+                    type="button"
+                    className="outline"
+                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
+                    onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
+                  >
+                    <Download size={13} /> 📥 Excel
                   </button>
                   <button
                     type="button"
@@ -1884,82 +1954,97 @@ function SuperAdminView({
                 </div>
               </div>
 
-              {/* Booth Filter */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                <span style={{ fontSize: "12px", fontWeight: 700, color: "#475569" }}>बूथ फ़िल्टर:</span>
-                <select
-                  value={modalBoothFilter}
-                  onChange={(e) => setModalBoothFilter(e.target.value)}
-                  style={{ padding: "5px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
-                >
-                  <option value="ALL">सभी बूथ ({viewCredsModal.creds.length} पासवर्ड)</option>
-                  {Array.from(new Set(viewCredsModal.creds.map((c) => c.boothNumber))).map((b) => (
-                    <option key={b} value={b}>बूथ {b}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Printable Booth Passwords Card matching uploaded image */}
+              <div className="boothPassCard">
+                <div className="boothPassHeader">
+                  <Key size={18} />
+                  <span>बूथ पासवर्ड</span>
+                </div>
 
-              {/* Table of Credentials */}
-              <div style={{ maxHeight: "400px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12.5px" }}>
-                  <thead style={{ background: "#f1f5f9", position: "sticky", top: 0, zIndex: 2 }}>
+                <div className="boothPassCandidateStrip">
+                  {viewCredsModal.candidate.posterUrl ? (
+                    <img src={viewCredsModal.candidate.posterUrl} alt="Candidate Poster" className="boothPassPoster" />
+                  ) : (
+                    <div className="boothPassPosterPlaceholder">
+                      <ImageIcon size={22} color="#94a3b8" />
+                      <span>पोस्टर</span>
+                    </div>
+                  )}
+                  <div className="boothPassCandidateInfo">
+                    <span className="boothPassWardTag">वार्ड नं. {viewCredsModal.candidate.wardConstituency || "39"}</span>
+                    <h3 className="boothPassCandidateName">{viewCredsModal.candidate.name}</h3>
+                    <div className="boothPassSymbol">
+                      <span>चुनाव चिन्ह:</span>
+                      <b>{viewCredsModal.candidate.symbolName || "गुब्बारा"}</b>
+                      {viewCredsModal.candidate.party && (
+                        <span style={{ color: "#64748b", fontSize: "11px" }}>({viewCredsModal.candidate.party})</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="boothPassMetaStrip">
+                  <div>निकाय : {viewCredsModal.candidate.nikay || "3000039"}</div>
+                  <div>वार्ड : {viewCredsModal.candidate.wardConstituency || "39"}</div>
+                  <div>विवरण : {viewCredsModal.candidate.electionName || `BHILWARA-${viewCredsModal.candidate.wardConstituency || "39"}`}</div>
+                </div>
+
+                <table className="boothPassTable">
+                  <thead>
                     <tr>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>भूमिका / रोल</th>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>नाम</th>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>बूथ</th>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>मोबाइल / लॉगिन</th>
-                      <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #cbd5e1" }}>पासवर्ड</th>
-                      <th style={{ padding: "8px 12px", textAlign: "center", borderBottom: "1px solid #cbd5e1" }}>कॉपी</th>
+                      <th style={{ width: "45px", textAlign: "center" }}>#</th>
+                      <th style={{ width: "120px", textAlign: "center" }}>भूमिका</th>
+                      <th style={{ textAlign: "left" }}>पासवर्ड</th>
+                      <th style={{ width: "65px", textAlign: "center" }}>कॉपी</th>
                     </tr>
                   </thead>
                   <tbody>
                     {viewCredsModal.creds
                       .filter((c) => modalBoothFilter === "ALL" || c.boothNumber === modalBoothFilter)
-                      .map((c, idx) => (
-                        <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9", background: c.role === "CANDIDATE_ADMIN" ? "#f0f9ff" : "#ffffff" }}>
-                          <td style={{ padding: "8px 12px" }}>
-                            <span style={{
-                              fontSize: "11px",
-                              fontWeight: 800,
-                              padding: "2px 8px",
-                              borderRadius: "6px",
-                              background: c.role === "CANDIDATE_ADMIN" ? "#dbeafe" : "#d1fae5",
-                              color: c.role === "CANDIDATE_ADMIN" ? "#1d4ed8" : "#047857"
-                            }}>
-                              {c.role === "CANDIDATE_ADMIN" ? "कैंडिडेट" : "कार्यकर्ता"}
-                            </span>
-                          </td>
-                          <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a" }}>{c.name}</td>
-                          <td style={{ padding: "8px 12px" }}>
-                            <span style={{ background: "#f1f5f9", padding: "2px 6px", borderRadius: "4px", fontWeight: 700, fontSize: "11px" }}>
-                              बूथ {c.boothNumber}
-                            </span>
-                          </td>
-                          <td style={{ padding: "8px 12px", fontFamily: "monospace", fontWeight: 700, color: "#0369a1" }}>{c.phone}</td>
-                          <td style={{ padding: "8px 12px" }}>
-                            <code style={{ background: "#f1f5f9", padding: "3px 6px", borderRadius: "4px", fontWeight: 700, color: "#0f172a" }}>
-                              {c.password}
-                            </code>
-                          </td>
-                          <td style={{ padding: "8px 12px", textAlign: "center" }}>
-                            <button
-                              type="button"
-                              className="outline"
-                              style={{ padding: "2px 6px", fontSize: "11px" }}
-                              onClick={() => {
-                                navigator.clipboard.writeText(`मोबाइल: ${c.phone}\nपासवर्ड: ${c.password}`);
-                                setActivationToast(`लॉगिन क्रेडेंशियल कॉपी हो गया!`);
-                                setTimeout(() => setActivationToast(""), 2500);
-                              }}
-                              title="कॉपी करें"
-                            >
-                              <Copy size={12} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      .map((c, idx) => {
+                        const serial = (c as any).serialNumber || (idx + 1);
+                        const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+                        return (
+                          <tr key={c.id || idx} style={{ background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
+                            <td style={{ textAlign: "center", fontWeight: 800, color: "#64748b", fontSize: "13px" }}>
+                              {serial}
+                            </td>
+                            <td style={{ textAlign: "center" }}>
+                              <span className={roleTitle === "ADMIN" ? "pillAdmin" : "pillMember"}>
+                                {roleTitle}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                <span className="boothPassCode">{c.password}</span>
+                                <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>(बूथ {c.boothNumber})</span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: "center" }}>
+                              <button
+                                type="button"
+                                className="outline"
+                                style={{ padding: "3px 7px", fontSize: "11px" }}
+                                onClick={() => {
+                                  navigator.clipboard.writeText(c.password);
+                                  setCopiedPwdId(c.id);
+                                  setTimeout(() => setCopiedPwdId(""), 2000);
+                                }}
+                                title="पासवर्ड कॉपी करें"
+                              >
+                                {copiedPwdId === c.id ? "✓" : <Copy size={12} />}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
+
+                <div className="boothPassFooter">
+                  <span>बनाया गया : {viewCredsModal.createdAtStr || new Date().toLocaleString("hi-IN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true })}</span>
+                  <span>कुल : {viewCredsModal.creds.length}</span>
+                </div>
               </div>
 
               <div style={{ marginTop: "16px", display: "flex", justifyContent: "flex-end" }}>

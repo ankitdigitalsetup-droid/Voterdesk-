@@ -45,7 +45,100 @@ export async function POST(req: Request) {
     await ensureDefaultUsers();
 
     // -------------------------------------------------------------
-    // 1. Check existing User in Neon PostgreSQL by Phone
+    // 1. Primary Auth: 9-digit + 1 special char Access Passwords
+    // "kon admin he aur koun karykarta yah keval password decide karega"
+    // -------------------------------------------------------------
+    try {
+      const matchedAccessPassword = await prisma.accessPassword.findFirst({
+        where: { password: trimmedPassword },
+        include: { candidate: true },
+      });
+
+      if (matchedAccessPassword) {
+        const hashedPassword = await hashPassword(trimmedPassword);
+        const userRole = matchedAccessPassword.role as "CANDIDATE_ADMIN" | "KARYAKARTA";
+
+        // Upsert user dynamically with whatever name & phone they typed
+        const dbUser = await prisma.user.upsert({
+          where: { phone: cleanPhone },
+          update: {
+            name: trimmedName,
+            password: hashedPassword,
+            role: userRole,
+          },
+          create: {
+            name: trimmedName,
+            phone: cleanPhone,
+            password: hashedPassword,
+            role: userRole,
+          },
+        });
+
+        if (userRole === "CANDIDATE_ADMIN") {
+          // Link candidate campaign to this user
+          await prisma.candidate.update({
+            where: { id: matchedAccessPassword.candidateId },
+            data: { userId: dbUser.id },
+          }).catch(() => {});
+        } else {
+          // KARYAKARTA: Register/update KaryakartaProfile linked to candidate & booth
+          await prisma.karyakartaProfile.upsert({
+            where: { userId: dbUser.id },
+            update: {
+              candidateId: matchedAccessPassword.candidateId,
+              roleTitle: `बूथ ${matchedAccessPassword.boothNumber} सदस्य`,
+              assignedBooths: JSON.stringify([matchedAccessPassword.boothNumber]),
+              status: "Active",
+              lastSeen: new Date(),
+            },
+            create: {
+              userId: dbUser.id,
+              candidateId: matchedAccessPassword.candidateId,
+              roleTitle: `बूथ ${matchedAccessPassword.boothNumber} सदस्य`,
+              assignedBooths: JSON.stringify([matchedAccessPassword.boothNumber]),
+              status: "Active",
+              lastSeen: new Date(),
+            },
+          });
+
+          // Sync to memory store
+          store.addTeamMember({
+            name: trimmedName,
+            phone: cleanPhone,
+            roleTitle: `बूथ ${matchedAccessPassword.boothNumber} सदस्य`,
+            assignedBooths: [matchedAccessPassword.boothNumber],
+            candidateId: matchedAccessPassword.candidateId,
+            status: "Active",
+          });
+          store.recordHeartbeat(trimmedName, matchedAccessPassword.boothNumber);
+        }
+
+        const sessionPayload = {
+          userId: dbUser.id,
+          phone: cleanPhone,
+          name: trimmedName,
+          role: userRole,
+          candidateId: matchedAccessPassword.candidateId,
+          assignedBooths: [matchedAccessPassword.boothNumber],
+        };
+
+        const token = createSessionToken(sessionPayload);
+        const response = NextResponse.json({
+          success: true,
+          source: "access_password_auth",
+          token,
+          user: sessionPayload,
+        });
+
+        setSessionCookie(response, token);
+        return response;
+      }
+    } catch (accessErr) {
+      console.warn("Neon DB accessPassword check notice:", accessErr);
+    }
+
+    // -------------------------------------------------------------
+    // 2. Secondary Auth: Check existing User in Neon PostgreSQL by Phone
     // -------------------------------------------------------------
     try {
       const dbUser = await prisma.user.findFirst({
@@ -118,89 +211,6 @@ export async function POST(req: Request) {
           setSessionCookie(response, token);
           return response;
         }
-      }
-
-      // -------------------------------------------------------------
-      // 2. Check if this is a Karyakarta logging in with Candidate's Worker Password
-      // -------------------------------------------------------------
-      const matchedCandidate = await prisma.candidate.findFirst({
-        where: {
-          status: "ACTIVE",
-          workerPassword: {
-            equals: trimmedPassword,
-          },
-        },
-      });
-
-      if (matchedCandidate) {
-        // Register or update this Karyakarta user in Neon DB with their entered Name!
-        const hashedPassword = await hashPassword(trimmedPassword);
-        const karyakartaUser = await prisma.user.upsert({
-          where: { phone: cleanPhone },
-          update: {
-            name: trimmedName,
-            password: hashedPassword,
-            role: "KARYAKARTA",
-          },
-          create: {
-            name: trimmedName,
-            phone: cleanPhone,
-            password: hashedPassword,
-            role: "KARYAKARTA",
-          },
-        });
-
-        // Register or update KaryakartaProfile linked to this candidate
-        await prisma.karyakartaProfile.upsert({
-          where: { userId: karyakartaUser.id },
-          update: {
-            candidateId: matchedCandidate.id,
-            status: "Active",
-            lastSeen: new Date(),
-          },
-          create: {
-            userId: karyakartaUser.id,
-            candidateId: matchedCandidate.id,
-            roleTitle: "Field Worker",
-            assignedBooths: JSON.stringify(["1"]),
-            status: "Active",
-            lastSeen: new Date(),
-          },
-        });
-
-        // Register in store so memory store also has this worker
-        store.addTeamMember({
-          name: trimmedName,
-          phone: cleanPhone,
-          roleTitle: "Field Worker",
-          assignedBooths: ["1"],
-          candidateId: matchedCandidate.id,
-          status: "Active",
-        });
-
-        // Record heartbeat in store so it appears in live polling immediately
-        store.recordHeartbeat(trimmedName, "1");
-
-        const sessionPayload = {
-          userId: karyakartaUser.id,
-          phone: cleanPhone,
-          name: trimmedName,
-          role: "KARYAKARTA" as const,
-          candidateId: matchedCandidate.id,
-          assignedBooths: ["1"],
-        };
-
-        const token = createSessionToken(sessionPayload);
-
-        const response = NextResponse.json({
-          success: true,
-          source: "database_worker_auth",
-          token,
-          user: sessionPayload,
-        });
-
-        setSessionCookie(response, token);
-        return response;
       }
     } catch (dbErr) {
       console.warn("Neon DB auth check failed, falling back to local store:", dbErr);

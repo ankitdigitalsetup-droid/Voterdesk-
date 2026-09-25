@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
-import { CandidateAccount } from "@/lib/types";
+import { CandidateAccount, BoothAccessPassword } from "@/lib/types";
 
 function mapDbCandidateToAccount(c: any): CandidateAccount {
   return {
@@ -16,6 +16,8 @@ function mapDbCandidateToAccount(c: any): CandidateAccount {
     createdAt: c.createdAt ? new Date(c.createdAt).toISOString().split("T")[0] : "2026-08-01",
     posterUrl: c.posterUrl || undefined,
     symbolName: c.symbolName || undefined,
+    nikay: c.nikay || undefined,
+    passwordsJson: c.passwordsJson || undefined,
   };
 }
 
@@ -79,11 +81,16 @@ export async function createCandidate(data: {
   voterLimit?: number;
   candidatePassword?: string;
   workerPassword?: string;
+  nikay?: string;
+  passwords?: BoothAccessPassword[];
+  passwordsJson?: string;
   voters?: any[];
 }): Promise<CandidateAccount> {
   const boothTotal = Number(data.boothCount) || 10;
   const cleanPhone = String(data.phone).replace(/\D/g, "");
   let createdCandidate: CandidateAccount | null = null;
+  const serializedPasswords =
+    data.passwordsJson || (data.passwords && data.passwords.length > 0 ? JSON.stringify(data.passwords) : null);
 
   try {
     const { hashPassword } = await import("@/lib/auth/password");
@@ -118,8 +125,9 @@ export async function createCandidate(data: {
         status: data.status || "ACTIVE",
         posterUrl: data.posterUrl || null,
         symbolName: data.symbolName || null,
+        nikay: data.nikay || null,
+        passwordsJson: serializedPasswords,
         voterLimit: data.voterLimit || 50000,
-        workerPassword: workerPass,
         userId: candUser.id,
       },
     });
@@ -143,7 +151,23 @@ export async function createCandidate(data: {
       });
     }
 
-    // 4. Batch import voters if provided
+    // 4. Create Access Passwords if provided (1 booth = 4 passwords, 2 booths = 8 passwords)
+    if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
+      const accessPwdData = data.passwords.map((p) => ({
+        password: p.password,
+        role: p.role,
+        roleTitle: p.roleTitle,
+        boothNumber: String(p.boothNumber || "1"),
+        candidateId: dbRecord.id,
+      }));
+
+      await prisma.accessPassword.createMany({
+        data: accessPwdData,
+        skipDuplicates: true,
+      });
+    }
+
+    // 5. Batch import voters if provided
     let importedVotersCount = 0;
     if (data.voters && Array.isArray(data.voters) && data.voters.length > 0) {
       const { batchImportVoters } = await import("@/lib/db/voters");
@@ -178,9 +202,65 @@ export async function createCandidate(data: {
     status: data.status || "ACTIVE",
     posterUrl: data.posterUrl,
     symbolName: data.symbolName,
+    nikay: data.nikay,
+    passwordsJson: serializedPasswords || undefined,
   });
 
+  if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
+    const candidateIdForStore = createdCandidate?.id || storeCandidate.id;
+    store.addAccessPasswords(
+      data.passwords.map((p) => ({
+        ...p,
+        candidateId: candidateIdForStore,
+      }))
+    );
+  }
+
   return createdCandidate || storeCandidate;
+}
+
+/**
+ * Retrieves access passwords for a candidate.
+ */
+export async function getCandidatePasswords(candidateId: string): Promise<BoothAccessPassword[]> {
+  try {
+    const dbList = await prisma.accessPassword.findMany({
+      where: { candidateId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    if (dbList.length > 0) {
+      return dbList.map((p, idx) => ({
+        id: p.id,
+        serialNumber: idx + 1,
+        password: p.password,
+        role: p.role as "CANDIDATE_ADMIN" | "KARYAKARTA",
+        roleTitle: p.roleTitle as "ADMIN" | "MEMBER",
+        boothNumber: p.boothNumber,
+        candidateId: p.candidateId,
+      }));
+    }
+
+    // Try reading cached passwordsJson from candidate record
+    const cand = await prisma.candidate.findUnique({
+      where: { id: candidateId },
+      select: { passwordsJson: true },
+    });
+    if (cand?.passwordsJson) {
+      try {
+        const parsed = JSON.parse(cand.passwordsJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+  } catch (err) {
+    console.warn("Neon DB getCandidatePasswords notice, falling back to store:", err);
+  }
+
+  return store.getCandidatePasswords(candidateId);
 }
 
 /**

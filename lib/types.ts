@@ -22,18 +22,30 @@ export interface CandidateAccount {
   createdAt: string;
   posterUrl?: string;
   symbolName?: string;
+  nikay?: string;
+  passwordsJson?: string;
 }
 
 export interface CandidateCredential {
   id: string;
-  name: string;
-  phone: string;
+  name?: string;
+  phone?: string;
   password: string;
   role: Role;
   candidateId: string;
   assignedBooths: string[];
   boothNumber: string;
-  roleTitle: string;
+  roleTitle: "ADMIN" | "MEMBER" | string;
+}
+
+export interface BoothAccessPassword {
+  id: string;
+  serialNumber: number;
+  password: string;
+  role: "CANDIDATE_ADMIN" | "KARYAKARTA";
+  roleTitle: "ADMIN" | "MEMBER";
+  boothNumber: string;
+  candidateId: string;
 }
 
 export interface VoterRecord {

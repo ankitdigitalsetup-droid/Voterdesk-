@@ -36,16 +36,33 @@ model Candidate {
   voterLimit       Int      @default(50000)
   posterUrl        String?  // Candidate Campaign Poster Image
   symbolName       String?  // Election Voting Symbol
-  workerPassword   String?  // Campaign Worker / Karyakarta Access Password
+  nikay            String?  // निकाय e.g. 3000039
+  passwordsJson    String?  // JSON cache of generated passwords
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   userId String?
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  booths      Booth[]
-  voters      Voter[]
-  karyakartas KaryakartaProfile[]
+  booths           Booth[]
+  voters           Voter[]
+  karyakartas      KaryakartaProfile[]
+  accessPasswords  AccessPassword[]
+}
+
+// 9-digit numeric + 1 special char Access Passwords (1 Booth = 1 ADMIN + 3 MEMBER = 4 Passwords)
+model AccessPassword {
+  id          String    @id @default(cuid())
+  password    String    @unique
+  role        String    // "CANDIDATE_ADMIN" | "KARYAKARTA"
+  roleTitle   String    // "ADMIN" | "MEMBER"
+  boothNumber String    // "1", "2", etc.
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([candidateId])
+  @@index([password])
 }
 
 // Booth / Polling Station

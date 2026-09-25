@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCandidates, createCandidate, updateCandidate } from "@/lib/db/candidates";
+import { getCandidates, createCandidate, updateCandidate, getCandidatePasswords } from "@/lib/db/candidates";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 export async function GET(req: Request) {
@@ -7,6 +7,7 @@ export async function GET(req: Request) {
     const session = getSessionFromRequest(req);
     const { searchParams } = new URL(req.url);
     const queryCandidateId = searchParams.get("id");
+    const wantPasswords = searchParams.get("passwords") === "true";
 
     // If logged in as CANDIDATE_ADMIN or KARYAKARTA, scope to their candidate
     let targetCandidateId: string | undefined = undefined;
@@ -17,7 +18,18 @@ export async function GET(req: Request) {
     }
 
     const candidates = await getCandidates(targetCandidateId);
-    return NextResponse.json({ success: true, candidates });
+
+    // If caller specifically requested passwords for a candidate
+    let candidatePasswords: any[] = [];
+    if (wantPasswords && targetCandidateId) {
+      candidatePasswords = await getCandidatePasswords(targetCandidateId);
+    }
+
+    return NextResponse.json({
+      success: true,
+      candidates,
+      passwords: candidatePasswords.length > 0 ? candidatePasswords : undefined,
+    });
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Failed to fetch candidates", details: err instanceof Error ? err.message : String(err) },
@@ -51,6 +63,9 @@ export async function POST(req: Request) {
       boothCount,
       posterUrl,
       symbolName,
+      nikay,
+      passwords,
+      passwordsJson,
       voterLimit,
       candidatePassword,
       workerPassword,
@@ -70,6 +85,9 @@ export async function POST(req: Request) {
       boothCount: Number(boothCount) || 10,
       posterUrl,
       symbolName,
+      nikay: nikay || "3000039",
+      passwords: Array.isArray(passwords) ? passwords : undefined,
+      passwordsJson,
       voterLimit: Number(voterLimit) || 50000,
       candidatePassword: candidatePassword || "voterdesk",
       workerPassword: workerPassword || "karyakarta",
