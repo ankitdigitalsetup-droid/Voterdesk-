@@ -77,15 +77,41 @@ export async function createCandidate(data: {
   posterUrl?: string;
   symbolName?: string;
   voterLimit?: number;
+  candidatePassword?: string;
+  workerPassword?: string;
+  voters?: any[];
 }): Promise<CandidateAccount> {
   const boothTotal = Number(data.boothCount) || 10;
+  const cleanPhone = String(data.phone).replace(/\D/g, "");
   let createdCandidate: CandidateAccount | null = null;
 
   try {
+    const { hashPassword } = await import("@/lib/auth/password");
+    const candidatePass = data.candidatePassword || "voterdesk";
+    const workerPass = data.workerPassword || "karyakarta";
+    const hashedPassword = await hashPassword(candidatePass);
+
+    // 1. Create or update Candidate Admin user
+    const candUser = await prisma.user.upsert({
+      where: { phone: cleanPhone },
+      update: {
+        name: data.name,
+        password: hashedPassword,
+        role: "CANDIDATE_ADMIN",
+      },
+      create: {
+        name: data.name,
+        phone: cleanPhone,
+        password: hashedPassword,
+        role: "CANDIDATE_ADMIN",
+      },
+    });
+
+    // 2. Create Candidate Campaign linked to Candidate Admin user
     const dbRecord = await prisma.candidate.create({
       data: {
         name: data.name,
-        phone: data.phone,
+        phone: cleanPhone,
         party: data.party || "Independent",
         electionName: data.electionName || "Municipal Election 2026",
         wardConstituency: data.wardConstituency || "Ward 01",
@@ -93,10 +119,12 @@ export async function createCandidate(data: {
         posterUrl: data.posterUrl || null,
         symbolName: data.symbolName || null,
         voterLimit: data.voterLimit || 50000,
+        workerPassword: workerPass,
+        userId: candUser.id,
       },
     });
 
-    // Auto-create initial booths
+    // 3. Auto-create initial booths
     const boothsData = [];
     for (let i = 1; i <= Math.min(boothTotal, 50); i++) {
       boothsData.push({
@@ -115,25 +143,41 @@ export async function createCandidate(data: {
       });
     }
 
+    // 4. Batch import voters if provided
+    let importedVotersCount = 0;
+    if (data.voters && Array.isArray(data.voters) && data.voters.length > 0) {
+      const { batchImportVoters } = await import("@/lib/db/voters");
+      const mappedVoters = data.voters.map((v, idx) => ({
+        ...v,
+        candidateId: dbRecord.id,
+        serialNo: v.serialNo || idx + 1,
+        booth: String(v.booth || "1"),
+        epic: v.epic || `RJX${String(v.booth || "1").padStart(2, "0")}${String(idx + 1).padStart(5, "0")}`,
+      }));
+      const res = await batchImportVoters(dbRecord.id, mappedVoters);
+      importedVotersCount = res.importedCount;
+    }
+
     createdCandidate = mapDbCandidateToAccount({
       ...dbRecord,
       booths: boothsData,
-      _count: { voters: 0 },
+      _count: { voters: importedVotersCount },
     });
   } catch (err) {
     console.warn("Neon DB createCandidate notice, creating in store:", err);
   }
 
-  // Also sync to store
+  // Also sync to memory store
   const storeCandidate = store.addCandidate({
     name: data.name,
-    phone: data.phone,
+    phone: cleanPhone,
     party: data.party || "Independent",
     electionName: data.electionName || "Municipal Election 2026",
     wardConstituency: data.wardConstituency || "Ward 01",
     boothCount: boothTotal,
     status: data.status || "ACTIVE",
     posterUrl: data.posterUrl,
+    symbolName: data.symbolName,
   });
 
   return createdCandidate || storeCandidate;

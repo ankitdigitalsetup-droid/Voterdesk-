@@ -91,500 +91,67 @@ class DataStore {
       id: "usr_super_1",
       name: "Master Super Admin",
       phone: "9999999999",
-      password: "superadmin",
+      password: "SuperAdmin@2026",
       role: "SUPER_ADMIN",
-    },
-    {
-      id: "usr_cand_1",
-      name: "Abhay Kumar",
-      phone: "9414114497",
-      password: "voterdesk",
-      role: "CANDIDATE_ADMIN",
-      candidateId: "cand_1",
-    },
-    {
-      id: "usr_work_1",
-      name: "Amit Joshi",
-      phone: "9829012345",
-      password: "karyakarta",
-      role: "KARYAKARTA",
-      candidateId: "cand_1",
-      assignedBooths: ["1", "12", "13"],
-    },
-    {
-      id: "usr_work_2",
-      name: "Neha Saini",
-      phone: "9829054321",
-      password: "karyakarta",
-      role: "KARYAKARTA",
-      candidateId: "cand_1",
-      assignedBooths: ["15"],
     }
   ];
 
-  private candidates: CandidateAccount[] = [
-    {
-      id: "cand_1",
-      name: "Abhay Kumar",
-      phone: "9414114497",
-      party: "Independent (निर्दलीय)",
-      electionName: "Bhilwara Municipal Election 2026",
-      wardConstituency: "Ward 34",
-      status: "ACTIVE",
-      voterCount: 28460,
-      boothCount: 18,
-      createdAt: "2026-08-01",
-    },
-    {
-      id: "cand_2",
-      name: "Rajesh Meena",
-      phone: "9829011223",
-      party: "Lok Vikas Party",
-      electionName: "Kota North Municipal 2026",
-      wardConstituency: "Ward 12",
-      status: "ACTIVE",
-      voterCount: 14200,
-      boothCount: 9,
-      createdAt: "2026-08-15",
-    },
-    {
-      id: "cand_3",
-      name: "Sunita Sharma",
-      phone: "9829077889",
-      party: "Janata Ekta",
-      electionName: "Jaipur Nagar Nigam 2026",
-      wardConstituency: "Ward 07",
-      status: "ACTIVE",
-      voterCount: 31200,
-      boothCount: 21,
-      createdAt: "2026-08-20",
-    }
-  ];
+  private candidates: CandidateAccount[] = [];
 
-  private team: TeamMember[] = [
-    {
-      id: "team_1",
-      name: "Amit Joshi",
-      phone: "+91 98290 12345",
-      roleTitle: "Booth Supervisor",
-      assignedBooths: ["1", "12", "13"],
-      status: "Active",
-      candidateId: "cand_1",
-      contactedCount: 84,
-    },
-    {
-      id: "team_2",
-      name: "Neha Saini",
-      phone: "+91 98290 54321",
-      roleTitle: "Field Worker",
-      assignedBooths: ["15"],
-      status: "Active",
-      candidateId: "cand_1",
-      contactedCount: 58,
-    },
-    {
-      id: "team_3",
-      name: "Rahul Meena",
-      phone: "+91 98290 99887",
-      roleTitle: "Field Worker",
-      assignedBooths: ["14"],
-      status: "Active",
-      candidateId: "cand_1",
-      contactedCount: 67,
-    },
-    {
-      id: "team_4",
-      name: "Pooja Rathore",
-      phone: "+91 98290 44556",
-      roleTitle: "Data Operator",
-      assignedBooths: ["18"],
-      status: "Active",
-      candidateId: "cand_1",
-      contactedCount: 41,
-    }
-  ];
+  private team: TeamMember[] = [];
 
-  private voters: VoterRecord[] = [
-    {
-      id: "v_1",
-      name: "मंगल चन्द",
-      epic: "RJX1001001",
-      guardian: "पांचू राम",
-      age: "48",
-      gender: "Male",
-      house: "12",
-      address: "वार्ड 34, स्टेशन रोड",
-      booth: "1",
-      serialNo: 2,
-      voted: "हाँ",
-      isSupporter: "हाँ",
-      isOutside: "नहीं",
-      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      phone: "9829011111",
-      candidateId: "cand_1",
-      notes: "पक्का समर्थक"
-    },
-    {
-      id: "v_2",
-      name: "ज़रीना",
-      epic: "RJX1001002",
-      guardian: "मुनवर अली",
-      age: "42",
-      gender: "Female",
-      house: "14",
-      address: "वार्ड 34, गांधी नगर",
-      booth: "1",
-      serialNo: 3,
-      voted: "नहीं",
-      isSupporter: "हाँ",
-      isOutside: "नहीं",
-      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      phone: "9829022222",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_3",
-      name: "तनवीर कुरेशी",
-      epic: "RJX1001003",
-      guardian: "अब्दुल रशीद",
-      age: "36",
-      gender: "Male",
-      house: "16",
-      booth: "1",
-      serialNo: 6,
-      status: "Contacted",
-      worker: "Amit Joshi",
-      phone: "9829033333",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_4",
-      name: "जुबेर खान",
-      epic: "RJX1001004",
-      guardian: "अनवर खान",
-      age: "31",
-      gender: "Male",
-      house: "19",
-      booth: "1",
-      serialNo: 10,
-      status: "Contacted",
-      worker: "Amit Joshi",
-      phone: "9829044444",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_5",
-      name: "कमला",
-      epic: "RJX1001005",
-      guardian: "हरि",
-      age: "55",
-      gender: "Female",
-      house: "22",
-      booth: "1",
-      serialNo: 11,
-      status: "Slip-Given",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_6",
-      name: "जमीला बानो",
-      epic: "RJX1001006",
-      guardian: "जब्बार खान",
-      age: "49",
-      gender: "Female",
-      house: "25",
-      booth: "1",
-      serialNo: 13,
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_7",
-      name: "हलीमी",
-      epic: "RJX1001007",
-      guardian: "सत्तार",
-      age: "52",
-      gender: "Female",
-      house: "27",
-      booth: "1",
-      serialNo: 14,
-      status: "Contacted",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_8",
-      name: "साबूदीन खान",
-      epic: "RJX1001008",
-      guardian: "सतार",
-      age: "45",
-      gender: "Male",
-      house: "29",
-      booth: "1",
-      serialNo: 15,
-      status: "Pending",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_9",
-      name: "सूरमा",
-      epic: "RJX1001009",
-      guardian: "साबूदीन",
-      age: "41",
-      gender: "Female",
-      house: "29",
-      booth: "1",
-      serialNo: 16,
-      status: "Pending",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_10",
-      name: "समसुदीन",
-      epic: "RJX1001010",
-      guardian: "सत्तार",
-      age: "38",
-      gender: "Male",
-      house: "31",
-      booth: "1",
-      serialNo: 17,
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_11",
-      name: "सलमा",
-      epic: "RJX1001011",
-      guardian: "समसुदीन",
-      age: "34",
-      gender: "Female",
-      house: "31",
-      booth: "1",
-      serialNo: 18,
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_12",
-      name: "बन्ना",
-      epic: "RJX1001012",
-      guardian: "सत्तार",
-      age: "36",
-      gender: "Male",
-      house: "34",
-      booth: "1",
-      serialNo: 19,
-      status: "Contacted",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_13",
-      name: "खातून बानो",
-      epic: "RJX1001013",
-      guardian: "गफ्फार अली",
-      age: "60",
-      gender: "Female",
-      house: "38",
-      booth: "1",
-      serialNo: 20,
-      status: "Slip-Given",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_14",
-      name: "मोहम्मद अनवर अली",
-      epic: "RJX1001014",
-      guardian: "मुनाज अली",
-      age: "43",
-      gender: "Male",
-      house: "41",
-      booth: "1",
-      serialNo: 21,
-      status: "Pending",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_15",
-      name: "रज्जाक",
-      epic: "RJX1001015",
-      guardian: "गफ्फार अली",
-      age: "47",
-      gender: "Male",
-      house: "44",
-      booth: "1",
-      serialNo: 22,
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_16",
-      name: "मेथी",
-      epic: "RJX1001016",
-      guardian: "घीसा",
-      age: "58",
-      gender: "Female",
-      house: "47",
-      booth: "1",
-      serialNo: 23,
-      status: "Contacted",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_17",
-      name: "जब्बार",
-      epic: "RJX1001017",
-      guardian: "घीसा",
-      age: "55",
-      gender: "Male",
-      house: "47",
-      booth: "1",
-      serialNo: 24,
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_18",
-      name: "रेखा",
-      epic: "RJX1001018",
-      guardian: "जब्बार",
-      age: "48",
-      gender: "Female",
-      house: "50",
-      booth: "1",
-      serialNo: 25,
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_19",
-      name: "राकेश कुमार शर्मा",
-      epic: "RJX1001019",
-      guardian: "सोहन लाल शर्मा",
-      age: "42",
-      gender: "Male",
-      house: "52",
-      address: "वार्ड 34, शांति नगर",
-      booth: "1",
-      serialNo: 26,
-      voted: "नहीं",
-      isSupporter: "हाँ",
-      isOutside: "नहीं",
-      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      status: "Contacted",
-      worker: "Amit Joshi",
-      phone: "9829066666",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_20",
-      name: "राकेश सैनी",
-      epic: "RJX1001020",
-      guardian: "रामनिवास सैनी",
-      age: "36",
-      gender: "Male",
-      house: "55",
-      address: "वार्ड 34, तिलक नगर",
-      booth: "1",
-      serialNo: 27,
-      voted: "हाँ",
-      isSupporter: "हाँ",
-      isOutside: "नहीं",
-      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      phone: "9829077777",
-      candidateId: "cand_1"
-    },
-    {
-      id: "v_21",
-      name: "Ramesh Kumar Sharma",
-      epic: "RJX1032847",
-      guardian: "Sohan Lal Sharma",
-      age: "46",
-      gender: "Male",
-      house: "42-A",
-      address: "वार्ड 34, पटेल नगर",
-      booth: "12",
-      serialNo: 1,
-      voted: "नहीं",
-      isSupporter: "हाँ",
-      isOutside: "नहीं",
-      boothAddress: "महात्मा गांधी राजकीय विद्यालय, भीलवाड़ा",
-      status: "Contacted",
-      worker: "Amit Joshi",
-      phone: "9829011111",
-      candidateId: "cand_1",
-      notes: "Pakka supporter. Requested voter slip early."
-    },
-    {
-      id: "v_22",
-      name: "Sunita Devi",
-      epic: "RJX1075231",
-      guardian: "Mahesh Kumar",
-      age: "39",
-      gender: "Female",
-      house: "18",
-      address: "वार्ड 34, पटेल नगर",
-      booth: "12",
-      serialNo: 2,
-      voted: "हाँ",
-      isSupporter: "हाँ",
-      isOutside: "नहीं",
-      boothAddress: "महात्मा गांधी राजकीय विद्यालय, भीलवाड़ा",
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      phone: "9829022222",
-      candidateId: "cand_1",
-      notes: "Will vote with entire family (4 voters)."
-    },
-    {
-      id: "v_23",
-      name: "गौरव शर्मा",
-      epic: "RJX1001025",
-      guardian: "संतोष शर्मा",
-      age: "28",
-      gender: "Male",
-      house: "64",
-      address: "वार्ड 34, शास्त्री नगर",
-      booth: "1",
-      serialNo: 28,
-      voted: "हाँ",
-      isSupporter: "हाँ",
-      isOutside: "हाँ",
-      boothAddress: "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
-      status: "In-Favor",
-      worker: "Amit Joshi",
-      phone: "9829088888",
-      candidateId: "cand_1",
-      notes: "युवा कार्यकर्ता, पक्का समर्थक"
-    }
-  ];
+  private voters: VoterRecord[] = [];
 
   // Auth
-  authenticate(phone: string, password?: string) {
+  authenticate(phone: string, password?: string, name?: string) {
     const cleanPhone = phone.replace(/\D/g, "");
-    return this.users.find(
+    const trimmedPass = (password || "").trim();
+    const enteredName = (name || "").trim();
+
+    // 1. Direct match in users list
+    const found = this.users.find(
       (u) =>
         u.phone.replace(/\D/g, "") === cleanPhone &&
-        (!password || u.password === password)
+        (!trimmedPass || u.password === trimmedPass)
     );
+    if (found) {
+      if (enteredName && found.role === "KARYAKARTA") {
+        found.name = enteredName;
+      }
+      return found;
+    }
+
+    // 2. Dynamic Karyakarta login using candidate workerPassword
+    if (trimmedPass && cleanPhone) {
+      const cand = this.candidates.find(
+        (c: any) => c.workerPassword === trimmedPass || c.password === trimmedPass
+      );
+      if (cand) {
+        const workerName = enteredName || "कार्यकर्ता";
+        const newWorker: UserAccount & { password: string } = {
+          id: "usr_" + cleanPhone,
+          name: workerName,
+          phone: cleanPhone,
+          password: trimmedPass,
+          role: "KARYAKARTA",
+          candidateId: cand.id,
+          assignedBooths: ["1"],
+        };
+        this.users.push(newWorker);
+        this.addTeamMember({
+          name: workerName,
+          phone: cleanPhone,
+          roleTitle: "Field Worker",
+          assignedBooths: ["1"],
+          candidateId: cand.id,
+          status: "Active",
+        });
+        this.recordHeartbeat(workerName, "1");
+        return newWorker;
+      }
+    }
+
+    return undefined;
   }
 
   getUser(id: string) {
@@ -643,7 +210,7 @@ class DataStore {
   }
 
   createCandidateBatchWithPasswords(data: {
-    candidate: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string };
+    candidate: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string; workerPassword?: string };
     voters?: Omit<VoterRecord, "id">[];
     credentials: Array<{
       name: string;
@@ -655,7 +222,7 @@ class DataStore {
     }>;
   }) {
     const id = "cand_" + Date.now();
-    const newCand: CandidateAccount = {
+    const newCand: CandidateAccount & { workerPassword?: string; password?: string } = {
       ...data.candidate,
       id,
       voterCount: 0,

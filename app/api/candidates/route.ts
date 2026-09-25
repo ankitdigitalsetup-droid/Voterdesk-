@@ -42,7 +42,20 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { name, phone, party, electionName, wardConstituency, boothCount, posterUrl, symbolName, voterLimit } = body;
+    const {
+      name,
+      phone,
+      party,
+      electionName,
+      wardConstituency,
+      boothCount,
+      posterUrl,
+      symbolName,
+      voterLimit,
+      candidatePassword,
+      workerPassword,
+      voters,
+    } = body;
 
     if (!name || !phone) {
       return NextResponse.json({ error: "Candidate name and phone number are required" }, { status: 400 });
@@ -58,6 +71,9 @@ export async function POST(req: Request) {
       posterUrl,
       symbolName,
       voterLimit: Number(voterLimit) || 50000,
+      candidatePassword: candidatePassword || "voterdesk",
+      workerPassword: workerPassword || "karyakarta",
+      voters: Array.isArray(voters) ? voters : undefined,
       status: "ACTIVE",
     });
 

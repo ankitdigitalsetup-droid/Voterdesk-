@@ -68,12 +68,32 @@ export default function Page() {
   const serverVersionRef = useRef<number>(0);
   serverVersionRef.current = serverVersion;
 
-  // Refresh data from local store
-  const refreshData = () => {
+  // Refresh data from local store and Neon PostgreSQL
+  const refreshData = useCallback(async () => {
     setCandidates([...store.getCandidates()]);
     setVoters([...store.getVoters({ candidateId: activeCandidateId })]);
     setTeam([...store.getTeam(activeCandidateId)]);
-  };
+
+    try {
+      const cRes = await fetch("/api/candidates");
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        if (Array.isArray(cData.candidates) && cData.candidates.length > 0) {
+          setCandidates(cData.candidates);
+        }
+      }
+    } catch {}
+
+    try {
+      const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`);
+      if (tRes.ok) {
+        const tData = await tRes.json();
+        if (Array.isArray(tData.team)) {
+          setTeam(tData.team);
+        }
+      }
+    } catch {}
+  }, [activeCandidateId]);
 
   // Synchronize with server across all 15 mobile devices in real time
   const syncWithServer = useCallback(
@@ -104,6 +124,17 @@ export default function Page() {
             setTimeout(() => setSyncToast(""), 3000);
           }
         }
+
+        // Live team sync so candidate sees any karyakarta who logs in with their name
+        try {
+          const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`);
+          if (tRes.ok) {
+            const tData = await tRes.json();
+            if (Array.isArray(tData.team)) {
+              setTeam(tData.team);
+            }
+          }
+        } catch {}
       } catch {
         if (force) {
           refreshData();
@@ -114,7 +145,7 @@ export default function Page() {
         setIsSyncing(false);
       }
     },
-    [activeCandidateId, user]
+    [activeCandidateId, user, refreshData]
   );
 
   useEffect(() => {
@@ -399,8 +430,9 @@ function Login({
   t: (typeof translations)["hi"];
 }) {
   const [roleTab, setRoleTab] = useState<"CANDIDATE_ADMIN" | "SUPER_ADMIN" | "KARYAKARTA">("CANDIDATE_ADMIN");
-  const [phone, setPhone] = useState("94141 14497");
-  const [password, setPassword] = useState("voterdesk");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -408,28 +440,44 @@ function Login({
     setRoleTab(role);
     setError("");
     if (role === "SUPER_ADMIN") {
+      setName("Super Admin");
       setPhone("99999 99999");
-      setPassword("superadmin");
-    } else if (role === "CANDIDATE_ADMIN") {
-      setPhone("94141 14497");
-      setPassword("voterdesk");
+      setPassword("SuperAdmin@2026");
     } else {
-      setPhone("98290 12345");
-      setPassword("karyakarta");
+      setName("");
+      setPhone("");
+      setPassword("");
     }
   };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) {
+      setError("कृपया अपना पूरा नाम दर्ज करें (Please enter your name)");
+      return;
+    }
+    if (!phone.trim()) {
+      setError("कृपया मोबाइल नंबर दर्ज करें (Please enter mobile number)");
+      return;
+    }
+    if (!password.trim()) {
+      setError("कृपया पासवर्ड दर्ज करें (Please enter password)");
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
-      // Try API route first
+      // 3-field login request: name, phone, password
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, password }),
+        body: JSON.stringify({
+          name: name.trim(),
+          phone: phone.trim(),
+          password: password.trim(),
+        }),
       });
 
       const data = await res.json();
@@ -439,7 +487,7 @@ function Login({
       }
 
       // Fallback to client-side store
-      const localUser = store.authenticate(phone, password);
+      const localUser = store.authenticate(phone, password, name);
       if (localUser) {
         onLogin({
           id: localUser.id,
@@ -452,10 +500,10 @@ function Login({
         return;
       }
 
-      setError(data.error || "Invalid mobile number or password. Check demo credentials.");
+      setError(data.error || "लॉगिन असफल: नाम, मोबाइल या पासवर्ड गलत है।");
     } catch {
       // Fallback if fetch fails
-      const localUser = store.authenticate(phone, password);
+      const localUser = store.authenticate(phone, password, name);
       if (localUser) {
         onLogin({
           id: localUser.id,
@@ -466,7 +514,7 @@ function Login({
           assignedBooths: localUser.assignedBooths,
         });
       } else {
-        setError("Login failed. Please check credentials.");
+        setError("लॉगिन असफल। कृपया नाम, मोबाइल नंबर व पासवर्ड जांचें।");
       }
     } finally {
       setLoading(false);
@@ -544,10 +592,28 @@ function Login({
         )}
 
         <form onSubmit={handleSignIn}>
+          <label>{t.loginNameLabel}</label>
+          <div className="phone" style={{ marginBottom: "14px" }}>
+            <span style={{ fontSize: "14px" }}>👤</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={roleTab === "SUPER_ADMIN" ? "Super Admin" : roleTab === "CANDIDATE_ADMIN" ? "उम्मीदवार का नाम" : "कार्यकर्ता का पूरा नाम"}
+              required
+            />
+          </div>
+
           <label>{t.loginPhoneLabel}</label>
           <div className="phone">
             <span>+91</span>
-            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Mobile number" required />
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="10-अंकीय मोबाइल नंबर"
+              required
+            />
           </div>
 
           <div className="passLabel">
@@ -559,6 +625,7 @@ function Login({
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            placeholder="पासवर्ड दर्ज करें"
             required
           />
 
@@ -568,7 +635,7 @@ function Login({
         </form>
 
         <p className="demo">
-          <ShieldCheck /> {t.loginDemoTip}
+          <ShieldCheck /> {roleTab === "SUPER_ADMIN" ? "मास्टर सुपर एडमिन लॉगिन: 9999999999 / SuperAdmin@2026" : roleTab === "CANDIDATE_ADMIN" ? "सुपर एडमिन द्वारा बनाए गए प्रत्याशी मोबाइल व पासवर्ड से लॉगिन करें।" : "कार्यकर्ता: अपना नाम, मोबाइल नंबर और प्रत्याशी का कार्यकर्ता ऐप पासवर्ड दर्ज करें।"}
         </p>
       </section>
 
@@ -630,6 +697,8 @@ function SuperAdminView({
   const [candName, setCandName] = useState("");
   const [candParty, setCandParty] = useState("Independent (निर्दलीय)");
   const [candPhone, setCandPhone] = useState("");
+  const [candPassword, setCandPassword] = useState("Cand@2026");
+  const [workerPassword, setWorkerPassword] = useState("Worker@2026");
   const [boothCount, setBoothCount] = useState<number>(3); // default 3 booths = 12 passwords
 
   // Poster Upload state
@@ -806,8 +875,8 @@ function SuperAdminView({
     });
   };
 
-  // Dynamic Password Generator Formula (1 booth = 4 passwords: 1 candidate + 3 karyakartas)
-  const generateCredsList = useCallback((count: number, cName: string, cPhone: string) => {
+  // Dynamic Password Generator Formula using Super Admin specified passwords
+  const generateCredsList = useCallback((count: number, cName: string, cPhone: string, cPass: string, wPass: string) => {
     const list: Array<{
       name: string;
       phone: string;
@@ -821,17 +890,18 @@ function SuperAdminView({
     const cleanPhone = cPhone.replace(/\D/g, "");
     const basePhone = cleanPhone.length === 10 ? cleanPhone : "9829012345";
     const prefix = basePhone.substring(0, 6);
+    const chosenCandPass = cPass.trim() || "Cand@2026";
+    const chosenWorkerPass = wPass.trim() || "Worker@2026";
 
     for (let b = 1; b <= count; b++) {
       const bStr = String(b);
       const bPad = b < 10 ? `0${b}` : `${b}`;
 
       // 1. Candidate Password for Booth b
-      const candPin = Math.floor(1000 + Math.random() * 9000);
       list.push({
         name: b === 1 ? baseName : `${baseName} (बूथ ${b})`,
         phone: b === 1 && cleanPhone.length === 10 ? cleanPhone : `${prefix}${bPad}0`,
-        password: `CAND@B${b}_${candPin}`,
+        password: chosenCandPass,
         role: "CANDIDATE_ADMIN",
         boothNumber: bStr,
         roleTitle: `बूथ ${b} प्रत्याशी प्रभारी`,
@@ -839,11 +909,10 @@ function SuperAdminView({
 
       // 2. Three Karyakarta Passwords for Booth b
       for (let k = 1; k <= 3; k++) {
-        const karyPin = Math.floor(1000 + Math.random() * 9000);
         list.push({
           name: `कार्यकर्ता ${k} (बूथ ${b})`,
           phone: `${prefix}${bPad}${k}`,
-          password: `WORK@B${b}K${k}_${karyPin}`,
+          password: chosenWorkerPass,
           role: "KARYAKARTA",
           boothNumber: bStr,
           roleTitle: `बूथ ${b} कार्यकर्ता ${k}`,
@@ -853,10 +922,10 @@ function SuperAdminView({
     return list;
   }, []);
 
-  // Synchronize credentials whenever boothCount, candName, or candPhone change
+  // Synchronize credentials whenever boothCount, candName, candPhone, candPassword, or workerPassword change
   useEffect(() => {
-    setCredentials(generateCredsList(boothCount, candName, candPhone));
-  }, [boothCount, candName, candPhone, generateCredsList]);
+    setCredentials(generateCredsList(boothCount, candName, candPhone, candPassword, workerPassword));
+  }, [boothCount, candName, candPhone, candPassword, workerPassword, generateCredsList]);
 
   // Poster File Handler
   const handlePosterUpload = (file: File) => {
@@ -948,13 +1017,21 @@ function SuperAdminView({
   };
 
   // Submit Activation
-  const handleActivateSetup = () => {
+  const handleActivateSetup = async () => {
     if (!candName.trim()) {
       alert("कृपया प्रत्याशी का नाम दर्ज करें!");
       return;
     }
     if (!candPhone.trim()) {
       alert("कृपया मुख्य मोबाइल नंबर दर्ज करें!");
+      return;
+    }
+    if (!candPassword.trim()) {
+      alert("कृपया प्रत्याशी लॉगिन पासवर्ड दर्ज करें!");
+      return;
+    }
+    if (!workerPassword.trim()) {
+      alert("कृपया कार्यकर्ता ऐप पासवर्ड दर्ज करें!");
       return;
     }
     if (boothCount < 1) {
@@ -964,6 +1041,36 @@ function SuperAdminView({
 
     setIsActivating(true);
     try {
+      // 1. Send to Neon PostgreSQL API
+      let createdCandidateId = "";
+      try {
+        const apiRes = await fetch("/api/candidates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: candName.trim(),
+            phone: candPhone.trim(),
+            party: candParty.trim(),
+            electionName: electionName.trim(),
+            wardConstituency: wardNo.trim(),
+            boothCount: Number(boothCount),
+            posterUrl: posterPreview || undefined,
+            candidatePassword: candPassword.trim(),
+            workerPassword: workerPassword.trim(),
+            voters: parsedVoters,
+          }),
+        });
+        if (apiRes.ok) {
+          const apiData = await apiRes.json();
+          if (apiData.candidate) {
+            createdCandidateId = apiData.candidate.id;
+          }
+        }
+      } catch (apiErr) {
+        console.warn("Candidate API notice, falling back to local store:", apiErr);
+      }
+
+      // 2. Register in client-side store
       const result = store.createCandidateBatchWithPasswords({
         candidate: {
           name: candName.trim(),
@@ -974,10 +1081,16 @@ function SuperAdminView({
           boothCount: Number(boothCount),
           status: "ACTIVE",
           posterUrl: posterPreview || undefined,
-        },
+          password: candPassword.trim(),
+          workerPassword: workerPassword.trim(),
+        } as any,
         voters: parsedVoters,
         credentials: credentials,
       });
+
+      if (createdCandidateId) {
+        result.candidate.id = createdCandidateId;
+      }
 
       onCandidateCreated();
 
@@ -1308,6 +1421,33 @@ function SuperAdminView({
                   </div>
                 </div>
 
+                {/* Custom Passwords for Candidate and Karyakarta Mobile App */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#0062cc" }}>🔑 प्रत्याशी लॉगिन पासवर्ड *</label>
+                    <input
+                      type="text"
+                      value={candPassword}
+                      onChange={(e) => setCandPassword(e.target.value)}
+                      placeholder="उदा. Cand@2026"
+                      required
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #0062cc", fontWeight: 700, background: "#f8fafc" }}
+                    />
+                  </div>
+
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#059669" }}>📱 कार्यकर्ता ऐप पासवर्ड *</label>
+                    <input
+                      type="text"
+                      value={workerPassword}
+                      onChange={(e) => setWorkerPassword(e.target.value)}
+                      placeholder="उदा. Worker@2026"
+                      required
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1.5px solid #059669", fontWeight: 700, background: "#f8fafc" }}
+                    />
+                  </div>
+                </div>
+
                 {/* Booth Count Selector */}
                 <div className="formGroup" style={{ margin: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
@@ -1512,7 +1652,7 @@ function SuperAdminView({
                     type="button"
                     className="outline"
                     style={{ padding: "6px 10px", fontSize: "12px" }}
-                    onClick={() => setCredentials(generateCredsList(boothCount, candName, candPhone))}
+                    onClick={() => setCredentials(generateCredsList(boothCount, candName, candPhone, candPassword, workerPassword))}
                     title="रैंडम पिन री-जनरेट करें"
                   >
                     <RefreshCw size={12} /> री-जनरेट
