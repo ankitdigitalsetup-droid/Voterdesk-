@@ -114,6 +114,7 @@ export async function POST(req: Request) {
         }
 
         const sessionPayload = {
+          id: dbUser.id,
           userId: dbUser.id,
           phone: cleanPhone,
           name: trimmedName,

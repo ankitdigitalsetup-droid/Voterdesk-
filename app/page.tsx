@@ -76,17 +76,34 @@ export default function Page() {
     setTeam([...store.getTeam(activeCandidateId)]);
 
     try {
-      const cRes = await fetch("/api/candidates");
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const cRes = await fetch("/api/candidates", { headers, credentials: "include" });
       if (cRes.ok) {
         const cData = await cRes.json();
         if (Array.isArray(cData.candidates) && cData.candidates.length > 0) {
-          setCandidates(cData.candidates);
+          setCandidates((prev) => {
+            const map = new Map<string, CandidateAccount>();
+            // Add server candidates
+            cData.candidates.forEach((c: CandidateAccount) => map.set(c.id, c));
+            // Preserve any newly created local candidates not yet returned
+            prev.forEach((c) => {
+              if (!map.has(c.id)) map.set(c.id, c);
+            });
+            return Array.from(map.values());
+          });
         }
       }
     } catch {}
 
     try {
-      const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`);
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`, { headers, credentials: "include" });
       if (tRes.ok) {
         const tData = await tRes.json();
         if (Array.isArray(tData.team)) {
@@ -162,9 +179,35 @@ export default function Page() {
     return () => clearInterval(timer);
   }, [syncWithServer]);
 
-  // When user logs in, set candidate id and navigate DIRECTLY to voter roll!
+  // Restore logged-in session on page reload if present
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined") {
+        const savedUserStr = localStorage.getItem("voterdesk_user");
+        if (savedUserStr) {
+          const savedUser = JSON.parse(savedUserStr);
+          if (savedUser && savedUser.phone) {
+            setUser(savedUser);
+            if (savedUser.candidateId) {
+              setActiveCandidateId(savedUser.candidateId);
+            }
+            if (savedUser.role === "SUPER_ADMIN") {
+              setPage("superadmin");
+            }
+          }
+        }
+      }
+    } catch {}
+  }, []);
+
+  // When user logs in, set candidate id, persist, and navigate
   const handleLogin = (authenticatedUser: UserAccount) => {
     setUser(authenticatedUser);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("voterdesk_user", JSON.stringify(authenticatedUser));
+      } catch {}
+    }
     if (authenticatedUser.candidateId) {
       setActiveCandidateId(authenticatedUser.candidateId);
     }
@@ -174,9 +217,21 @@ export default function Page() {
       // Both Candidate Admin and Karyakarta land directly on Booth Manager voter roll!
       setPage("boothmanager");
     }
+    setTimeout(() => {
+      refreshData();
+    }, 100);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth", { method: "DELETE", credentials: "include" });
+    } catch {}
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("voterdesk_token");
+        localStorage.removeItem("voterdesk_user");
+      } catch {}
+    }
     setUser(null);
     setPage("boothmanager");
   };
@@ -199,7 +254,12 @@ export default function Page() {
           setActiveCandidateId(candId);
           setPage("boothmanager");
         }}
-        onCandidateCreated={refreshData}
+        onCandidateCreated={(createdCand?: CandidateAccount) => {
+          if (createdCand) {
+            setCandidates((prev) => [createdCand, ...prev.filter((c) => c.id !== createdCand.id)]);
+          }
+          refreshData();
+        }}
         onLogout={handleLogout}
         lang={lang}
         toggleLang={toggleLang}
@@ -483,6 +543,11 @@ function Login({
 
       const data = await res.json();
       if (res.ok && data.success) {
+        if (data.token && typeof window !== "undefined") {
+          try {
+            localStorage.setItem("voterdesk_token", data.token);
+          } catch {}
+        }
         onLogin(data.user);
         return;
       }
@@ -679,7 +744,7 @@ function SuperAdminView({
   user: UserAccount;
   candidates: CandidateAccount[];
   onSelectCandidate: (id: string) => void;
-  onCandidateCreated: () => void;
+  onCandidateCreated: (newCandidate?: CandidateAccount) => void;
   onLogout: () => void;
   lang: Lang;
   toggleLang: () => void;
@@ -888,7 +953,7 @@ function SuperAdminView({
     setBoothPasswords(generateCandidateBoothPasswords(boothCount));
   }, [boothCount]);
 
-  // Poster File Handler
+  // Poster File Handler with automatic client-side compression (reduces 5MB-10MB photos to ~40KB)
   const handlePosterUpload = (file: File) => {
     if (!file || !file.type.startsWith("image/")) {
       alert("कृपया एक मान्य इमेज फ़ाइल (.jpg, .png, .webp) चुनें।");
@@ -897,7 +962,38 @@ function SuperAdminView({
     setPosterFileName(file.name);
     const reader = new FileReader();
     reader.onload = (e) => {
-      setPosterPreview(e.target?.result as string);
+      const rawDataUrl = e.target?.result as string;
+      if (!rawDataUrl) return;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 800;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.75);
+          setPosterPreview(compressed);
+        } else {
+          setPosterPreview(rawDataUrl);
+        }
+      };
+      img.onerror = () => {
+        setPosterPreview(rawDataUrl);
+      };
+      img.src = rawDataUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -997,59 +1093,92 @@ function SuperAdminView({
 
       // 1. Send to Neon PostgreSQL API
       let createdCandidateId = "";
-      try {
-        const apiRes = await fetch("/api/candidates", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: candName.trim(),
-            phone: finalPhone,
-            party: candParty.trim(),
-            electionName: electionName.trim(),
-            wardConstituency: wardNo.trim(),
-            boothCount: Number(boothCount),
-            posterUrl: posterPreview || undefined,
-            symbolName: symbolName.trim(),
-            nikay: nikay.trim() || "3000039",
-            passwords: pwdsToSave,
-            passwordsJson: serializedPwds,
-            voters: parsedVoters,
-          }),
-        });
-        if (apiRes.ok) {
-          const apiData = await apiRes.json();
-          if (apiData.candidate) {
-            createdCandidateId = apiData.candidate.id;
-          }
-        }
-      } catch (apiErr) {
-        console.warn("Candidate API notice, falling back to local store:", apiErr);
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
       }
 
-      // 2. Register in client-side store
-      const result = store.createCandidateBatchWithPasswords({
-        candidate: {
+      // If voter list is under 200, we can safely send with candidate creation.
+      // If larger, send candidate first then chunk-upload voters to avoid serverless timeout.
+      const initialVoters = parsedVoters.length <= 200 ? parsedVoters : undefined;
+
+      const apiRes = await fetch("/api/candidates", {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
           name: candName.trim(),
           phone: finalPhone,
           party: candParty.trim(),
           electionName: electionName.trim(),
           wardConstituency: wardNo.trim(),
           boothCount: Number(boothCount),
-          status: "ACTIVE",
           posterUrl: posterPreview || undefined,
           symbolName: symbolName.trim(),
           nikay: nikay.trim() || "3000039",
+          passwords: pwdsToSave,
           passwordsJson: serializedPwds,
-        },
-        passwords: pwdsToSave,
+          voters: initialVoters,
+        }),
+      });
+
+      if (!apiRes.ok) {
+        const errJson = await apiRes.json().catch(() => ({}));
+        throw new Error(errJson.error || errJson.message || `सर्वर त्रुटि (Status ${apiRes.status})`);
+      }
+
+      const apiData = await apiRes.json();
+      if (apiData.candidate) {
+        createdCandidateId = apiData.candidate.id;
+      }
+
+      const finalCandId = createdCandidateId || `cand_${Date.now()}`;
+
+      // If voters > 200, upload in background chunks
+      if (parsedVoters.length > 200 && finalCandId) {
+        setActivationToast("⏳ प्रत्याशी और पासवर्ड सेव हो गए! अब वोटर लिस्ट अपलोड हो रही है...");
+        const CHUNK_SIZE = 300;
+        for (let i = 0; i < parsedVoters.length; i += CHUNK_SIZE) {
+          const chunk = parsedVoters.slice(i, i + CHUNK_SIZE);
+          await fetch("/api/voters", {
+            method: "POST",
+            headers,
+            credentials: "include",
+            body: JSON.stringify({
+              candidateId: finalCandId,
+              voters: chunk,
+            }),
+          }).catch((chunkErr) => console.warn("Voter batch import notice:", chunkErr));
+        }
+      }
+
+      const newCandObj: CandidateAccount = {
+        id: finalCandId,
+        name: candName.trim(),
+        phone: finalPhone,
+        party: candParty.trim(),
+        electionName: electionName.trim(),
+        wardConstituency: wardNo.trim(),
+        boothCount: Number(boothCount),
+        voterCount: parsedVoters.length,
+        status: "ACTIVE",
+        createdAt: new Date().toISOString().split("T")[0],
+        posterUrl: posterPreview || undefined,
+        symbolName: symbolName.trim(),
+        nikay: nikay.trim() || "3000039",
+        passwordsJson: serializedPwds,
+      };
+
+      // 2. Register in client-side store
+      store.createCandidateBatchWithPasswords({
+        candidate: newCandObj,
+        passwords: pwdsToSave.map((p) => ({ ...p, candidateId: finalCandId })),
         voters: parsedVoters,
       });
 
-      if (createdCandidateId) {
-        result.candidate.id = createdCandidateId;
-      }
-
-      onCandidateCreated();
+      // 3. Immediately trigger server sync & optimistic UI update in parent
+      onCandidateCreated(newCandObj);
 
       const createdTime = new Date().toLocaleString("hi-IN", {
         day: "2-digit",
@@ -1066,7 +1195,7 @@ function SuperAdminView({
       // Open credentials export modal so admin can immediately print / copy / download
       setViewCredsModal({
         candidate: {
-          ...result.candidate,
+          ...newCandObj,
           nikay: nikay.trim() || "3000039",
           symbolName: symbolName.trim() || "गुब्बारा",
           wardConstituency: wardNo.trim(),
@@ -1839,7 +1968,10 @@ function SuperAdminView({
                             let creds: (BoothAccessPassword | CandidateCredential)[] = store.getCandidatePasswords(cand.id);
                             if (!creds || creds.length === 0) {
                               try {
-                                const res = await fetch(`/api/candidates/passwords?candidateId=${cand.id}`);
+                                const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+                                const headers: Record<string, string> = {};
+                                if (token) headers["Authorization"] = `Bearer ${token}`;
+                                const res = await fetch(`/api/candidates/passwords?candidateId=${cand.id}`, { headers, credentials: "include" });
                                 if (res.ok) {
                                   const d = await res.json();
                                   if (Array.isArray(d.passwords) && d.passwords.length > 0) {

@@ -87,7 +87,8 @@ export async function createCandidate(data: {
   voters?: any[];
 }): Promise<CandidateAccount> {
   const boothTotal = Number(data.boothCount) || 10;
-  const cleanPhone = String(data.phone).replace(/\D/g, "");
+  const rawPhone = String(data.phone).replace(/\D/g, "");
+  const cleanPhone = rawPhone.length === 10 ? rawPhone : `98${Math.floor(10000000 + Math.random() * 90000000)}`;
   let createdCandidate: CandidateAccount | null = null;
   const serializedPasswords =
     data.passwordsJson || (data.passwords && data.passwords.length > 0 ? JSON.stringify(data.passwords) : null);
@@ -98,19 +99,19 @@ export async function createCandidate(data: {
     const workerPass = data.workerPassword || "karyakarta";
     const hashedPassword = await hashPassword(candidatePass);
 
-    // 1. Create or update Candidate Admin user
+    // 1. Create or update Candidate Admin user (never downgrade SUPER_ADMIN)
     const candUser = await prisma.user.upsert({
       where: { phone: cleanPhone },
       update: {
         name: data.name,
         password: hashedPassword,
-        role: "CANDIDATE_ADMIN",
+        ...(cleanPhone !== "9999999999" ? { role: "CANDIDATE_ADMIN" } : {}),
       },
       create: {
         name: data.name,
         phone: cleanPhone,
         password: hashedPassword,
-        role: "CANDIDATE_ADMIN",
+        role: cleanPhone === "9999999999" ? "SUPER_ADMIN" : "CANDIDATE_ADMIN",
       },
     });
 
@@ -187,36 +188,36 @@ export async function createCandidate(data: {
       booths: boothsData,
       _count: { voters: importedVotersCount },
     });
+
+    // Also sync to memory store with the EXACT Neon DB id
+    store.addCandidate({
+      name: data.name,
+      phone: cleanPhone,
+      party: data.party || "Independent",
+      electionName: data.electionName || "Municipal Election 2026",
+      wardConstituency: data.wardConstituency || "Ward 01",
+      boothCount: boothTotal,
+      status: data.status || "ACTIVE",
+      posterUrl: data.posterUrl,
+      symbolName: data.symbolName,
+      nikay: data.nikay,
+      passwordsJson: serializedPasswords || undefined,
+    });
+
+    if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
+      store.addAccessPasswords(
+        data.passwords.map((p) => ({
+          ...p,
+          candidateId: dbRecord.id,
+        }))
+      );
+    }
+
+    return createdCandidate;
   } catch (err) {
-    console.warn("Neon DB createCandidate notice, creating in store:", err);
+    console.error("Neon DB createCandidate error:", err);
+    throw err;
   }
-
-  // Also sync to memory store
-  const storeCandidate = store.addCandidate({
-    name: data.name,
-    phone: cleanPhone,
-    party: data.party || "Independent",
-    electionName: data.electionName || "Municipal Election 2026",
-    wardConstituency: data.wardConstituency || "Ward 01",
-    boothCount: boothTotal,
-    status: data.status || "ACTIVE",
-    posterUrl: data.posterUrl,
-    symbolName: data.symbolName,
-    nikay: data.nikay,
-    passwordsJson: serializedPasswords || undefined,
-  });
-
-  if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
-    const candidateIdForStore = createdCandidate?.id || storeCandidate.id;
-    store.addAccessPasswords(
-      data.passwords.map((p) => ({
-        ...p,
-        candidateId: candidateIdForStore,
-      }))
-    );
-  }
-
-  return createdCandidate || storeCandidate;
 }
 
 /**
