@@ -1976,8 +1976,9 @@
 /* TOP A5: Candidate Campaign Poster */
 .a4TopPoster {
   width: 100%;
-  min-height: 180px;
-  max-height: 560px;
+  height: 380px;
+  min-height: 200px;
+  max-height: 380px;
   background: #f8fafc;
   display: flex;
   align-items: center;
@@ -1985,13 +1986,14 @@
   position: relative;
   border-bottom: 2px dashed #94a3b8;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .a4TopPoster img,
 .a4TopPoster .a4PosterImg {
   width: 100%;
   height: 100%;
-  max-height: 560px;
+  max-height: 380px;
   object-fit: contain;
   object-position: center;
   display: block;
@@ -2023,7 +2025,7 @@
 /* BOTTOM A5: Slips Area */
 .a4BottomSlips {
   width: 100%;
-  padding: 14px 16px 16px;
+  padding: 10px 14px 12px;
   background: #ffffff;
   display: flex;
   flex-direction: column;
@@ -2034,21 +2036,21 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 8px;
-  margin-bottom: 10px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
   border-bottom: 1.5px solid #e2e8f0;
   gap: 8px;
   flex-wrap: wrap;
 }
 
 .a4BottomTitle {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 800;
   color: #0369a1;
 }
 
 .a4BottomSub {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   color: #64748b;
 }
@@ -2057,8 +2059,8 @@
 .a4SlipsGrid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  grid-auto-rows: minmax(130px, auto);
-  gap: 10px;
+  grid-auto-rows: minmax(115px, auto);
+  gap: 8px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -2071,13 +2073,13 @@
   border: 1.5px dashed #0062cc;
   background: #ffffff;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   box-sizing: border-box;
-  min-height: 130px;
+  min-height: 115px;
 }
 
 .a4EmptySlipCard {
@@ -2087,7 +2089,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 130px;
+  min-height: 115px;
   box-sizing: border-box;
 }
 
@@ -2286,13 +2288,33 @@
 }
 
 /* =====================================================================
-   PRINT ISOLATION: A4 SINGLE PAGE
+   PRINT ISOLATION: A4 SINGLE PAGE (GUARANTEED 1-PAGE WITH 0 OVERFLOW)
    ===================================================================== */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 4mm 6mm !important;
+  }
+
+  html, body {
+    width: 210mm !important;
+    height: 297mm !important;
+    max-height: 297mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    overflow: hidden !important;
+  }
+
   body.printing-a4-family-slip {
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
+    height: 100% !important;
+    max-height: 297mm !important;
+    overflow: hidden !important;
   }
 
   body.printing-a4-family-slip .bmTableContainer,
@@ -2311,7 +2333,14 @@
     position: static !important;
     background: transparent !important;
     padding: 0 !important;
+    margin: 0 !important;
     overflow: visible !important;
+  }
+
+  body.printing-a4-family-slip .a4SheetWrapper {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
   }
 
   body.printing-a4-family-slip .a4FamilySheet,
@@ -2320,54 +2349,165 @@
   }
 
   body.printing-a4-family-slip .a4FamilySheet {
-    position: absolute !important;
+    position: relative !important;
     left: 0 !important;
     top: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    margin: 0 !important;
+    max-height: 285mm !important;
+    margin: 0 auto !important;
     box-shadow: none !important;
     border: none !important;
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
+    overflow: hidden !important;
   }
 
+  /* Fixed Top Poster Height for A4 single-page proportion */
   body.printing-a4-family-slip .a4TopPoster {
-    height: 540px !important;
-    max-height: 540px !important;
+    height: 360px !important;
+    max-height: 360px !important;
+    min-height: 360px !important;
     background: #ffffff !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    border-bottom: 2px dashed #94a3b8 !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
   }
 
   body.printing-a4-family-slip .a4TopPoster img,
   body.printing-a4-family-slip .a4TopPoster .a4PosterImg {
     width: 100% !important;
-    height: 100% !important;
-    max-height: 540px !important;
+    height: 360px !important;
+    max-height: 360px !important;
     object-fit: contain !important;
+    object-position: center !important;
+    display: block !important;
   }
 
+  /* Compact Bottom Slips Container */
+  body.printing-a4-family-slip .a4BottomSlips {
+    padding: 6px 10px 4px !important;
+    box-sizing: border-box !important;
+  }
+
+  body.printing-a4-family-slip .a4BottomHeader {
+    padding-bottom: 3px !important;
+    margin-bottom: 4px !important;
+    border-bottom: 1.5px solid #cbd5e1 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+  }
+
+  body.printing-a4-family-slip .a4BottomTitle {
+    font-size: 12px !important;
+    font-weight: 800 !important;
+    color: #0369a1 !important;
+  }
+
+  body.printing-a4-family-slip .a4BottomSub {
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    color: #475569 !important;
+  }
+
+  /* Slips Grid (2 columns x 3 rows) */
   body.printing-a4-family-slip .a4SlipsGrid {
     display: grid !important;
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 10px !important;
+    gap: 5px 8px !important;
+    box-sizing: border-box !important;
   }
 
+  /* Fixed height cards so 3 rows ALWAYS stay on page 1 */
   body.printing-a4-family-slip .a4MiniSlipCard {
-    min-height: 130px !important;
-    padding: 8px 10px !important;
+    min-height: 102px !important;
+    max-height: 114px !important;
+    padding: 4px 8px !important;
+    border: 1.5px dashed #0062cc !important;
+    border-radius: 6px !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    overflow: hidden !important;
   }
 
   body.printing-a4-family-slip .a4EmptySlipCard {
     border: 1.5px dashed #cbd5e1 !important;
     background: #ffffff !important;
-    min-height: 130px !important;
+    min-height: 102px !important;
+    max-height: 114px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   body.printing-a4-family-slip .a4EmptyCardInner {
     display: none !important;
     visibility: hidden !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipTopRow {
+    font-size: 9px !important;
+    padding: 1.5px 5px !important;
+    margin-bottom: 2px !important;
+    background: #eff6ff !important;
+    color: #1e40af !important;
+    font-weight: 800 !important;
+    display: flex !important;
+    justify-content: space-between !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipNameRow {
+    font-size: 11px !important;
+    margin-bottom: 1px !important;
+    line-height: 1.15 !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipGuardianRow {
+    font-size: 9px !important;
+    margin-bottom: 1px !important;
+    line-height: 1.15 !important;
+    color: #334155 !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipMidRow {
+    font-size: 9px !important;
+    margin-bottom: 1px !important;
+    color: #334155 !important;
+    display: flex !important;
+    justify-content: space-between !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipEpicRow {
+    font-size: 9.5px !important;
+    margin-bottom: 1px !important;
+    color: #0062cc !important;
+    font-weight: 800 !important;
+    font-family: monospace !important;
+  }
+
+  body.printing-a4-family-slip .a4SlipBoothAddress {
+    font-size: 7.5px !important;
+    line-height: 1.1 !important;
+    padding-top: 1.5px !important;
+    margin-top: 1px !important;
+    color: #64748b !important;
+    border-top: 1px dotted #e2e8f0 !important;
   }
 }
 

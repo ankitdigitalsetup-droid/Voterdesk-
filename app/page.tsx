@@ -1122,7 +1122,7 @@ function SuperAdminView({
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const maxDim = 800;
+        const maxDim = 1200;
         let width = img.width;
         let height = img.height;
         if (width > maxDim || height > maxDim) {
@@ -1139,7 +1139,7 @@ function SuperAdminView({
         const ctx = canvas.getContext("2d");
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressed = canvas.toDataURL("image/jpeg", 0.75);
+          const compressed = canvas.toDataURL("image/jpeg", 0.82);
           setPosterPreview(compressed);
         } else {
           setPosterPreview(rawDataUrl);
@@ -1755,13 +1755,55 @@ function SuperAdminView({
               </div>
 
               {/* Column 2: Candidate Campaign Poster Upload */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <h4 style={{ margin: "0 0 2px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
                   🖼️ 2. प्रत्याशी पोस्टर / बैनर अपलोड
                 </h4>
                 <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
                   यह पोस्टर वोटर स्लिप, व्हाट्सएप शेयरिंग और डिजिटल कार्ड में प्रदर्शित होगा।
                 </p>
+
+                {/* Poster Sample Size Guide Box (Min to Max Size Badge) */}
+                <div
+                  style={{
+                    background: "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)",
+                    border: "1.5px solid #7dd3fc",
+                    borderRadius: "10px",
+                    padding: "10px 12px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "6px",
+                    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.04)",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", color: "#0369a1", fontWeight: 800, fontSize: "12px" }}>
+                    <span>📐</span>
+                    <span>अनुशंसित पोस्टर साइज़ (Recommended Dimensions):</span>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "11px" }}>
+                    <div style={{ background: "#ffffff", padding: "5px 8px", borderRadius: "6px", border: "1px solid #bae6fd" }}>
+                      <span style={{ color: "#0369a1", fontWeight: 700 }}>🔹 न्यूनतम (Min) साइज़:</span>
+                      <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "11.5px" }}>600 × 800 px</div>
+                      <div style={{ fontSize: "9.5px", color: "#64748b" }}>फाइल: Min 50 KB</div>
+                    </div>
+                    <div style={{ background: "#ffffff", padding: "5px 8px", borderRadius: "6px", border: "1px solid #bae6fd" }}>
+                      <span style={{ color: "#059669", fontWeight: 700 }}>⭐ आदर्श (Ideal) साइज़:</span>
+                      <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "11.5px" }}>800 × 1060 px</div>
+                      <div style={{ fontSize: "9.5px", color: "#64748b" }}>अनुपात: 3:4 या 4:5</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px", background: "#ffffff", padding: "4px 8px", borderRadius: "6px", border: "1px solid #bae6fd", color: "#334155" }}>
+                    <span>🔺 <b>अधिकतम (Max) साइज़:</b> 1200 × 1600 px (Max 2 MB)</span>
+                    <span style={{ color: "#64748b" }}>JPG, PNG</span>
+                  </div>
+
+                  <div style={{ fontSize: "10px", color: "#0284c7", fontWeight: 600, display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span>💡</span>
+                    <span>इस साइज़ का पोस्टर <b>A4 फैमिली वोटर पर्ची</b> में बिना कटे <b>1 ही पेज</b> में पूरा सेट होगा।</span>
+                  </div>
+                </div>
 
                 <input
                   ref={posterInputRef}
@@ -1778,16 +1820,19 @@ function SuperAdminView({
                   <div
                     className="saUploadDropzone"
                     onClick={() => posterInputRef.current?.click()}
+                    style={{ cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", padding: "16px 12px", border: "2px dashed #0284c7", borderRadius: "10px", background: "#f8fafc" }}
                   >
-                    <ImageIcon size={32} color="#0284c7" />
-                    <b style={{ fontSize: "13.5px", color: "#0f172a" }}>प्रत्याशी का पोस्टर चुनें या ड्रैग करें</b>
-                    <span style={{ fontSize: "11px", color: "#64748b" }}>JPG, PNG, WEBP (अधिकतम 5MB)</span>
+                    <ImageIcon size={30} color="#0284c7" />
+                    <b style={{ fontSize: "13px", color: "#0f172a" }}>प्रत्याशी का पोस्टर चुनें या ड्रैग करें</b>
+                    <span style={{ fontSize: "11px", color: "#64748b" }}>
+                      Min: 600×800 px | Ideal: 800×1060 px | Max: 1200×1600 px
+                    </span>
                     <button
                       type="button"
                       className="outline"
-                      style={{ padding: "4px 12px", fontSize: "12px", pointerEvents: "none" }}
+                      style={{ padding: "5px 14px", fontSize: "12px", pointerEvents: "none", marginTop: "2px", fontWeight: 700 }}
                     >
-                      फ़ाइल ब्राउज़ करें
+                      📁 फ़ाइल ब्राउज़ करें (Browse)
                     </button>
                   </div>
                 ) : (
@@ -1810,13 +1855,16 @@ function SuperAdminView({
                     <div style={{ fontSize: "12px", color: "#059669", fontWeight: 700, marginTop: "6px" }}>
                       ✓ पोस्टर सेट: {posterFileName || "poster.jpg"}
                     </div>
+                    <div style={{ fontSize: "10.5px", color: "#0284c7", marginTop: "2px" }}>
+                      📐 साइज़: 600×800 px से 1200×1600 px (3:4)
+                    </div>
                     <button
                       type="button"
                       className="outline"
-                      style={{ padding: "4px 10px", fontSize: "11px", marginTop: "4px" }}
+                      style={{ padding: "4px 12px", fontSize: "11.5px", marginTop: "5px", fontWeight: 700 }}
                       onClick={() => posterInputRef.current?.click()}
                     >
-                      पोस्टर बदलें
+                      🔄 पोस्टर बदलें (Change Poster)
                     </button>
                   </div>
                 )}
@@ -3456,7 +3504,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         img.onload = () => {
           try {
             const topW = w;
-            const topH = 860;
+            const topH = 750;
             const imgAspect = (img.naturalWidth || img.width || topW) / (img.naturalHeight || img.height || topH);
             const areaAspect = topW / topH;
 
@@ -3487,13 +3535,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         };
         img.onerror = () => {
           ctx.fillStyle = "#0284c7";
-          ctx.fillRect(0, 0, w, 860);
+          ctx.fillRect(0, 0, w, 750);
           ctx.fillStyle = "#ffffff";
           ctx.font = "bold 48px sans-serif";
           ctx.textAlign = "center";
-          ctx.fillText(candidate?.name || "प्रत्याशी चुनाव प्रचार", w / 2, 420);
+          ctx.fillText(candidate?.name || "प्रत्याशी चुनाव प्रचार", w / 2, 350);
           ctx.font = "bold 28px sans-serif";
-          ctx.fillText(candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा", w / 2, 480);
+          ctx.fillText(candidate?.party ? `पार्टी: ${candidate.party}` : "मतदाता सेवा", w / 2, 410);
           resolve();
         };
       });
@@ -3503,50 +3551,50 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.lineWidth = 3;
       ctx.setLineDash([12, 8]);
       ctx.beginPath();
-      ctx.moveTo(20, 875);
-      ctx.lineTo(w - 20, 875);
+      ctx.moveTo(20, 765);
+      ctx.lineTo(w - 20, 765);
       ctx.stroke();
       ctx.setLineDash([]); // reset
 
       // Cut badge
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(w / 2 - 100, 862, 200, 26);
+      ctx.fillRect(w / 2 - 100, 752, 200, 26);
       ctx.strokeStyle = "#cbd5e1";
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(w / 2 - 100, 862, 200, 26);
+      ctx.strokeRect(w / 2 - 100, 752, 200, 26);
       ctx.fillStyle = "#475569";
       ctx.font = "bold 15px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("✂ यहाँ से काटें / Cut Here", w / 2, 881);
+      ctx.fillText("✂ यहाँ से काटें / Cut Here", w / 2, 770);
 
-      // 4. Bottom A5: Family Voter Slips (895 to 1735)
+      // 4. Bottom A5: Family Voter Slips (790 to 1660)
       // Header Banner
       ctx.fillStyle = "#0284c7";
       ctx.font = "bold 26px sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(`👨‍👩‍👧‍👦 परिवार मतदाता पर्ची / FAMILY VOTER SLIP (मकान नं: ${familyFilter?.house || "—"})`, 40, 920);
+      ctx.fillText(`👨‍👩‍👧‍👦 परिवार मतदाता पर्ची / FAMILY VOTER SLIP (मकान नं: ${familyFilter?.house || "—"})`, 40, 808);
 
       ctx.fillStyle = "#64748b";
       ctx.font = "bold 18px sans-serif";
       ctx.textAlign = "right";
-      ctx.fillText(`भाग संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`, w - 40, 920);
+      ctx.fillText(`भाग संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`, w - 40, 808);
 
       // Thin separator line
       ctx.strokeStyle = "#cbd5e1";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(40, 935);
-      ctx.lineTo(w - 40, 935);
+      ctx.moveTo(40, 822);
+      ctx.lineTo(w - 40, 822);
       ctx.stroke();
 
       // Slips Grid: 2 columns x 3 rows (ALWAYS 6 slots, empty slots remain blank)
       const slips = selectedFamilyVoters.slice(0, 6);
       const startX = 40;
-      const startY = 955;
+      const startY = 840;
       const cardW = 565;
-      const cardH = 240;
+      const cardH = 255;
       const gapX = 30;
-      const gapY = 20;
+      const gapY = 16;
 
       for (let slotIndex = 0; slotIndex < 6; slotIndex++) {
         const col = slotIndex % 2;
@@ -3607,15 +3655,15 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.strokeStyle = "#e2e8f0";
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(x + 12, y + 186);
-          ctx.lineTo(x + cardW - 12, y + 186);
+          ctx.moveTo(x + 12, y + 188);
+          ctx.lineTo(x + cardW - 12, y + 188);
           ctx.stroke();
 
           // Polling Station / Booth Address
           ctx.fillStyle = "#64748b";
           ctx.font = "14px sans-serif";
           const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
-          ctx.fillText(addrText.length > 48 ? addrText.substring(0, 48) + "..." : addrText, x + 16, y + 214);
+          ctx.fillText(addrText.length > 48 ? addrText.substring(0, 48) + "..." : addrText, x + 16, y + 218);
         } else {
           // Draw empty / blank card placeholder (preserving the 6-slot geometry, leaving slot blank)
           ctx.fillStyle = "#ffffff";
