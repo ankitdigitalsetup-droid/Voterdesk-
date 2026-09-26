@@ -1,6 +1,32 @@
 import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 
+/**
+ * Natural numerical comparator for Voter Records.
+ * Orders strictly by booth (1, 2, 3...) and serialNo (1, 2, 3, 4, ... 10, ... 100, ... 1000).
+ * Never orders lexicographically as strings (1, 10, 100, 1000).
+ */
+export function compareVotersBySerial(a: VoterRecord, b: VoterRecord, desc = false): number {
+  const boothA = parseInt(String(a.booth || "").replace(/\D/g, ""), 10);
+  const boothB = parseInt(String(b.booth || "").replace(/\D/g, ""), 10);
+  const validBoothA = isNaN(boothA) ? 0 : boothA;
+  const validBoothB = isNaN(boothB) ? 0 : boothB;
+  if (validBoothA !== validBoothB) {
+    return validBoothA - validBoothB;
+  }
+
+  const numA = parseInt(String(a.serialNo || "").replace(/\D/g, ""), 10);
+  const numB = parseInt(String(b.serialNo || "").replace(/\D/g, ""), 10);
+  const validA = isNaN(numA) ? 99999999 : numA;
+  const validB = isNaN(numB) ? 99999999 : numB;
+
+  if (validA !== validB) {
+    return desc ? validB - validA : validA - validB;
+  }
+
+  return (a.name || "").localeCompare(b.name || "");
+}
+
 // In-Memory & Persistent global store for high-speed multi-mobile synchronization
 class DataStore {
   private version: number = Date.now();
@@ -448,7 +474,7 @@ class DataStore {
     if (params.query) {
       list = list.filter((v) => matchesVoter(v, params.query!));
     }
-    return list;
+    return [...list].sort((a, b) => compareVotersBySerial(a, b));
   }
 
   addVoter(voter: Omit<VoterRecord, "id"> & { id?: string }) {
@@ -530,8 +556,9 @@ class DataStore {
   }
 
   setVotersList(candidateId: string, newVoters: VoterRecord[]) {
+    const sorted = [...newVoters].sort((a, b) => compareVotersBySerial(a, b));
     const otherVoters = this.voters.filter((v) => v.candidateId !== candidateId);
-    this.voters = [...newVoters, ...otherVoters];
+    this.voters = [...sorted, ...otherVoters];
     const cand = this.candidates.find((c) => c.id === candidateId);
     if (cand) cand.voterCount = newVoters.length;
   }

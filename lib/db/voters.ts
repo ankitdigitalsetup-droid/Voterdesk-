@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { store } from "@/lib/data-store";
+import { store, compareVotersBySerial } from "@/lib/data-store";
 import { VoterRecord } from "@/lib/types";
 
 /**
@@ -145,12 +145,13 @@ export async function getVoters(params: {
 
     const dbVoters = await prisma.voter.findMany({
       where: whereClause,
-      orderBy: [{ booth: "asc" }, { serialNo: "asc" }, { createdAt: "desc" }],
+      orderBy: [{ booth: "asc" }, { createdAt: "asc" }],
     });
 
-    // If database has records, return them
+    // If database has records, return them sorted strictly by natural numerical serial number
     if (dbVoters.length > 0) {
       const voters = dbVoters.map(mapDbVoterToRecord);
+      voters.sort((a, b) => compareVotersBySerial(a, b));
       return { voters, total: voters.length, source: "database" };
     }
 
@@ -356,10 +357,9 @@ export async function batchImportVoters(
         ? String(raw.epic).toUpperCase().trim()
         : `RJX${boothVal.padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
 
-    const serialVal =
-      raw.serialNo != null && String(raw.serialNo).trim() !== ""
-        ? String(raw.serialNo).trim()
-        : String(idx + 1);
+    const rawSerial = raw.serialNo != null ? String(raw.serialNo).trim() : "";
+    const parsedSerialNum = rawSerial !== "" ? parseInt(rawSerial.replace(/\D/g, ""), 10) : NaN;
+    const serialVal = !isNaN(parsedSerialNum) && parsedSerialNum > 0 ? String(parsedSerialNum) : String(idx + 1);
 
     const dbRecord = {
       name,

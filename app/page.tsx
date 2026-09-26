@@ -40,7 +40,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { store } from "@/lib/data-store";
+import { store, compareVotersBySerial } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword } from "@/lib/types";
 import { generateCandidateBoothPasswords, generateBoothPassword } from "@/lib/password-helper";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
@@ -3018,6 +3018,9 @@ function BoothManagerView({
   const [nameSortOrder, setNameSortOrder] = useState<"none" | "asc" | "desc">("none");
   const [showNameSortMenu, setShowNameSortMenu] = useState(false);
 
+  // Serial No. column natural numerical sorting state (Ascending: 1, 2, 3... | Descending: 9999, 9998...)
+  const [serialSortOrder, setSerialSortOrder] = useState<"asc" | "desc">("asc");
+
   // Candidate Menu dropdown state (Current Page Download, All Voters Download, etc.)
   const [showMenuDropdown, setShowMenuDropdown] = useState(false);
 
@@ -4062,9 +4065,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         }
       });
     }
+    // 3. Default & Dedicated: Serial Number (क्रम संख्या) natural numerical sorting: 1, 2, 3, 4, 5... (not 1, 10, 100, 1000)
+    else {
+      list = [...list].sort((a, b) => compareVotersBySerial(a, b, serialSortOrder === "desc"));
+    }
 
     return list;
-  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic, familyFilter, ageSortOrder, nameSortOrder]);
+  }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic, familyFilter, ageSortOrder, nameSortOrder, serialSortOrder]);
 
   // Auto-select and show details drawer when search pinpoints a single voter
   useEffect(() => {
@@ -5453,7 +5460,39 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 </th>
               )}
               <th style={{ width: "55px" }}>{t.colPart}</th>
-              <th style={{ width: "55px" }}>{t.colSerial}</th>
+              <th style={{ width: "80px", position: "relative" }}>
+                <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+                  <span>{t.colSerial}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setNameSortOrder("none");
+                      setAgeSortOrder("none");
+                      setSerialSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                    }}
+                    style={{
+                      background: nameSortOrder === "none" && ageSortOrder === "none" ? "#0284c7" : "#ffffff",
+                      color: nameSortOrder === "none" && ageSortOrder === "none" ? "#ffffff" : "#475569",
+                      border: "1px solid",
+                      borderColor: nameSortOrder === "none" && ageSortOrder === "none" ? "#0284c7" : "#cbd5e1",
+                      borderRadius: "4px",
+                      padding: "2px 4px",
+                      cursor: "pointer",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "2px",
+                      lineHeight: "1",
+                    }}
+                    title={serialSortOrder === "asc" ? "क्रम संख्या: 1 ➔ 2 ➔ 3 (कम से ज्यादा)" : "क्रम संख्या: 9 ➔ 8 ➔ 7 (ज्यादा से कम)"}
+                  >
+                    <ArrowUpDown size={10} />
+                    <span>{serialSortOrder === "asc" ? "1-2-3" : "3-2-1"}</span>
+                  </button>
+                </div>
+              </th>
 
               {/* 3. नाम (Name) with Alphabetical ABCD Sort Button */}
               <th className="thLeft" style={{ minWidth: "160px", position: "relative" }}>
@@ -5835,7 +5874,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     <td className="colPart">{v.booth}</td>
 
                     {/* 2. क्रम संख्या */}
-                    <td className="colSerial">{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
+                    <td className="colSerial" style={{ textAlign: "center", fontWeight: 700 }}>
+                      {v.serialNo !== undefined && v.serialNo !== "" && v.serialNo !== null ? v.serialNo : idx + 1}
+                    </td>
 
                     {/* 3. नाम */}
                     <td className="colName" style={{ cursor: "pointer" }}>
@@ -8364,6 +8405,7 @@ function VotersTable({
   const [showAgeSortMenu, setShowAgeSortMenu] = useState(false);
   const [nameSortOrder, setNameSortOrder] = useState<"none" | "asc" | "desc">("none");
   const [showNameSortMenu, setShowNameSortMenu] = useState(false);
+  const [serialSortOrder, setSerialSortOrder] = useState<"asc" | "desc">("asc");
 
   const extraExcelColumns = useMemo(() => {
     const standardKeys = new Set([
@@ -8459,10 +8501,13 @@ function VotersTable({
           return ageB - ageA;
         }
       });
+    } else {
+      // 3. Default: Serial Number (क्रम संख्या) natural numerical sorting: 1, 2, 3, 4, 5... (not 1, 10, 100, 1000)
+      list = [...list].sort((a, b) => compareVotersBySerial(a, b, serialSortOrder === "desc"));
     }
 
     return list;
-  }, [voters, boothFilter, statusFilter, q, advName, advFather, advAddress, advEpic, ageSortOrder, nameSortOrder]);
+  }, [voters, boothFilter, statusFilter, q, advName, advFather, advAddress, advEpic, ageSortOrder, nameSortOrder, serialSortOrder]);
 
   const handleAddVoter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -8849,7 +8894,39 @@ function VotersTable({
             <thead>
               <tr>
                 <th style={{ width: "65px" }}>भाग संख्या</th>
-                <th style={{ width: "65px" }}>क्रम संख्या</th>
+                <th style={{ width: "85px", position: "relative" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
+                    <span>क्रम संख्या</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNameSortOrder("none");
+                        setAgeSortOrder("none");
+                        setSerialSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                      }}
+                      style={{
+                        background: nameSortOrder === "none" && ageSortOrder === "none" ? "#0284c7" : "#ffffff",
+                        color: nameSortOrder === "none" && ageSortOrder === "none" ? "#ffffff" : "#475569",
+                        border: "1px solid",
+                        borderColor: nameSortOrder === "none" && ageSortOrder === "none" ? "#0284c7" : "#cbd5e1",
+                        borderRadius: "4px",
+                        padding: "2px 4px",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "2px",
+                        lineHeight: "1",
+                      }}
+                      title={serialSortOrder === "asc" ? "क्रम संख्या: 1 ➔ 2 ➔ 3 (कम से ज्यादा)" : "क्रम संख्या: 9 ➔ 8 ➔ 7 (ज्यादा से कम)"}
+                    >
+                      <ArrowUpDown size={10} />
+                      <span>{serialSortOrder === "asc" ? "1-2-3" : "3-2-1"}</span>
+                    </button>
+                  </div>
+                </th>
                 {/* 3. नाम (Name) with Alphabetical ABCD Sort Button */}
                 <th style={{ minWidth: "160px", position: "relative" }}>
                   <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
@@ -9186,7 +9263,7 @@ function VotersTable({
                     <td style={{ textAlign: "center", fontWeight: 600 }}>{v.booth}</td>
 
                     {/* 2. क्रम संख्या */}
-                    <td style={{ textAlign: "center", fontWeight: 700 }}>{v.serialNo !== undefined ? v.serialNo : idx + 1}</td>
+                    <td style={{ textAlign: "center", fontWeight: 700 }}>{v.serialNo !== undefined && v.serialNo !== "" && v.serialNo !== null ? v.serialNo : idx + 1}</td>
 
                     {/* 3. नाम */}
                     <td>
