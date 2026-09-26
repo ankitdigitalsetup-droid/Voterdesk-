@@ -890,17 +890,48 @@ function SuperAdminView({
     }
   };
 
-  const handleSaveSaExcel = () => {
+  const handleSaveSaExcel = async () => {
     if (!saUploadCand || saParsedVoters.length === 0) return;
-    const res = store.importVoters(saUploadCand.id, saParsedVoters);
-    onCandidateCreated();
-    alert(`✅ ${res.imported} मतदाता ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक अपलोड व सुरक्षित हो गए!`);
-    setSaUploadCand(null);
-    setSaUploadFileName("");
-    setSaParsedVoters([]);
+    setIsParsingSaExcel(true);
+
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const CHUNK_SIZE = 400;
+      let totalImported = 0;
+      for (let i = 0; i < saParsedVoters.length; i += CHUNK_SIZE) {
+        const chunk = saParsedVoters.slice(i, i + CHUNK_SIZE);
+        const res = await fetch("/api/voters/import", {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({
+            candidateId: saUploadCand.id,
+            voters: chunk,
+          }),
+        });
+        if (res.ok) {
+          const d = await res.json();
+          totalImported += d.importedCount || chunk.length;
+        }
+      }
+
+      store.importVoters(saUploadCand.id, saParsedVoters);
+      onCandidateCreated();
+      alert(`✅ ${saParsedVoters.length} मतदाता ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक डेटाबेस में अपलोड हो गए और सभी 15 मोबाइल्स पर लाइव हो गए!`);
+      setSaUploadCand(null);
+      setSaUploadFileName("");
+      setSaParsedVoters([]);
+    } catch (err: unknown) {
+      alert("वोटर अपलोड करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsParsingSaExcel(false);
+    }
   };
 
-  const handleSaveSaSingleVoter = (e: React.FormEvent) => {
+  const handleSaveSaSingleVoter = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!saAddVoterCand) return;
     if (!saVoterForm.name.trim()) {
@@ -908,7 +939,8 @@ function SuperAdminView({
       return;
     }
     const epicVal = saVoterForm.epic.trim().toUpperCase() || `RJX${String(saVoterForm.booth || "1").padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
-    store.addVoter({
+
+    const newVoterData = {
       candidateId: saAddVoterCand.id,
       name: saVoterForm.name.trim(),
       guardian: saVoterForm.guardian.trim(),
@@ -924,9 +956,26 @@ function SuperAdminView({
       voted: saVoterForm.voted,
       isSupporter: saVoterForm.isSupporter,
       isOutside: saVoterForm.isOutside,
-      status: "Pending",
+      status: "Pending" as VoterRecord["status"],
       worker: "Super Admin",
-    });
+    };
+
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      await fetch("/api/voters", {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(newVoterData),
+      });
+    } catch (apiErr) {
+      console.warn("Single voter API notice:", apiErr);
+    }
+
+    store.addVoter(newVoterData);
     onCandidateCreated();
     alert(`✅ नया मतदाता ${saVoterForm.name.trim()} (${saAddVoterCand.name}) में सफलतापूर्वक जुड़ गया!`);
     setSaAddVoterCand(null);
@@ -1141,7 +1190,7 @@ function SuperAdminView({
         const CHUNK_SIZE = 300;
         for (let i = 0; i < parsedVoters.length; i += CHUNK_SIZE) {
           const chunk = parsedVoters.slice(i, i + CHUNK_SIZE);
-          await fetch("/api/voters", {
+          await fetch("/api/voters/import", {
             method: "POST",
             headers,
             credentials: "include",

@@ -16,10 +16,49 @@ export function parseExcelFile(file: File): Promise<ParsedSheetData> {
         const workbook = XLSX.read(data, { type: "array" });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
+
+        // Read as 2D array of rows to intelligently detect the header row
+        // Many Indian election Excel exports have title rows like "विधानसभा क्षेत्र 178..." at row 0/1
+        const rawGrid = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
+        if (rawGrid.length === 0) {
+          throw new Error("फ़ाइल खाली है या पार्स नहीं हो सकी। (File is empty)");
+        }
+
+        const keywords = [
+          "नाम", "name", "क्रम", "sr", "serial", "booth", "भाग", "बूथ",
+          "epic", "पहचान", "आयु", "age", "पिता", "पति", "father", "husband",
+          "मकान", "house", "पता", "address", "मोबाइल", "phone", "mobile", "gender", "लिंग"
+        ];
+
+        let bestHeaderRowIndex = 0;
+        let maxMatches = 0;
+
+        // Scan first 10 rows to detect which row actually contains the table headers
+        const maxScanRows = Math.min(rawGrid.length, 10);
+        for (let r = 0; r < maxScanRows; r++) {
+          const row = rawGrid[r];
+          if (!Array.isArray(row)) continue;
+          let matches = 0;
+          for (const cell of row) {
+            const str = String(cell || "").toLowerCase().trim();
+            if (keywords.some((kw) => str.includes(kw))) {
+              matches++;
+            }
+          }
+          if (matches > maxMatches && matches >= 2) {
+            maxMatches = matches;
+            bestHeaderRowIndex = r;
+          }
+        }
+
+        // Parse starting from the detected header row
+        const jsonData = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, {
+          range: bestHeaderRowIndex,
+          defval: "",
+        });
 
         if (jsonData.length === 0) {
-          throw new Error("File is empty or could not be parsed.");
+          throw new Error("फ़ाइल में कोई डेटा पंक्ति नहीं मिली। (No data rows found)");
         }
 
         const columns = Object.keys(jsonData[0]);
@@ -60,80 +99,90 @@ export function detectFieldMapping(columns: string[]) {
   for (const col of columns) {
     const c = col.trim().toLowerCase();
 
-    // 1. भाग संख्या (Part / Booth No)
-    if (!mapping.booth && (c.includes("भाग") || c.includes("part") || c.includes("booth no") || c.includes("बूथ सं") || c.includes("ward") || c.includes("वार्ड"))) {
-      if (!c.includes("address") && !c.includes("पता")) {
+    // 1. भाग / बूथ (Part / Booth No)
+    if (!mapping.booth && (c.includes("भाग") || c.includes("part") || c.includes("booth") || c.includes("बूथ") || c.includes("ward") || c.includes("वार्ड") || c.includes("room"))) {
+      if (!c.includes("address") && !c.includes("पता") && !c.includes("name") && !c.includes("नाम")) {
         mapping.booth = col;
       }
     }
 
     // 2. क्रम संख्या (Serial No)
-    if (!mapping.serialNo && (c.includes("क्रम") || c.includes("serial") || c.includes("sr") || c.includes("sl") || c.includes("s.no") || c.includes("क्र सं") || c.includes("क्रमांक"))) {
+    if (!mapping.serialNo && (c.includes("क्रम") || c.includes("क्रमांक") || c.includes("serial") || c.includes("sr") || c.includes("sl") || c.includes("s.no") || c.includes("क्र सं") || c.includes("cr") || c === "no" || c === "sno" || c === "sr.no" || c === "sl.no")) {
       mapping.serialNo = col;
     }
 
-    // 3. नाम (Name)
-    if (!mapping.name && (c.includes("नाम") || c.includes("elector") || c.includes("voter name") || c.includes("name") || c.includes("मतदाता"))) {
-      if (!c.includes("father") && !c.includes("relation") && !c.includes("guardian") && !c.includes("पति") && !c.includes("पिता")) {
+    // 3. नाम (Name) - Must not conflict with guardian/father/mother/booth
+    if (!mapping.name && (c.includes("नाम") || c.includes("name") || c.includes("elector") || c.includes("voter") || c.includes("मतदाता") || c.includes("नागरिक") || c.includes("व्यक्ति") || c.includes("member"))) {
+      if (!c.includes("father") && !c.includes("relation") && !c.includes("guardian") && !c.includes("पति") && !c.includes("पिता") && !c.includes("माता") && !c.includes("mother") && !c.includes("husband") && !c.includes("rel") && !c.includes("booth") && !c.includes("बूथ") && !c.includes("केंद्र") && !c.includes("station") && !c.includes("ward") && !c.includes("वार्ड")) {
         mapping.name = col;
       }
     }
 
-    // 4. पिता/पति (Guardian / Father / Husband)
-    if (!mapping.guardian && (c.includes("पिता") || c.includes("पति") || c.includes("relation") || c.includes("father") || c.includes("husband") || c.includes("guardian") || c.includes("अभिभावक"))) {
+    // 4. पिता/पति/अभिभावक (Guardian / Father / Husband / Mother / Relative)
+    if (!mapping.guardian && (c.includes("पिता") || c.includes("पति") || c.includes("माता") || c.includes("relation") || c.includes("father") || c.includes("husband") || c.includes("guardian") || c.includes("अभिभावक") || c.includes("संबंधी") || c.includes("रिश्तेदार") || c.includes("spouse") || c.includes("parent"))) {
       mapping.guardian = col;
     }
 
     // 5. वोट डाला (Voted / Cast Vote)
-    if (!mapping.voted && (c.includes("वोट डाला") || c.includes("voted") || c.includes("वोट") || c.includes("मतदान किया") || c.includes("polled"))) {
+    if (!mapping.voted && (c.includes("वोट डाला") || c.includes("voted") || c.includes("मतदान") || c.includes("polled") || c.includes("cast") || c === "वोट")) {
       mapping.voted = col;
     }
 
-    // 6. सपोर्टर है (Is Supporter / In-Favor)
-    if (!mapping.isSupporter && (c.includes("सपोर्टर") || c.includes("supporter") || c.includes("पक्ष") || c.includes("in-favor") || c.includes("infavor") || c.includes("समर्थक") || c.includes("पक्का"))) {
+    // 6. सपोर्टर / पक्ष (Is Supporter / In-Favor)
+    if (!mapping.isSupporter && (c.includes("सपोर्टर") || c.includes("supporter") || c.includes("पक्ष") || c.includes("समर्थक") || c.includes("in-favor") || c.includes("infavor") || c.includes("पक्का") || c.includes("favor"))) {
       mapping.isSupporter = col;
     }
 
-    // 7. बाहर है (Is Outside / Out of Town / Pravasi)
-    if (!mapping.isOutside && (c.includes("बाहर") || c.includes("outside") || c.includes("प्रवासी") || c.includes("pravasi") || c.includes("out of station") || c.includes("अन्यत्र"))) {
+    // 7. बाहर है / प्रवासी (Is Outside / Out of Town / Pravasi)
+    if (!mapping.isOutside && (c.includes("बाहर") || c.includes("outside") || c.includes("प्रवासी") || c.includes("pravasi") || c.includes("out of station") || c.includes("अन्यत्र") || c.includes("absent"))) {
       mapping.isOutside = col;
     }
 
     // 8. मोबाइल नो (Mobile No / Phone)
-    if (!mapping.phone && (c.includes("मोबाइल") || c.includes("phone") || c.includes("mobile") || c.includes("contact") || c.includes("फोन") || c.includes("मो."))) {
+    if (!mapping.phone && (c.includes("मोबाइल") || c.includes("phone") || c.includes("mobile") || c.includes("contact") || c.includes("फोन") || c.includes("मो.") || c.includes("cell") || c.includes("दूरभाष") || c.includes("संपर्क"))) {
       mapping.phone = col;
     }
 
     // 9. हाउस No (House No)
-    if (!mapping.house && (c.includes("हाउस") || c.includes("house") || c.includes("h.no") || c.includes("मकान") || c.includes("गृह"))) {
+    if (!mapping.house && (c.includes("हाउस") || c.includes("house") || c.includes("h.no") || c.includes("h no") || c.includes("मकान") || c.includes("गृह") || c.includes("door") || c.includes("flat") || c.includes("घर"))) {
       mapping.house = col;
     }
 
     // 10. एड्रेस (Address)
-    if (!mapping.address && (c.includes("एड्रेस") || c.includes("address") || c.includes("पता") || c.includes("colony") || c.includes("कॉलोनी") || c.includes("mohalla") || c.includes("मोहल्ला") || c.includes("गली"))) {
-      if (!c.includes("booth") && !c.includes("बूथ")) {
+    if (!mapping.address && (c.includes("एड्रेस") || c.includes("address") || c.includes("पता") || c.includes("colony") || c.includes("कॉलोनी") || c.includes("mohalla") || c.includes("मोहल्ला") || c.includes("गली") || c.includes("street") || c.includes("locality") || c.includes("स्थान") || c.includes("निवास"))) {
+      if (!c.includes("booth") && !c.includes("बूथ") && !c.includes("केंद्र") && !c.includes("station")) {
         mapping.address = col;
       }
     }
 
     // 11. Booth Address (बूथ का पता / Polling Station Address)
-    if (!mapping.boothAddress && ((c.includes("booth") && c.includes("address")) || (c.includes("बूथ") && c.includes("पता")) || c.includes("polling station") || c.includes("मतदान केंद्र पता") || c.includes("मतदान केंद्र का पता"))) {
+    if (!mapping.boothAddress && ((c.includes("booth") && (c.includes("address") || c.includes("name"))) || (c.includes("बूथ") && (c.includes("पता") || c.includes("नाम"))) || c.includes("polling station") || c.includes("मतदान केंद्र") || c.includes("केंद्र पता") || c.includes("केंद्र का नाम"))) {
       mapping.boothAddress = col;
     }
 
-    // Age (आयु / उम्र)
+    // 12. Age (आयु / उम्र)
     if (!mapping.age && (c.includes("age") || c.includes("आयु") || c.includes("उम्र") || c.includes("वय") || c.includes("years") || c.includes("वर्ष"))) {
       mapping.age = col;
     }
 
-    // EPIC / Voter ID (पहचान पत्र क्र.)
-    if (!mapping.epic && (c.includes("epic") || c.includes("voter id") || c.includes("voterid") || c.includes("पहचान पत्र") || c.includes("पहचान") || c.includes("card no") || c.includes("cardno") || c.includes("id no") || c.includes("voter card") || c.includes("कार्ड") || c === "id" || c.includes("epc"))) {
+    // 13. EPIC / Voter ID (पहचान पत्र क्रमांक)
+    if (!mapping.epic && (c.includes("epic") || c.includes("voter id") || c.includes("voterid") || c.includes("पहचान पत्र") || c.includes("पहचान") || c.includes("card no") || c.includes("cardno") || c.includes("id no") || c.includes("voter card") || c.includes("कार्ड") || c === "id" || c.includes("epc") || c.includes("आईडी"))) {
       mapping.epic = col;
     }
 
-    // Optional: Gender
-    if (!mapping.gender && (c.includes("gender") || c.includes("sex") || c.includes("लिंग"))) {
+    // 14. Gender (लिंग)
+    if (!mapping.gender && (c.includes("gender") || c.includes("sex") || c.includes("लिंग") || c.includes("स्त्री/पुरुष") || c.includes("m/f"))) {
       mapping.gender = col;
+    }
+  }
+
+  // Fallback: If name was not matched by keyword, pick the second column if serial was column 0, or first text column
+  if (!mapping.name && columns.length > 0) {
+    for (const col of columns) {
+      if (col !== mapping.serialNo && col !== mapping.booth && col !== mapping.epic && col !== mapping.age) {
+        mapping.name = col;
+        break;
+      }
     }
   }
 
