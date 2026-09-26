@@ -64,6 +64,10 @@ const vowels: Record<string, string> = {
   ऐ: "ai",
   ओ: "o",
   औ: "au",
+  अं: "an",
+  अँ: "an",
+  ऑ: "o",
+  ऍ: "e",
 };
 
 const matras: Record<string, string> = {
@@ -157,7 +161,8 @@ export function getEnglishSortKey(name: string): string {
   if (!name) return "";
   const trimmed = name.trim();
   const roman = devanagariToRoman(trimmed);
-  return roman.replace(/^[^a-z0-9]+/, "");
+  const clean = roman.replace(/^[^a-z0-9]+/i, "").toLowerCase();
+  return clean || trimmed.toLowerCase();
 }
 
 /**

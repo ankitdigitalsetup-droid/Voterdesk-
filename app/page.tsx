@@ -4069,7 +4069,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       return true;
     });
 
-    // Apply Alphabetical Name Sorting strictly according to English Roman ABCD (A-Z / Z-A)
+    // 1. Apply Alphabetical Name Sorting strictly according to English Roman ABCD (A-Z / Z-A)
     // Works for both Hindi Devanagari (transliterated to English phonetics) and English names
     if (nameSortOrder !== "none") {
       list = [...list].sort((a, b) => {
@@ -4082,14 +4082,15 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         if (comp !== 0) {
           return nameSortOrder === "asc" ? comp : -comp;
         }
-        return nameSortOrder === "asc"
-          ? (a.name || "").localeCompare(b.name || "")
-          : (b.name || "").localeCompare(a.name || "");
+        const hindiComp = (a.name || "").localeCompare(b.name || "", "hi");
+        if (hindiComp !== 0) {
+          return nameSortOrder === "asc" ? hindiComp : -hindiComp;
+        }
+        return compareVotersBySerial(a, b, false);
       });
     }
-
-    // Apply numerical Age Sorting (Ascending / Descending)
-    if (ageSortOrder !== "none" && nameSortOrder === "none") {
+    // 2. Apply numerical Age Sorting (Ascending / Descending)
+    else if (ageSortOrder !== "none") {
       const getNumericAge = (v: VoterRecord) => {
         if (!v.age) return -1;
         const num = parseInt(String(v.age).replace(/\D/g, ""), 10);
@@ -5072,7 +5073,47 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               </select>
             )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto", flexWrap: "wrap" }}>
+              {nameSortOrder !== "none" && (
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: "#0369a1",
+                    background: "#e0f2fe",
+                    border: "1px solid #7dd3fc",
+                    padding: "3px 8px",
+                    borderRadius: "6px",
+                    whiteSpace: "nowrap",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                >
+                  <span>🔤 {nameSortOrder === "asc" ? "वर्णमाला A-Z" : "वर्णमाला Z-A"}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNameSortOrder("none");
+                      setSerialSortOrder("asc");
+                    }}
+                    style={{
+                      border: "none",
+                      background: "transparent",
+                      color: "#0284c7",
+                      cursor: "pointer",
+                      padding: 0,
+                      fontWeight: 800,
+                      fontSize: "12px",
+                      lineHeight: 1,
+                    }}
+                    title="वर्णमाला क्रम हटाएं (1, 2, 3... पर जाएं)"
+                  >
+                    ✕
+                  </button>
+                </span>
+              )}
+
               <span
                 style={{
                   fontSize: "11px",
@@ -5508,7 +5549,17 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 </th>
               )}
               <th style={{ width: "55px" }}>{t.colPart}</th>
-              <th style={{ width: "80px", position: "relative" }}>
+              <th
+                style={{ width: "80px", position: "relative", cursor: "pointer", userSelect: "none" }}
+                onClick={() => {
+                  setNameSortOrder("none");
+                  setAgeSortOrder("none");
+                  setSerialSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                  setLocalToast(serialSortOrder === "asc" ? "🔢 क्रम संख्या: 9 ➔ 8 ➔ 7 (उल्टा क्रम)" : "🔢 क्रम संख्या: 1 ➔ 2 ➔ 3 (स्वाभाविक क्रम)");
+                  setTimeout(() => setLocalToast(""), 2000);
+                }}
+                title={serialSortOrder === "asc" ? "क्रम संख्या: 1 ➔ 2 ➔ 3 (कम से ज्यादा)" : "क्रम संख्या: 9 ➔ 8 ➔ 7 (ज्यादा से कम)"}
+              >
                 <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
                   <span>{t.colSerial}</span>
                   <button
@@ -5518,6 +5569,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       setNameSortOrder("none");
                       setAgeSortOrder("none");
                       setSerialSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                      setLocalToast(serialSortOrder === "asc" ? "🔢 क्रम संख्या: 9 ➔ 8 ➔ 7 (उल्टा क्रम)" : "🔢 क्रम संख्या: 1 ➔ 2 ➔ 3 (स्वाभाविक क्रम)");
+                      setTimeout(() => setLocalToast(""), 2000);
                     }}
                     style={{
                       background: nameSortOrder === "none" && ageSortOrder === "none" ? "#0284c7" : "#ffffff",
@@ -5543,15 +5596,53 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               </th>
 
               {/* 3. नाम (Name) with Alphabetical ABCD Sort Button */}
-              <th className="thLeft" style={{ minWidth: "160px", position: "relative" }}>
+              <th
+                className="thLeft"
+                style={{ minWidth: "160px", position: "relative", cursor: "pointer", userSelect: "none" }}
+                onClick={() => {
+                  setAgeSortOrder("none");
+                  setShowNameSortMenu(false);
+                  if (nameSortOrder === "none") {
+                    setNameSortOrder("asc");
+                    setLocalToast("🔤 वर्णमाला क्रम सेट: A ➔ Z (ABCD Order)");
+                  } else if (nameSortOrder === "asc") {
+                    setNameSortOrder("desc");
+                    setLocalToast("🔠 वर्णमाला क्रम सेट: Z ➔ A (Reverse Order)");
+                  } else {
+                    setNameSortOrder("none");
+                    setSerialSortOrder("asc");
+                    setLocalToast("🔢 सामान्य क्रम संख्या सेट: 1, 2, 3, 4...");
+                  }
+                  setTimeout(() => setLocalToast(""), 2200);
+                }}
+                title={
+                  nameSortOrder === "none"
+                    ? "क्लिक करें: A ➔ Z वर्णमाला क्रम (ABCD Order) में सेट करें"
+                    : nameSortOrder === "asc"
+                    ? "क्लिक करें: Z ➔ A उल्टे वर्णमाला क्रम में सेट करें"
+                    : "क्लिक करें: सामान्य क्रम संख्या (1, 2, 3...) में रीसेट करें"
+                }
+              >
                 <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                   <span>{t.colName}</span>
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setShowNameSortMenu((prev) => !prev);
-                      setShowAgeSortMenu(false);
+                      setAgeSortOrder("none");
+                      setShowNameSortMenu(false);
+                      if (nameSortOrder === "none") {
+                        setNameSortOrder("asc");
+                        setLocalToast("🔤 वर्णमाला क्रम सेट: A ➔ Z (ABCD Order)");
+                      } else if (nameSortOrder === "asc") {
+                        setNameSortOrder("desc");
+                        setLocalToast("🔠 वर्णमाला क्रम सेट: Z ➔ A (Reverse Order)");
+                      } else {
+                        setNameSortOrder("none");
+                        setSerialSortOrder("asc");
+                        setLocalToast("🔢 सामान्य क्रम संख्या सेट: 1, 2, 3, 4...");
+                      }
+                      setTimeout(() => setLocalToast(""), 2200);
                     }}
                     style={{
                       background: nameSortOrder !== "none" ? "#0284c7" : "#ffffff",
@@ -5568,10 +5659,16 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       fontWeight: 800,
                       lineHeight: 1,
                     }}
-                    title={lang === "hi" ? "अंग्रेज़ी ABCD वर्णमाला क्रम में सेट करें" : "Sort by English ABCD Order"}
+                    title={
+                      nameSortOrder === "none"
+                        ? "A ➔ Z वर्णमाला क्रम में सेट करें"
+                        : nameSortOrder === "asc"
+                        ? "Z ➔ A उल्टे वर्णमाला क्रम में सेट करें"
+                        : "सामान्य क्रम संख्या में रीसेट करें"
+                    }
                   >
                     <ArrowUpDown size={11} />
-                    <span>A-Z</span>
+                    <span>{nameSortOrder === "desc" ? "Z-A" : "A-Z"}</span>
                     {nameSortOrder === "asc" && " ↑"}
                     {nameSortOrder === "desc" && " ↓"}
                   </button>
@@ -8523,9 +8620,11 @@ function VotersTable({
         if (comp !== 0) {
           return nameSortOrder === "asc" ? comp : -comp;
         }
-        return nameSortOrder === "asc"
-          ? (a.name || "").localeCompare(b.name || "")
-          : (b.name || "").localeCompare(a.name || "");
+        const hindiComp = (a.name || "").localeCompare(b.name || "", "hi");
+        if (hindiComp !== 0) {
+          return nameSortOrder === "asc" ? hindiComp : -hindiComp;
+        }
+        return compareVotersBySerial(a, b, false);
       });
     } else if (ageSortOrder !== "none") {
       const getNumAge = (v: VoterRecord) => {
@@ -8942,7 +9041,15 @@ function VotersTable({
             <thead>
               <tr>
                 <th style={{ width: "65px" }}>भाग संख्या</th>
-                <th style={{ width: "85px", position: "relative" }}>
+                <th
+                  style={{ width: "85px", position: "relative", cursor: "pointer", userSelect: "none" }}
+                  onClick={() => {
+                    setNameSortOrder("none");
+                    setAgeSortOrder("none");
+                    setSerialSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+                  }}
+                  title={serialSortOrder === "asc" ? "क्रम संख्या: 1 ➔ 2 ➔ 3 (कम से ज्यादा)" : "क्रम संख्या: 9 ➔ 8 ➔ 7 (ज्यादा से कम)"}
+                >
                   <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "4px" }}>
                     <span>क्रम संख्या</span>
                     <button
@@ -8976,15 +9083,44 @@ function VotersTable({
                   </div>
                 </th>
                 {/* 3. नाम (Name) with Alphabetical ABCD Sort Button */}
-                <th style={{ minWidth: "160px", position: "relative" }}>
+                <th
+                  style={{ minWidth: "160px", position: "relative", cursor: "pointer", userSelect: "none" }}
+                  onClick={() => {
+                    setAgeSortOrder("none");
+                    setShowNameSortMenu(false);
+                    if (nameSortOrder === "none") {
+                      setNameSortOrder("asc");
+                    } else if (nameSortOrder === "asc") {
+                      setNameSortOrder("desc");
+                    } else {
+                      setNameSortOrder("none");
+                      setSerialSortOrder("asc");
+                    }
+                  }}
+                  title={
+                    nameSortOrder === "none"
+                      ? "क्लिक करें: A ➔ Z वर्णमाला क्रम (ABCD Order) में सेट करें"
+                      : nameSortOrder === "asc"
+                      ? "क्लिक करें: Z ➔ A उल्टे वर्णमाला क्रम में सेट करें"
+                      : "क्लिक करें: सामान्य क्रम संख्या (1, 2, 3...) में रीसेट करें"
+                  }
+                >
                   <div style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <span>नाम</span>
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        setShowNameSortMenu((prev) => !prev);
-                        setShowAgeSortMenu(false);
+                        setAgeSortOrder("none");
+                        setShowNameSortMenu(false);
+                        if (nameSortOrder === "none") {
+                          setNameSortOrder("asc");
+                        } else if (nameSortOrder === "asc") {
+                          setNameSortOrder("desc");
+                        } else {
+                          setNameSortOrder("none");
+                          setSerialSortOrder("asc");
+                        }
                       }}
                       style={{
                         background: nameSortOrder !== "none" ? "#0284c7" : "#ffffff",
@@ -9001,10 +9137,16 @@ function VotersTable({
                         fontWeight: 800,
                         lineHeight: 1,
                       }}
-                      title="अंग्रेज़ी ABCD वर्णमाला क्रम में सेट करें"
+                      title={
+                        nameSortOrder === "none"
+                          ? "A ➔ Z वर्णमाला क्रम में सेट करें"
+                          : nameSortOrder === "asc"
+                          ? "Z ➔ A उल्टे वर्णमाला क्रम में सेट करें"
+                          : "सामान्य क्रम संख्या में रीसेट करें"
+                      }
                     >
                       <ArrowUpDown size={11} />
-                      <span>A-Z</span>
+                      <span>{nameSortOrder === "desc" ? "Z-A" : "A-Z"}</span>
                       {nameSortOrder === "asc" && " ↑"}
                       {nameSortOrder === "desc" && " ↓"}
                     </button>
