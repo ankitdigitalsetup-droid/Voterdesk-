@@ -117,6 +117,12 @@ class DataStore {
         (!trimmedPass || u.password === trimmedPass)
     );
     if (found) {
+      if (found.role !== "SUPER_ADMIN" && found.candidateId) {
+        const cand = this.candidates.find((c) => c.id === found.candidateId);
+        if (cand && (cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED")) {
+          return undefined; // Block paused campaign
+        }
+      }
       if (enteredName && found.role !== "SUPER_ADMIN") {
         found.name = enteredName;
       }
@@ -128,6 +134,9 @@ class DataStore {
       const matchedPwd = this.accessPasswords.find((p) => p.password === trimmedPass);
       if (matchedPwd) {
         const cand = this.candidates.find((c) => c.id === matchedPwd.candidateId);
+        if (cand && (cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED")) {
+          return undefined; // Block paused campaign
+        }
         if (matchedPwd.role === "CANDIDATE_ADMIN") {
           const candAdminName = enteredName || cand?.name || "Candidate Admin";
           const newAdmin: UserAccount & { password: string } = {
@@ -174,6 +183,9 @@ class DataStore {
         (c: any) => c.workerPassword === trimmedPass || c.password === trimmedPass
       );
       if (cand) {
+        if (cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED") {
+          return undefined; // Block paused campaign
+        }
         const workerName = enteredName || "कार्यकर्ता";
         const newWorker: UserAccount & { password: string } = {
           id: "usr_" + cleanPhone,
@@ -262,6 +274,29 @@ class DataStore {
     });
 
     return newCand;
+  }
+
+  updateCandidate(id: string, updates: Partial<CandidateAccount>): CandidateAccount | null {
+    const cand = this.candidates.find((c) => c.id === id);
+    if (cand) {
+      Object.assign(cand, updates);
+      this.touchVersion();
+      this.saveToDisk();
+      return cand;
+    }
+    return null;
+  }
+
+  deleteCandidate(id: string): boolean {
+    const initialLen = this.candidates.length;
+    this.candidates = this.candidates.filter((c) => c.id !== id);
+    this.accessPasswords = this.accessPasswords.filter((p) => p.candidateId !== id);
+    this.voters = this.voters.filter((v) => v.candidateId !== id);
+    this.team = this.team.filter((t) => t.candidateId !== id);
+    this.users = this.users.filter((u) => u.candidateId !== id);
+    this.touchVersion();
+    this.saveToDisk();
+    return this.candidates.length < initialLen;
   }
 
   getCandidateUsers(candidateId: string): CandidateCredential[] {

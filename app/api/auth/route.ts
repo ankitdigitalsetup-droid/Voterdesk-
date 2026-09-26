@@ -55,6 +55,15 @@ export async function POST(req: Request) {
       });
 
       if (matchedAccessPassword) {
+        // Block login if candidate campaign is paused / suspended
+        const candStatus = matchedAccessPassword.candidate?.status?.toUpperCase();
+        if (candStatus === "SUSPENDED" || candStatus === "PAUSED") {
+          return NextResponse.json(
+            { error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। पासवर्ड से लॉगिन बंद है।" },
+            { status: 403 }
+          );
+        }
+
         const hashedPassword = await hashPassword(trimmedPassword);
         const userRole = matchedAccessPassword.role as "CANDIDATE_ADMIN" | "KARYAKARTA";
 
@@ -148,13 +157,27 @@ export async function POST(req: Request) {
         },
         include: {
           candidateProfiles: true,
-          karyakartaProfile: true,
+          karyakartaProfile: {
+            include: { candidate: true },
+          },
         },
       });
 
       if (dbUser) {
         const isMatch = await verifyPassword(trimmedPassword, dbUser.password);
         if (isMatch) {
+          // Block login if candidate campaign is paused / suspended
+          if (dbUser.role !== "SUPER_ADMIN") {
+            const cand = dbUser.candidateProfiles?.[0] || dbUser.karyakartaProfile?.candidate;
+            const candStatus = cand?.status?.toUpperCase();
+            if (candStatus === "SUSPENDED" || candStatus === "PAUSED") {
+              return NextResponse.json(
+                { error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। पासवर्ड से लॉगिन बंद है।" },
+                { status: 403 }
+              );
+            }
+          }
+
           // If the user entered an updated name, persist it to DB
           if (trimmedName && dbUser.name !== trimmedName && dbUser.role !== "SUPER_ADMIN") {
             await prisma.user.update({
@@ -220,8 +243,18 @@ export async function POST(req: Request) {
     // -------------------------------------------------------------
     // 3. Fallback to in-memory store
     // -------------------------------------------------------------
-    const localUser = store.authenticate(cleanPhone, trimmedPassword);
+    const localUser = store.authenticate(cleanPhone, trimmedPassword, trimmedName);
     if (localUser) {
+      if (localUser.role !== "SUPER_ADMIN" && localUser.candidateId) {
+        const cand = store.getCandidate(localUser.candidateId);
+        const candStatus = cand?.status?.toUpperCase();
+        if (candStatus === "SUSPENDED" || candStatus === "PAUSED") {
+          return NextResponse.json(
+            { error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। पासवर्ड से लॉगिन बंद है।" },
+            { status: 403 }
+          );
+        }
+      }
       const token = createSessionToken({
         userId: localUser.id,
         phone: localUser.phone,

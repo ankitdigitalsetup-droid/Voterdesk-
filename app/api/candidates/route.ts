@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCandidates, createCandidate, updateCandidate, getCandidatePasswords } from "@/lib/db/candidates";
+import { getCandidates, createCandidate, updateCandidate, deleteCandidate, getCandidatePasswords } from "@/lib/db/candidates";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 export async function GET(req: Request) {
@@ -139,6 +139,46 @@ export async function PATCH(req: Request) {
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Failed to update candidate", details: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = getSessionFromRequest(req);
+
+    // RBAC: Only SUPER_ADMIN can delete candidate campaigns
+    if (session && session.role !== "SUPER_ADMIN") {
+      return NextResponse.json(
+        { error: "Forbidden", message: "Only Super Admin can delete candidate campaigns." },
+        { status: 403 }
+      );
+    }
+
+    const { searchParams } = new URL(req.url);
+    let id = searchParams.get("id");
+    if (!id) {
+      const body = await req.json().catch(() => ({}));
+      id = body.id;
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "Candidate ID is required" }, { status: 400 });
+    }
+
+    const success = await deleteCandidate(id);
+    if (!success) {
+      return NextResponse.json({ error: "Candidate not found or failed to delete" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Candidate campaign and all related data deleted successfully",
+    });
+  } catch (err: unknown) {
+    return NextResponse.json(
+      { error: "Failed to delete candidate", details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     );
   }

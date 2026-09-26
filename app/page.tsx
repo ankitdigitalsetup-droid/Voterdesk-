@@ -113,6 +113,20 @@ export default function Page() {
     } catch {}
   }, [activeCandidateId]);
 
+  const handleLogout = useCallback(async () => {
+    try {
+      await fetch("/api/auth", { method: "DELETE", credentials: "include" });
+    } catch {}
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("voterdesk_token");
+        localStorage.removeItem("voterdesk_user");
+      } catch {}
+    }
+    setUser(null);
+    setPage("boothmanager");
+  }, []);
+
   // Synchronize with server across all 15 mobile devices in real time
   const syncWithServer = useCallback(
     async (force = false) => {
@@ -123,6 +137,20 @@ export default function Page() {
         const res = await fetch(
           `/api/voters/sync?candidateId=${encodeURIComponent(activeCandidateId)}&version=${curVer}&force=${force ? "true" : "false"}&worker=${encodeURIComponent(workerName)}`
         );
+
+        // If candidate campaign is paused or deleted, immediately alert and logout non-Super Admin users
+        if (user && user.role !== "SUPER_ADMIN" && (res.status === 403 || res.status === 404)) {
+          const errData = await res.json().catch(() => ({}));
+          const msg =
+            errData.error ||
+            (res.status === 403
+              ? "⚠️ यह चुनाव अभियान रोक (PAUSED) दिया गया है। आप लॉगआउट किए जा रहे हैं।"
+              : "⚠️ यह चुनाव अभियान हटा दिया गया है। आप लॉगआउट किए जा रहे हैं।");
+          alert(msg);
+          await handleLogout();
+          return;
+        }
+
         if (res.ok) {
           const data = await res.json();
           if (data.activeWorkers !== undefined) {
@@ -163,7 +191,7 @@ export default function Page() {
         setIsSyncing(false);
       }
     },
-    [activeCandidateId, user, refreshData]
+    [activeCandidateId, user, refreshData, handleLogout]
   );
 
   useEffect(() => {
@@ -173,11 +201,12 @@ export default function Page() {
 
   // Live polling every 3 seconds so if any of 15 mobiles makes an edit, all other mobiles see it live!
   useEffect(() => {
+    if (user?.role === "SUPER_ADMIN") return;
     const timer = setInterval(() => {
       syncWithServer(false);
     }, 3000);
     return () => clearInterval(timer);
-  }, [syncWithServer]);
+  }, [syncWithServer, user?.role]);
 
   // Restore logged-in session on page reload if present
   useEffect(() => {
@@ -222,20 +251,6 @@ export default function Page() {
     }, 100);
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/auth", { method: "DELETE", credentials: "include" });
-    } catch {}
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.removeItem("voterdesk_token");
-        localStorage.removeItem("voterdesk_user");
-      } catch {}
-    }
-    setUser(null);
-    setPage("boothmanager");
-  };
-
   useEffect(() => {
     document.documentElement.lang = lang;
   }, [lang]);
@@ -258,6 +273,14 @@ export default function Page() {
           if (createdCand) {
             setCandidates((prev) => [createdCand, ...prev.filter((c) => c.id !== createdCand.id)]);
           }
+          refreshData();
+        }}
+        onCandidateUpdated={(updatedCand: CandidateAccount) => {
+          setCandidates((prev) => prev.map((c) => (c.id === updatedCand.id ? updatedCand : c)));
+          refreshData();
+        }}
+        onCandidateDeleted={(candId: string) => {
+          setCandidates((prev) => prev.filter((c) => c.id !== candId));
           refreshData();
         }}
         onLogout={handleLogout}
@@ -736,6 +759,8 @@ function SuperAdminView({
   candidates,
   onSelectCandidate,
   onCandidateCreated,
+  onCandidateUpdated,
+  onCandidateDeleted,
   onLogout,
   lang,
   toggleLang,
@@ -745,6 +770,8 @@ function SuperAdminView({
   candidates: CandidateAccount[];
   onSelectCandidate: (id: string) => void;
   onCandidateCreated: (newCandidate?: CandidateAccount) => void;
+  onCandidateUpdated?: (updatedCandidate: CandidateAccount) => void;
+  onCandidateDeleted?: (candidateId: string) => void;
   onLogout: () => void;
   lang: Lang;
   toggleLang: () => void;
@@ -832,6 +859,85 @@ function SuperAdminView({
     isSupporter: "हाँ",
     isOutside: "नहीं",
   });
+
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+  const handleToggleCampaignStatus = async (cand: CandidateAccount) => {
+    const isCurrentlyActive = cand.status === "ACTIVE";
+    const newStatus = isCurrentlyActive ? "SUSPENDED" : "ACTIVE";
+    const confirmMsg = isCurrentlyActive
+      ? `⏸️ क्या आप '${cand.name}' का चुनाव अभियान पॉज़ (PAUSE) करना चाहते हैं?\n\n• इस अभियान के सभी पासवर्ड तुरंत काम करना बंद कर देंगे।\n• ऐप में अभी लॉगिन सभी कार्यकर्ता तुरंत लॉगआउट हो जाएंगे।`
+      : `▶️ क्या आप '${cand.name}' का चुनाव अभियान फिर से LIVE करना चाहते हैं?\n\n• सभी पासवर्ड दोबारा काम करने लगेंगे और कार्यकर्ता ऐप में सामान्य रूप से लॉगिन व काम कर सकेंगे।`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setActionLoadingId(cand.id);
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch("/api/candidates", {
+        method: "PATCH",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ id: cand.id, status: newStatus }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.message || "अभियान स्टेटस अपडेट नहीं हो सका");
+      }
+
+      const updated = { ...cand, status: newStatus as CandidateAccount["status"] };
+      store.updateCandidate(cand.id, { status: newStatus as CandidateAccount["status"] });
+      if (onCandidateUpdated) {
+        onCandidateUpdated(updated);
+      }
+      alert(
+        newStatus === "SUSPENDED"
+          ? `✅ अभियान '${cand.name}' को सफलतापूर्वक रोक (PAUSED) दिया गया है। सभी कनेक्टेड मोबाइल्स लॉगआउट हो जाएंगे।`
+          : `✅ अभियान '${cand.name}' अब सफलतापूर्वक LIVE हो गया है!`
+      );
+    } catch (err: any) {
+      alert(`त्रुटि: ${err.message || String(err)}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleDeleteCampaign = async (cand: CandidateAccount) => {
+    const confirmMsg = `⚠️ क्या आप वाकई '${cand.name}' का पूरा चुनाव अभियान हटाना (DELETE) चाहते हैं?\n\n• इसके सभी बूथ, पासवर्ड, और मतदाता डेटा हमेशा के लिए मिट जाएंगे!\n• जुड़े हुए सभी कार्यकर्ता और यूज़र्स तुरंत लॉगआउट हो जाएंगे।\n\nयह प्रक्रिया वापस नहीं हो सकती!`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      setActionLoadingId(cand.id);
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/candidates?id=${encodeURIComponent(cand.id)}`, {
+        method: "DELETE",
+        headers,
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.message || "अभियान हटाया नहीं जा सका");
+      }
+
+      store.deleteCandidate(cand.id);
+      if (onCandidateDeleted) {
+        onCandidateDeleted(cand.id);
+      }
+      alert(`✅ अभियान '${cand.name}' और उसका सारा डेटा सफलतापूर्वक हटा दिया गया है।`);
+    } catch (err: any) {
+      alert(`त्रुटि: ${err.message || String(err)}`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
 
   const handleSaExcelSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1965,10 +2071,51 @@ function SuperAdminView({
                       <b>{(cand.voterCount || 0).toLocaleString()}</b>
                     </td>
                     <td>
-                      <span className="status in-favor">{cand.status}</span>
+                      {cand.status === "ACTIVE" ? (
+                        <span style={{ background: "#dcfce7", color: "#166534", padding: "4px 8px", borderRadius: "6px", fontWeight: 700, fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          🟢 लाइव (LIVE)
+                        </span>
+                      ) : (
+                        <span style={{ background: "#fef3c7", color: "#92400e", padding: "4px 8px", borderRadius: "6px", fontWeight: 700, fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}>
+                          ⏸️ पॉज़ (PAUSED)
+                        </span>
+                      )}
                     </td>
                     <td>
                       <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                        {cand.status === "ACTIVE" ? (
+                          <button
+                            type="button"
+                            className="outline"
+                            disabled={actionLoadingId === cand.id}
+                            style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px", background: "#fffbeb", color: "#b45309", borderColor: "#fde68a", fontWeight: 700, cursor: actionLoadingId === cand.id ? "not-allowed" : "pointer" }}
+                            onClick={() => handleToggleCampaignStatus(cand)}
+                            title="इस चुनाव अभियान को पॉज़ करें (सभी लॉगिन तुरंत बंद हो जाएंगे और कनेक्टेड यूज़र्स लॉगआउट होंगे)"
+                          >
+                            ⏸️ पॉज़ करें
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="outline"
+                            disabled={actionLoadingId === cand.id}
+                            style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px", background: "#f0fdf4", color: "#15803d", borderColor: "#86efac", fontWeight: 700, cursor: actionLoadingId === cand.id ? "not-allowed" : "pointer" }}
+                            onClick={() => handleToggleCampaignStatus(cand)}
+                            title="इस चुनाव अभियान को फिर से लाइव करें (पासवर्ड से लॉगिन चालू हो जाएगा)"
+                          >
+                            ▶️ लाइव करें
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="outline"
+                          disabled={actionLoadingId === cand.id}
+                          style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px", background: "#fef2f2", color: "#b91c1c", borderColor: "#fecaca", fontWeight: 700, cursor: actionLoadingId === cand.id ? "not-allowed" : "pointer" }}
+                          onClick={() => handleDeleteCampaign(cand)}
+                          title="इस पूरे चुनाव अभियान को हमेशा के लिए हटाएं"
+                        >
+                          <Trash2 size={13} /> 🗑️ हटाएं
+                        </button>
                         <button
                           type="button"
                           className="outline"

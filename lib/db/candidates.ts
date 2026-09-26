@@ -310,12 +310,31 @@ export async function updateCandidate(
   }
 
   // Update in memory store
-  const storeCand = store.getCandidates().find((c) => c.id === id);
-  if (storeCand) {
-    Object.assign(storeCand, updates);
-  }
+  const storeCand = store.updateCandidate(id, updates);
+  store.touchVersion();
 
   return updatedRecord || storeCand || null;
+}
+
+/**
+ * Permanently deletes a candidate campaign and all its cascades (booths, voters, passwords).
+ */
+export async function deleteCandidate(id: string): Promise<boolean> {
+  let deleted = false;
+  try {
+    await prisma.candidate.delete({
+      where: { id },
+    });
+    deleted = true;
+  } catch (err) {
+    console.warn(`Neon DB deleteCandidate(${id}) notice:`, err);
+  }
+
+  const storeDeleted = store.deleteCandidate(id);
+  if (storeDeleted) deleted = true;
+
+  store.touchVersion();
+  return deleted;
 }
 
 /**

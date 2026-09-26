@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
 import { getVoters, updateVoter, createVoter } from "@/lib/db/voters";
 
@@ -10,6 +11,61 @@ export async function GET(req: Request) {
     const worker = searchParams.get("worker") || "";
     const booth = searchParams.get("booth") || "";
     const force = searchParams.get("force") === "true";
+
+    // Check candidate campaign status (Pause / Live / Deleted)
+    if (candidateId && candidateId !== "null" && candidateId !== "undefined") {
+      let dbChecked = false;
+      let candidateFound: { id: string; status: string } | null = null;
+
+      try {
+        const dbCandidate = await prisma.candidate.findUnique({
+          where: { id: candidateId },
+          select: { id: true, status: true },
+        });
+        dbChecked = true;
+        if (dbCandidate) {
+          candidateFound = dbCandidate;
+        }
+      } catch (cErr) {
+        // Fallback to store
+      }
+
+      if (!candidateFound) {
+        const storeCand = store.getCandidate(candidateId);
+        if (storeCand) {
+          candidateFound = { id: storeCand.id, status: storeCand.status };
+        }
+      }
+
+      // If DB checked and confirmed not found, and store also doesn't have it -> campaign was DELETED
+      if (dbChecked && !candidateFound) {
+        return NextResponse.json(
+          {
+            success: false,
+            deleted: true,
+            campaignStatus: "DELETED",
+            error: "यह चुनाव अभियान हटा दिया गया है। आप लॉगआउट किए जा रहे हैं।",
+          },
+          { status: 404 }
+        );
+      }
+
+      // If campaign is PAUSED / SUSPENDED
+      if (candidateFound) {
+        const upperStatus = candidateFound.status?.toUpperCase();
+        if (upperStatus === "SUSPENDED" || upperStatus === "PAUSED") {
+          return NextResponse.json(
+            {
+              success: false,
+              paused: true,
+              campaignStatus: "PAUSED",
+              error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। आप लॉगआउट किए जा रहे हैं।",
+            },
+            { status: 403 }
+          );
+        }
+      }
+    }
 
     // Track active worker heartbeat
     if (worker) {
