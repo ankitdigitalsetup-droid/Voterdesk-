@@ -513,39 +513,24 @@ function Login({
   toggleLang: () => void;
   t: (typeof translations)["hi"];
 }) {
-  const [roleTab, setRoleTab] = useState<"CANDIDATE_ADMIN" | "SUPER_ADMIN" | "KARYAKARTA">("CANDIDATE_ADMIN");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const selectRole = (role: "CANDIDATE_ADMIN" | "SUPER_ADMIN" | "KARYAKARTA") => {
-    setRoleTab(role);
-    setError("");
-    if (role === "SUPER_ADMIN") {
-      setName("Super Admin");
-      setPhone("99999 99999");
-      setPassword("SuperAdmin@2026");
-    } else {
-      setName("");
-      setPhone("");
-      setPassword("");
-    }
-  };
-
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
-      setError("कृपया अपना पूरा नाम दर्ज करें (Please enter your name)");
+      setError(lang === "hi" ? "कृपया अपना पूरा नाम दर्ज करें" : "Please enter your name");
       return;
     }
     if (!phone.trim()) {
-      setError("कृपया मोबाइल नंबर दर्ज करें (Please enter mobile number)");
+      setError(lang === "hi" ? "कृपया मोबाइल नंबर दर्ज करें" : "Please enter mobile number");
       return;
     }
     if (!password.trim()) {
-      setError("कृपया पासवर्ड दर्ज करें (Please enter password)");
+      setError(lang === "hi" ? "कृपया पासवर्ड दर्ज करें" : "Please enter password");
       return;
     }
 
@@ -589,7 +574,7 @@ function Login({
         return;
       }
 
-      setError(data.error || "लॉगिन असफल: नाम, मोबाइल या पासवर्ड गलत है।");
+      setError(data.error || (lang === "hi" ? "लॉगिन असफल: नाम, मोबाइल या पासवर्ड गलत है।" : "Login failed: Incorrect name, mobile or password."));
     } catch {
       // Fallback if fetch fails
       const localUser = store.authenticate(phone, password, name);
@@ -603,7 +588,7 @@ function Login({
           assignedBooths: localUser.assignedBooths,
         });
       } else {
-        setError("लॉगिन असफल। कृपया नाम, मोबाइल नंबर व पासवर्ड जांचें।");
+        setError(lang === "hi" ? "लॉगिन असफल। कृपया नाम, मोबाइल नंबर व पासवर्ड जांचें।" : "Login failed. Please check name, mobile and password.");
       }
     } finally {
       setLoading(false);
@@ -644,34 +629,8 @@ function Login({
         </button>
 
         <div className="loginCopy">
-          <em>{t.loginRoleLabel}</em>
-          <h1>{t.loginTitle}</h1>
-          <p>{t.loginSubtitle}</p>
-        </div>
-
-        {/* 3-Role Switcher Tabs */}
-        <div className="roleTabs">
-          <button
-            type="button"
-            className={`roleTab ${roleTab === "CANDIDATE_ADMIN" ? "active" : ""}`}
-            onClick={() => selectRole("CANDIDATE_ADMIN")}
-          >
-            {t.loginRoleCandidate}
-          </button>
-          <button
-            type="button"
-            className={`roleTab ${roleTab === "SUPER_ADMIN" ? "active" : ""}`}
-            onClick={() => selectRole("SUPER_ADMIN")}
-          >
-            {t.loginRoleSuper}
-          </button>
-          <button
-            type="button"
-            className={`roleTab ${roleTab === "KARYAKARTA" ? "active" : ""}`}
-            onClick={() => selectRole("KARYAKARTA")}
-          >
-            {t.loginRoleKaryakarta}
-          </button>
+          <h1>{lang === "hi" ? "वोटर डेस्क पोर्टल लॉगिन" : "VoterDesk Portal Sign In"}</h1>
+          <p>{lang === "hi" ? "कृपया अपने पंजीकृत मोबाइल नंबर एवं पासवर्ड से प्रवेश करें" : "Sign in with your registered mobile number and password"}</p>
         </div>
 
         {error && (
@@ -681,54 +640,73 @@ function Login({
         )}
 
         <form onSubmit={handleSignIn}>
-          <label>{t.loginNameLabel}</label>
+          <label>{lang === "hi" ? "पूरा नाम" : "Full Name"}</label>
           <div className="phone" style={{ marginBottom: "14px" }}>
             <span style={{ fontSize: "14px" }}>👤</span>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="अपना पूरा नाम दर्ज करें"
+              placeholder={lang === "hi" ? "अपना पूरा नाम दर्ज करें" : "Enter your full name"}
               required
             />
           </div>
 
-          <label>{t.loginPhoneLabel}</label>
+          <label>{lang === "hi" ? "मोबाइल नंबर" : "Mobile Number"}</label>
           <div className="phone">
             <span>+91</span>
             <input
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="10-अंकीय मोबाइल नंबर"
+              placeholder={lang === "hi" ? "10-अंकीय मोबाइल नंबर" : "10-digit mobile number"}
               required
             />
           </div>
 
           <div className="passLabel">
-            <label>{t.loginPasswordLabel}</label>
-            <span style={{ fontSize: "11px", color: "var(--muted)" }}>9-अंक + 1 स्पेशल कैरेक्टर या एडमिन पासवर्ड</span>
+            <label>{lang === "hi" ? "पासवर्ड" : "Password"}</label>
+            <span style={{ fontSize: "11px", color: "var(--muted)" }}>
+              {lang === "hi" ? "अधिकृत पासवर्ड दर्ज करें" : "Enter authorized password"}
+            </span>
           </div>
           <input
             className="password"
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="पासवर्ड दर्ज करें (उदा. 363705912@)"
+            placeholder={lang === "hi" ? "पासवर्ड दर्ज करें" : "Enter password"}
             required
           />
 
-          <div style={{ fontSize: "12px", color: "#0369a1", background: "#f0f9ff", padding: "8px 12px", borderRadius: "8px", border: "1px solid #bae6fd", marginBottom: "16px" }}>
-            🔒 <b>लॉगिन नियम:</b> नाम और मोबाइल नंबर आप अपना कोई भी दर्ज कर सकते हैं। केवल आपका पासवर्ड ही तय करेगा कि आप एडमिन (ADMIN) हैं या कार्यकर्ता (MEMBER)।
+          <div
+            style={{
+              fontSize: "12px",
+              color: "#0369a1",
+              background: "#f0f9ff",
+              padding: "10px 14px",
+              borderRadius: "8px",
+              border: "1px solid #bae6fd",
+              marginBottom: "16px",
+              lineHeight: 1.5,
+            }}
+          >
+            🔒 <b>{lang === "hi" ? "सुरक्षित लॉगिन:" : "Secure Sign In:"}</b>{" "}
+            {lang === "hi"
+              ? "अपना नाम, 10-अंकीय मोबाइल नंबर और पासवर्ड दर्ज करके सीधे प्रवेश करें।"
+              : "Enter your name, 10-digit mobile number, and password to sign in."}
           </div>
 
           <button className="primary wide" disabled={loading}>
-            {loading ? "सत्यापित किया जा रहा है..." : "लॉगिन करें (Sign In) ›"}
+            {loading
+              ? (lang === "hi" ? "सत्यापित किया जा रहा है..." : "Verifying...")
+              : (lang === "hi" ? "लॉगिन करें (Sign In) ›" : "Sign In ›")}
           </button>
         </form>
 
-        <p className="demo">
-          <ShieldCheck /> {roleTab === "SUPER_ADMIN" ? "मास्टर सुपर एडमिन लॉगिन: 9999999999 / SuperAdmin@2026" : "बूथ पासवर्ड कार्ड से प्राप्त 9-अंकीय पासवर्ड से किसी भी नाम व मोबाइल नंबर द्वारा सीधे लॉगिन करें।"}
+        <p className="demo" style={{ justifyContent: "center", textAlign: "center", gap: "6px" }}>
+          <ShieldCheck size={16} />{" "}
+          <span>{lang === "hi" ? "256-बिट सुरक्षित एन्क्रिप्टेड पोर्टल" : "256-bit secure encrypted portal"}</span>
         </p>
       </section>
 

