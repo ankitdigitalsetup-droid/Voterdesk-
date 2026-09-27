@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
-import { TeamMember, WorkerLocation } from "@/lib/types";
+import { TeamMember, WorkerLocation, isSuperAdminEntity } from "@/lib/types";
 import { hashPassword } from "@/lib/auth/password";
 
 /**
@@ -61,9 +61,12 @@ export async function getTeamMembers(candidateId = "cand_1"): Promise<TeamMember
     });
 
     if (profiles.length > 0) {
-      // Calculate real contacted count per worker
+      // Calculate real contacted count per worker (strictly excluding Super Admin)
       const members: TeamMember[] = [];
       for (const p of profiles) {
+        if (isSuperAdminEntity(p.user) || isSuperAdminEntity(p)) {
+          continue;
+        }
         let contactedCount = 0;
         try {
           contactedCount = await prisma.voter.count({
@@ -179,6 +182,24 @@ export async function updateWorkerLocation(data: {
   address?: string;
 }): Promise<WorkerLocation> {
   const cId = data.candidateId || "cand_1";
+
+  // 🛡️ SUPER ADMIN PRIVACY SHIELD: Do not persist or broadcast Super Admin coordinates
+  if (isSuperAdminEntity(data)) {
+    return {
+      workerId: data.workerId || "usr_super_1",
+      name: "Confidential",
+      phone: "",
+      roleTitle: "Super Admin",
+      assignedBooths: [],
+      candidateId: cId,
+      lat: 0,
+      lng: 0,
+      accuracy: 0,
+      address: "Confidential",
+      lastUpdated: Date.now(),
+      isOnline: false,
+    };
+  }
 
   try {
     // Try updating DB KaryakartaProfile if user found

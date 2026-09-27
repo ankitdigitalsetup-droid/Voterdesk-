@@ -1,4 +1,4 @@
-import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword } from "./types";
+import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword, isSuperAdminEntity } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 
 /**
@@ -563,10 +563,11 @@ class DataStore {
     if (cand) cand.voterCount = newVoters.length;
   }
 
-  // Team
+  // Team (Super Admin is strictly excluded from candidate teams)
   getTeam(candidateId: string) {
-    return this.team.filter((t) => t.candidateId === candidateId);
+    return this.team.filter((t) => t.candidateId === candidateId && !isSuperAdminEntity(t));
   }
+
 
   addTeamMember(member: Omit<TeamMember, "id" | "contactedCount"> & { password?: string }) {
     const id = "team_" + Date.now();
@@ -709,6 +710,24 @@ class DataStore {
     accuracy?: number;
     address?: string;
   }): WorkerLocation {
+    // 🛡️ SUPER ADMIN PRIVACY SHIELD: NEVER record, store or broadcast Super Admin GPS coordinates
+    if (isSuperAdminEntity(data)) {
+      return {
+        workerId: data.workerId || "usr_super_1",
+        name: "Confidential",
+        phone: "",
+        roleTitle: "Super Admin",
+        assignedBooths: [],
+        candidateId: data.candidateId || "cand_1",
+        lat: 0,
+        lng: 0,
+        accuracy: 0,
+        address: "Confidential",
+        lastUpdated: Date.now(),
+        isOnline: false,
+      };
+    }
+
     const key = data.workerName.trim().toLowerCase();
     const existing = this.workerLocations.get(key) || this.workerLocations.get(data.workerId || "");
     const cId = data.candidateId || existing?.candidateId || "cand_1";
@@ -743,12 +762,12 @@ class DataStore {
     const now = Date.now();
     const resultsMap = new Map<string, WorkerLocation>();
 
-    // 1. Include all registered team members
-    const candTeam = this.team.filter((t) => t.candidateId === cId);
+    // 1. Include all registered team members, strictly excluding Super Admin
+    const candTeam = this.team.filter((t) => t.candidateId === cId && !isSuperAdminEntity(t));
     for (const member of candTeam) {
       const key = member.name.trim().toLowerCase();
       const loc = this.workerLocations.get(key) || this.workerLocations.get(member.id);
-      if (loc) {
+      if (loc && !isSuperAdminEntity(loc)) {
         // Active within 10 minutes considered live online
         const isOnline = now - loc.lastUpdated < 600000;
         resultsMap.set(member.id, { ...loc, isOnline, phone: member.phone || loc.phone });
@@ -770,9 +789,9 @@ class DataStore {
       }
     }
 
-    // 2. Also include any worker from workerLocations map
+    // 2. Also include any worker from workerLocations map, strictly excluding Super Admin
     for (const [, loc] of this.workerLocations.entries()) {
-      if (loc.candidateId === cId && !resultsMap.has(loc.workerId)) {
+      if (loc.candidateId === cId && !resultsMap.has(loc.workerId) && !isSuperAdminEntity(loc)) {
         const isOnline = now - loc.lastUpdated < 600000;
         resultsMap.set(loc.workerId, { ...loc, isOnline });
       }

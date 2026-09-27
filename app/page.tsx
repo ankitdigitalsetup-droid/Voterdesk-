@@ -41,7 +41,7 @@ import {
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store, compareVotersBySerial } from "@/lib/data-store";
-import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword } from "@/lib/types";
+import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword, isSuperAdminEntity } from "@/lib/types";
 import { generateCandidateBoothPasswords, generateBoothPassword } from "@/lib/password-helper";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
 import { translations, Lang } from "@/lib/translations";
@@ -3168,8 +3168,24 @@ function BoothManagerView({
   const [myGps, setMyGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsStatusText, setGpsStatusText] = useState<string>("जीपीएस सक्रिय किया जा रहा है...");
 
+  // Determine if the current user is Super Admin
+  const isCurrentUserSuperAdmin = useMemo(() => {
+    return isSuperAdminEntity(user) || user.role === "SUPER_ADMIN";
+  }, [user]);
+
+  // Sanitized worker locations: Super Admin MUST NEVER be visible to candidates or workers
+  const displayWorkerLocations = useMemo(() => {
+    return workerLocations.filter((w) => !isSuperAdminEntity(w));
+  }, [workerLocations]);
+
   // Broadcast current worker/user GPS to server
   const broadcastMyGps = useCallback(() => {
+    // 🛡️ SUPER ADMIN PRIVACY SHIELD: NEVER broadcast Super Admin GPS to any candidate
+    if (isSuperAdminEntity(user) || user.role === "SUPER_ADMIN") {
+      setGpsStatusText("🛡️ सुपर एडमिन लोकेशन पूर्णतः सुरक्षित एवं गोपनीय (प्रत्याशियों से सुरक्षित)");
+      return;
+    }
+
     if (typeof window === "undefined" || !navigator.geolocation) {
       setGpsStatusText("जीपीएस उपलब्ध नहीं है");
       return;
@@ -3208,7 +3224,7 @@ function BoothManagerView({
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
-  }, [user.id, user.name, user.phone, user.role, candidateId, partFilter]);
+  }, [user, candidateId, partFilter]);
 
   // Fetch all worker locations for this candidate
   const fetchWorkerLocations = useCallback(async () => {
@@ -3218,7 +3234,9 @@ function BoothManagerView({
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.locations)) {
-          setWorkerLocations(data.locations);
+          // Strictly filter out any Super Admin records from received locations
+          const cleanLocations = data.locations.filter((loc: WorkerLocation) => !isSuperAdminEntity(loc));
+          setWorkerLocations(cleanLocations);
         }
       }
     } catch (err) {
@@ -3228,8 +3246,12 @@ function BoothManagerView({
     }
   }, [candidateId]);
 
-  // Initial broadcast and background watch
+  // Initial broadcast and background watch (disabled for Super Admin)
   useEffect(() => {
+    if (isSuperAdminEntity(user) || user.role === "SUPER_ADMIN") {
+      setGpsStatusText("🛡️ सुपर एडमिन लोकेशन पूर्णतः सुरक्षित एवं गोपनीय (प्रत्याशियों से सुरक्षित)");
+      return;
+    }
     broadcastMyGps();
     if (typeof window !== "undefined" && navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
@@ -3242,17 +3264,19 @@ function BoothManagerView({
       );
       return () => navigator.geolocation.clearWatch(watchId);
     }
-  }, [broadcastMyGps]);
+  }, [broadcastMyGps, user]);
 
   // When location modal is open, fetch immediately and poll every 8 seconds
   useEffect(() => {
     if (showLocationModal) {
       fetchWorkerLocations();
-      broadcastMyGps();
+      if (!isSuperAdminEntity(user) && user.role !== "SUPER_ADMIN") {
+        broadcastMyGps();
+      }
       const interval = setInterval(fetchWorkerLocations, 8000);
       return () => clearInterval(interval);
     }
-  }, [showLocationModal, fetchWorkerLocations, broadcastMyGps]);
+  }, [showLocationModal, fetchWorkerLocations, broadcastMyGps, user]);
 
   // -------------------------------------------------------------
   // HANDLERS FOR VOTER ACTION HUB & SUB-SCREENS (IMAGES 1, 2, 3, 4/5)
@@ -7652,7 +7676,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 className={`bmTrackerTabBtn ${locationTab === "workers" ? "active" : ""}`}
                 onClick={() => setLocationTab("workers")}
               >
-                👥 {lang === "hi" ? `कार्यकर्ता लोकेशन (${workerLocations.length})` : `Workers GPS (${workerLocations.length})`}
+                👥 {lang === "hi" ? `कार्यकर्ता लोकेशन (${displayWorkerLocations.length})` : `Workers GPS (${displayWorkerLocations.length})`}
               </button>
               <button
                 type="button"
@@ -7668,31 +7692,86 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               {locationTab === "workers" ? (
                 <>
                   {/* GPS Broadcast Bar */}
-                  <div className="bmGpsBroadcastBanner">
+                  <div
+                    className="bmGpsBroadcastBanner"
+                    style={isCurrentUserSuperAdmin ? { background: "#f0fdf4", borderColor: "#86efac" } : {}}
+                  >
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                      <span className="bmLivePulseDot" style={{ position: "static", display: "inline-block" }}></span>
+                      <span
+                        className="bmLivePulseDot"
+                        style={{
+                          position: "static",
+                          display: "inline-block",
+                          background: isCurrentUserSuperAdmin ? "#16a34a" : undefined,
+                        }}
+                      ></span>
                       <span>
-                        <b>{lang === "hi" ? "आपकी जीपीएस स्थिति" : "Your GPS"}:</b> {gpsStatusText}
+                        <b>{lang === "hi" ? "आपकी जीपीएस स्थिति" : "Your GPS"}:</b>{" "}
+                        {isCurrentUserSuperAdmin
+                          ? (lang === "hi"
+                              ? "🛡️ सुपर एडमिन प्राइवेसी शील्ड: पूर्णतः गोपनीय (Hidden)"
+                              : "🛡️ Super Admin Privacy Shield: Strictly Confidential")
+                          : gpsStatusText}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="bmGpsRefreshBtn"
-                      onClick={broadcastMyGps}
-                    >
-                      <RefreshCw size={11} /> {lang === "hi" ? "अपडेट करें" : "Broadcast"}
-                    </button>
+                    {isCurrentUserSuperAdmin ? (
+                      <span
+                        style={{
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          padding: "3px 8px",
+                          background: "#dcfce7",
+                          color: "#15803d",
+                          borderRadius: "12px",
+                          border: "1px solid #86efac",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        🔒 100% गोपनीय
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="bmGpsRefreshBtn"
+                        onClick={broadcastMyGps}
+                      >
+                        <RefreshCw size={11} /> {lang === "hi" ? "अपडेट करें" : "Broadcast"}
+                      </button>
+                    )}
                   </div>
+
+                  {/* Super Admin Explicit Privacy Notice */}
+                  {isCurrentUserSuperAdmin && (
+                    <div
+                      style={{
+                        margin: "0 0 12px 0",
+                        background: "#eff6ff",
+                        border: "1px solid #bfdbfe",
+                        borderRadius: "8px",
+                        padding: "8px 12px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "12px",
+                        color: "#1e40af",
+                      }}
+                    >
+                      <span style={{ fontSize: "16px" }}>🔒</span>
+                      <span>
+                        <b>सुपर एडमिन सुरक्षा:</b> आपकी लाइव लोकेशन किसी भी प्रत्याशी, कार्यकर्ता या यूजर के पोर्टल/मैप पर कभी भी प्रदर्शित नहीं होगी।
+                      </span>
+                    </div>
+                  )}
 
                   {/* Stats Bar */}
                   <div className="bmTrackerStatsBar">
                     <div className="bmTrackerStatBadge">
                       <span>👥</span>
-                      <span>{lang === "hi" ? "कुल कार्यकर्ता" : "Workers"}: <b>{workerLocations.length}</b></span>
+                      <span>{lang === "hi" ? "कुल कार्यकर्ता" : "Workers"}: <b>{displayWorkerLocations.length}</b></span>
                     </div>
                     <div className="bmTrackerStatBadge" style={{ borderColor: "#86efac", background: "#f0fdf4" }}>
                       <span>🟢</span>
-                      <span>{lang === "hi" ? "लाइव ऑनलाइन" : "Online"}: <b style={{ color: "#15803d" }}>{workerLocations.filter((w) => w.isOnline).length}</b></span>
+                      <span>{lang === "hi" ? "लाइव ऑनलाइन" : "Online"}: <b style={{ color: "#15803d" }}>{displayWorkerLocations.filter((w) => w.isOnline).length}</b></span>
                     </div>
                     <div className="bmTrackerStatBadge">
                       <span>🗳️</span>
@@ -7703,11 +7782,11 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   {/* Embedded Google Map Preview */}
                   {(() => {
                     const activeWorker =
-                      workerLocations.find((w) => w.workerId === focusedWorkerId) ||
-                      workerLocations[0];
-                    const centerLat = activeWorker ? activeWorker.lat : (myGps?.lat ?? 25.3485);
-                    const centerLng = activeWorker ? activeWorker.lng : (myGps?.lng ?? 74.6342);
-                    const activeName = activeWorker ? activeWorker.name : "कार्यकर्ता";
+                      displayWorkerLocations.find((w) => w.workerId === focusedWorkerId) ||
+                      displayWorkerLocations[0];
+                    const centerLat = activeWorker ? activeWorker.lat : 25.3485;
+                    const centerLng = activeWorker ? activeWorker.lng : 74.6342;
+                    const activeName = activeWorker ? activeWorker.name : (lang === "hi" ? "बूथ क्षेत्र" : "Booth Area");
 
                     return (
                       <div className="bmMapContainer">
@@ -7726,7 +7805,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                           <span style={{ fontSize: "11px", fontWeight: 800, color: "#64748b", whiteSpace: "nowrap" }}>
                             🎯 {lang === "hi" ? "मैप पर देखें:" : "View on Map:"}
                           </span>
-                          {workerLocations.map((w) => {
+                          {displayWorkerLocations.map((w) => {
                             const isSelected =
                               (focusedWorkerId === w.workerId) ||
                               (!focusedWorkerId && w.workerId === activeWorker?.workerId);
@@ -7785,7 +7864,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     📋 {lang === "hi" ? "सभी कार्यकर्ताओं की स्थिति व संपर्क" : "All Workers Status & Direct Contact"}
                   </div>
 
-                  {workerLocations.map((w) => {
+                  {displayWorkerLocations.map((w) => {
                     const isFocused = focusedWorkerId === w.workerId;
                     return (
                       <div

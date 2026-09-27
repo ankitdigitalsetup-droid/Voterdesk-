@@ -115,3 +115,39 @@ export interface TeamMember {
   contactedCount: number;
   location?: WorkerLocation;
 }
+
+/**
+ * Robust Super Admin identifier helper.
+ * Super Admin location, identity, and profile must NEVER be visible to any candidate or worker.
+ */
+export function isSuperAdminEntity(entity?: {
+  id?: string;
+  workerId?: string;
+  userId?: string;
+  name?: string;
+  workerName?: string;
+  phone?: string;
+  roleTitle?: string;
+  role?: string;
+} | null): boolean {
+  if (!entity) return false;
+  const id = String(entity.workerId || entity.id || entity.userId || "").trim().toLowerCase();
+  const name = String(entity.workerName || entity.name || "").trim().toLowerCase();
+  const phone = String(entity.phone || "").replace(/\D/g, "");
+  const role = String(entity.roleTitle || entity.role || "").trim().toLowerCase();
+
+  if (id === "usr_super_1" || id === "admin_1" || id.includes("super")) return true;
+  if (phone === "9999999999") return true;
+  if (
+    name.includes("super admin") ||
+    name.includes("superadmin") ||
+    name.includes("मास्टर एडमिन") ||
+    name.includes("सुपर एडमिन")
+  ) {
+    return true;
+  }
+  if (role.includes("super") || role === "super_admin") return true;
+
+  return false;
+}
+

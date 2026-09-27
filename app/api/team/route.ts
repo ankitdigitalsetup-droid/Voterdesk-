@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getTeamMembers, createTeamMember } from "@/lib/db/team";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { isSuperAdminEntity } from "@/lib/types";
 
 export async function GET(req: Request) {
   try {
@@ -8,8 +9,11 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const candidateId = session?.candidateId || searchParams.get("candidateId") || "cand_1";
 
-    const team = await getTeamMembers(candidateId);
+    const rawTeam = await getTeamMembers(candidateId);
+    // 🛡️ SUPER ADMIN PRIVACY GUARD: Super Admin never appears in candidate team members
+    const team = rawTeam.filter((m) => !isSuperAdminEntity(m));
     return NextResponse.json({ success: true, team });
+
   } catch (err: unknown) {
     return NextResponse.json(
       { error: "Failed to fetch team members", details: err instanceof Error ? err.message : String(err) },
