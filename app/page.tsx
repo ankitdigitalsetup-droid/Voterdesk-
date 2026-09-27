@@ -3023,6 +3023,9 @@ function BoothManagerView({
   const [familySlipGridCols, setFamilySlipGridCols] = useState<number>(2);
   const [isGeneratingSingleImage, setIsGeneratingSingleImage] = useState(false);
 
+  // Check if current user is Member (Karyakarta) vs Admin (Candidate / Super Admin)
+  const isMember = user.role === "KARYAKARTA";
+
   // Voter Slip Custom Message (1:1 with user screenshot)
   const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
   const [customSlipMsg, setCustomSlipMsg] = useState<string>(() => {
@@ -3079,6 +3082,12 @@ function BoothManagerView({
   }, [voters]);
 
   const handleSaveSlipMsg = () => {
+    if (isMember) {
+      alert("Only admin can change slip message. / केवल एडमिन ही स्लिप मैसेज बदल सकते हैं।");
+      setLocalToast("🔒 Only admin can change slip message.");
+      setTimeout(() => setLocalToast(""), 3500);
+      return;
+    }
     const finalMsg = tempSlipMsg.trim() || defaultSlipMsg;
     setCustomSlipMsg(finalMsg);
     if (typeof window !== "undefined") {
@@ -3087,6 +3096,17 @@ function BoothManagerView({
     setShowSlipMsgModal(false);
     setLocalToast("✅ वोटर स्लिप मैसेज सेव हो गया!");
     setTimeout(() => setLocalToast(""), 3000);
+  };
+
+  // Location Tracker Handler: Visible to all, but only Admin can view
+  const handleOpenLocationTracker = () => {
+    if (isMember) {
+      alert("Only admin can See this.");
+      setLocalToast("🔒 Only admin can See this.");
+      setTimeout(() => setLocalToast(""), 3500);
+      return;
+    }
+    setShowLocationModal(true);
   };
 
   // Slip send phone state
@@ -3324,6 +3344,7 @@ function BoothManagerView({
   };
 
   const handleUpdateActionSlipMsg = (newMsg: string) => {
+    if (isMember) return;
     setActiveVoterSlipMsg(newMsg);
     if (!activeActionVoter) return;
     const updated = store.updateVoter(activeActionVoter.id, { slipMessage: newMsg });
@@ -4145,6 +4166,12 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   // CURRENT PAGE EXCEL DOWNLOAD (.xlsx) & ALL VOTERS DOWNLOAD
   // -------------------------------------------------------------
   const handleDownloadCurrentPageExcel = () => {
+    if (isMember) {
+      alert("Only admin can download this.\nकेवल एडमिन (प्रत्याशी) ही वोटर सूची व एक्सेल डाउनलोड कर सकते हैं।");
+      setLocalToast("🔒 Only admin can download this.");
+      setTimeout(() => setLocalToast(""), 3500);
+      return;
+    }
     if (filteredVoters.length === 0) {
       setLocalToast("⚠️ डाउनलोड करने के लिए कोई मतदाता डेटा उपलब्ध नहीं है!");
       setTimeout(() => setLocalToast(""), 3500);
@@ -4219,6 +4246,12 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   };
 
   const handleDownloadAllVotersExcel = () => {
+    if (isMember) {
+      alert("Only admin can download this.\nकेवल एडमिन (प्रत्याशी) ही वोटर सूची व एक्सेल डाउनलोड कर सकते हैं।");
+      setLocalToast("🔒 Only admin can download this.");
+      setTimeout(() => setLocalToast(""), 3500);
+      return;
+    }
     if (voters.length === 0) {
       setLocalToast("⚠️ कोई मतदाता डेटा उपलब्ध नहीं है!");
       setTimeout(() => setLocalToast(""), 3500);
@@ -4613,8 +4646,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     <span style={{ fontSize: "11px", fontWeight: 700, color: "#0284c7", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                       📋 {lang === "hi" ? "कैंडिडेट मेनू" : "Candidate Menu"}
                     </span>
-                    <span style={{ fontSize: "10px", background: "#e0f2fe", color: "#0369a1", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>
-                      {user.role === "SUPER_ADMIN" ? "Super Admin" : "Candidate"}
+                    <span style={{ fontSize: "10px", background: isMember ? "#fef3c7" : "#e0f2fe", color: isMember ? "#b45309" : "#0369a1", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>
+                      {user.role === "SUPER_ADMIN" ? "Super Admin" : isMember ? "Member (Karyakarta)" : "Admin (Candidate)"}
                     </span>
                   </div>
                   <div style={{ fontSize: "12px", fontWeight: 600, color: "#334155", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -4645,8 +4678,15 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 >
                   <Download size={20} style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "13px", fontWeight: 800, lineHeight: 1.2 }}>
-                      {lang === "hi" ? "📥 करंट पेज डाउनलोड (Excel)" : "📥 Current Page Download (.xlsx)"}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 800, lineHeight: 1.2 }}>
+                        {lang === "hi" ? "📥 करंट पेज डाउनलोड (Excel)" : "📥 Current Page Download (.xlsx)"}
+                      </div>
+                      {isMember && (
+                        <span style={{ fontSize: "9.5px", background: "rgba(0,0,0,0.25)", color: "#fff", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }}>
+                          🔒 Admin Only
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: "11px", opacity: 0.92, marginTop: "2px", lineHeight: 1.2 }}>
                       {search.trim()
@@ -4680,8 +4720,15 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 >
                   <FileSpreadsheet size={18} color="#0284c7" style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
-                      {lang === "hi" ? "पूरी मतदाता सूची डाउनलोड (All)" : "Download All Voters (.xlsx)"}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                        {lang === "hi" ? "पूरी मतदाता सूची डाउनलोड (All)" : "Download All Voters (.xlsx)"}
+                      </div>
+                      {isMember && (
+                        <span style={{ fontSize: "9.5px", background: "#fee2e2", color: "#991b1b", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }}>
+                          🔒 Admin Only
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px" }}>
                       {voters.length} {lang === "hi" ? "कुल मतदाता (मास्टर फाइल)" : "total voters master"}
@@ -4756,7 +4803,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   type="button"
                   onClick={() => {
                     setShowMenuDropdown(false);
-                    setShowLocationModal(true);
+                    handleOpenLocationTracker();
                   }}
                   style={{
                     background: "#f8fafc",
@@ -4773,8 +4820,15 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 >
                   <Building2 size={17} color="#6366f1" style={{ flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
-                      {lang === "hi" ? "कार्यकर्ता लोकेशन ट्रैकर" : "Worker Live Locations"}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 700, lineHeight: 1.2 }}>
+                        {lang === "hi" ? "कार्यकर्ता लोकेशन ट्रैकर" : "Worker Live Locations"}
+                      </div>
+                      {isMember && (
+                        <span style={{ fontSize: "9.5px", background: "#fee2e2", color: "#991b1b", padding: "1px 5px", borderRadius: "4px", fontWeight: 700 }}>
+                          🔒 Admin Only
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px" }}>
                       {lang === "hi" ? "मैप पर लाइव लोकेशन देखें" : "Track team on Google Map"}
@@ -4927,7 +4981,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         <button
           type="button"
           className="bmActionBtn bmBtnLocation"
-          onClick={() => setShowLocationModal(true)}
+          onClick={handleOpenLocationTracker}
         >
           <span>{t.btnLocation}</span>
         </button>
@@ -6429,25 +6483,36 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               type="text"
               className="bmSlipMsgInput"
               value={tempSlipMsg}
-              onChange={(e) => setTempSlipMsg(e.target.value)}
+              readOnly={isMember}
+              onChange={(e) => {
+                if (!isMember) setTempSlipMsg(e.target.value);
+              }}
               placeholder='vote for "Candidate Name"'
-              autoFocus
+              style={isMember ? { backgroundColor: "#f3f4f6", cursor: "not-allowed", color: "#374151" } : undefined}
+              autoFocus={!isMember}
             />
+            {isMember && (
+              <div style={{ fontSize: "12px", color: "#dc2626", marginTop: "8px", fontWeight: "600", display: "flex", alignItems: "center", gap: "5px" }}>
+                🔒 केवल एडमिन ही स्लिप मैसेज बदल सकते हैं (Read-Only)
+              </div>
+            )}
             <div className="bmSlipMsgBtnRow">
               <button
                 type="button"
                 className="bmSlipMsgBtnCancel"
                 onClick={() => setShowSlipMsgModal(false)}
               >
-                कैंसिल
+                {isMember ? "बंद करें" : "कैंसिल"}
               </button>
-              <button
-                type="button"
-                className="bmSlipMsgBtnSave"
-                onClick={handleSaveSlipMsg}
-              >
-                सेव करें
-              </button>
+              {!isMember && (
+                <button
+                  type="button"
+                  className="bmSlipMsgBtnSave"
+                  onClick={handleSaveSlipMsg}
+                >
+                  सेव करें
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -6500,14 +6565,41 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               </button>
             </div>
 
-            {/* Slip Message: editable per voter */}
-            <input
-              type="text"
-              className="bmVoterActionInput"
-              value={activeVoterSlipMsg}
-              onChange={(e) => handleUpdateActionSlipMsg(e.target.value)}
-              placeholder="स्लिप मैसेज"
-            />
+            {/* Slip Message: editable per voter for Admin, read-only for Member */}
+            <div style={{ position: "relative", width: "100%" }}>
+              <input
+                type="text"
+                className="bmVoterActionInput"
+                value={activeVoterSlipMsg}
+                readOnly={isMember}
+                onChange={(e) => {
+                  if (!isMember) handleUpdateActionSlipMsg(e.target.value);
+                }}
+                placeholder="स्लिप मैसेज"
+                style={isMember ? { backgroundColor: "#f9fafb", cursor: "not-allowed", color: "#374151", paddingRight: "85px" } : undefined}
+                title={isMember ? "🔒 केवल एडमिन ही स्लिप मैसेज बदल सकते हैं" : undefined}
+              />
+              {isMember && (
+                <span
+                  style={{
+                    position: "absolute",
+                    right: "10px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: "11px",
+                    color: "#6b7280",
+                    fontWeight: 600,
+                    pointerEvents: "none",
+                    backgroundColor: "#f3f4f6",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    border: "1px solid #e5e7eb"
+                  }}
+                >
+                  🔒 Read-Only
+                </span>
+              )}
+            </div>
 
             {/* Wide Full-Width Blue Button: प्रिंट वोटर स्लिप */}
             <button
@@ -8077,15 +8169,28 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     gap: "12px",
                   }}
                   onClick={() => {
+                    if (isMember) {
+                      alert("Only admin can print or download voter list.\nकेवल एडमिन (प्रत्याशी) ही पूरी मतदाता सूची प्रिंट या डाउनलोड कर सकते हैं।");
+                      setLocalToast("🔒 Only admin can print or download voter list.");
+                      setTimeout(() => setLocalToast(""), 3500);
+                      return;
+                    }
                     setShowPrintModal(false);
                     setTimeout(() => window.print(), 200);
                   }}
                 >
                   <FileSpreadsheet size={24} color="#026aa7" />
-                  <div>
-                    <b style={{ fontSize: "14px", display: "block", color: "#0f172a" }}>
-                      {t.printVoterRoll}
-                    </b>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <b style={{ fontSize: "14px", display: "block", color: "#0f172a" }}>
+                        {t.printVoterRoll}
+                      </b>
+                      {isMember && (
+                        <span style={{ fontSize: "10px", color: "#dc2626", fontWeight: 700, background: "#fee2e2", padding: "2px 6px", borderRadius: "4px" }}>
+                          🔒 Admin Only
+                        </span>
+                      )}
+                    </div>
                     <small style={{ color: "#64748b", fontSize: "11px" }}>
                       वर्तमान में दिख रहे {filteredVoters.length} मतदाताओं की पूरी नामावली तालिका प्रिंट करें
                     </small>
@@ -8140,10 +8245,17 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   }}
                 >
                   <Download size={24} color="#059669" />
-                  <div>
-                    <b style={{ fontSize: "14px", display: "block", color: "#065f46" }}>
-                      {lang === "hi" ? "करंट पेज Excel (.xlsx) डाउनलोड" : "Current Page Excel (.xlsx) Download"}
-                    </b>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <b style={{ fontSize: "14px", display: "block", color: "#065f46" }}>
+                        {lang === "hi" ? "करंट पेज Excel (.xlsx) डाउनलोड" : "Current Page Excel (.xlsx) Download"}
+                      </b>
+                      {isMember && (
+                        <span style={{ fontSize: "10px", color: "#dc2626", fontWeight: 700, background: "#fee2e2", padding: "2px 6px", borderRadius: "4px" }}>
+                          🔒 Admin Only
+                        </span>
+                      )}
+                    </div>
                     <small style={{ color: "#047857", fontSize: "11px" }}>
                       वर्तमान में दिख रहे {filteredVoters.length} मतदाताओं का पूरा डेटा Excel फाइल में डाउनलोड करें
                     </small>
