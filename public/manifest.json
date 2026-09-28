@@ -1,12 +1,17 @@
 {
+  "id": "com.voterdesk.app",
   "name": "VoterDesk - Campaign & Voter Management",
   "short_name": "VoterDesk",
-  "description": "Multi-mobile election campaign, live booth sync and digital voter slip platform.",
+  "description": "Multi-mobile election campaign, live booth sync and digital voter slip platform for Candidates & Booth Workers.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#0f172a",
   "theme_color": "#1248a5",
+  "lang": "hi",
+  "dir": "ltr",
+  "categories": ["productivity", "utilities", "politics"],
   "icons": [
     {
       "src": "/apple-touch-icon.png",
@@ -31,6 +36,5 @@
       "sizes": "any",
       "type": "image/svg+xml"
     }
-  ],
-  "categories": ["productivity", "utilities", "social"]
+  ]
 }

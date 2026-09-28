@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.voterdesk.app",
+      "sha256_cert_fingerprints": [
+        "14:6D:E9:7D:0F:52:AB:E0:85:42:8A:2E:5E:9B:D4:3B:60:54:11:A8:14:4D:F2:49:67:71:99:A9:77:4B:91:FA"
+      ]
+    }
+  }
+]
