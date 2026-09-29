@@ -596,41 +596,68 @@ function Login({
   };
 
   return (
-    <main className="login">
-      <section className="loginBox">
-        <div className="loginBrand">
-          <Logo />
-          <div>
-            <b>{t.loginBrandTitle}</b>
-            <span>{t.loginBrandSub}</span>
+    <main
+      className="login"
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "100vh",
+        background: "linear-gradient(135deg, #f8fafc 0%, #eef2f6 100%)",
+        padding: "24px 16px",
+      }}
+    >
+      <section
+        className="loginBox"
+        style={{
+          maxWidth: "460px",
+          width: "100%",
+          margin: "0 auto",
+          background: "#ffffff",
+          padding: "36px 28px",
+          borderRadius: "20px",
+          boxShadow: "0 20px 45px -12px rgba(15, 23, 42, 0.12)",
+          border: "1px solid #e2e8f0",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+          <div className="loginBrand" style={{ position: "static", margin: 0 }}>
+            <Logo />
+            <div>
+              <b>{t.loginBrandTitle}</b>
+              <span>{t.loginBrandSub}</span>
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={toggleLang}
+            style={{
+              border: "1px solid rgba(148, 163, 184, 0.6)",
+              borderRadius: "999px",
+              background: "#f8fafc",
+              color: "#0f172a",
+              padding: "6px 12px",
+              fontSize: "12.5px",
+              fontWeight: 700,
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "6px",
+            }}
+          >
+            <Globe size={13} />
+            <span>{t.langToggle}</span>
+          </button>
         </div>
 
-        <button
-          type="button"
-          onClick={toggleLang}
-          style={{
-            alignSelf: "flex-end",
-            marginBottom: "12px",
-            border: "1px solid rgba(148, 163, 184, 0.6)",
-            borderRadius: "999px",
-            background: "#f8fafc",
-            color: "#0f172a",
-            padding: "7px 12px",
-            fontWeight: 700,
-            cursor: "pointer",
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "6px",
-          }}
-        >
-          <Globe size={14} />
-          <span>{t.langToggle}</span>
-        </button>
-
-        <div className="loginCopy">
-          <h1>{lang === "hi" ? "वोटर डेस्क पोर्टल लॉगिन" : "VoterDesk Portal Sign In"}</h1>
-          <p>{lang === "hi" ? "कृपया अपने पंजीकृत मोबाइल नंबर एवं पासवर्ड से प्रवेश करें" : "Sign in with your registered mobile number and password"}</p>
+        <div className="loginCopy" style={{ marginTop: 0 }}>
+          <h1 style={{ fontSize: "24px", fontWeight: 800, margin: "0 0 6px 0", color: "#0f172a", letterSpacing: "-0.5px" }}>
+            {lang === "hi" ? "वोटर डेस्क पोर्टल लॉगिन" : "VoterDesk Portal Sign In"}
+          </h1>
+          <p style={{ margin: "0 0 18px 0", color: "#64748b", fontSize: "13.5px" }}>
+            {lang === "hi" ? "कृपया अपने पंजीकृत मोबाइल नंबर एवं पासवर्ड से प्रवेश करें" : "Sign in with your registered mobile number and password"}
+          </p>
         </div>
 
         {error && (
@@ -708,22 +735,6 @@ function Login({
           <ShieldCheck size={16} />{" "}
           <span>{lang === "hi" ? "256-बिट सुरक्षित एन्क्रिप्टेड पोर्टल" : "256-bit secure encrypted portal"}</span>
         </p>
-      </section>
-
-      <section className="loginArt">
-        <div className="grid" />
-        <article>
-          <Vote />
-          <h2>{t.loginArtTitle}</h2>
-          <div className="artStat">
-            <span>{t.loginArtMeta}</span>
-            <b>73,860</b>
-          </div>
-          <div className="progress">
-            <i style={{ width: "68%" }} />
-          </div>
-          <small>{t.loginArtProgress}</small>
-        </article>
       </section>
     </main>
   );
