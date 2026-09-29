@@ -376,7 +376,7 @@ export default function Page() {
                 return;
               }
               const exportRows = voters.map((v, idx) => ({
-                "भाग संख्या (Part No)": v.booth || "—",
+                "वार्ड संख्या (Ward No)": v.booth || "—",
                 "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
                 "मतदाता का नाम (Name)": v.name || "",
                 "पिता/पति का नाम (Guardian)": v.guardian || "—",
@@ -2323,7 +2323,7 @@ function SuperAdminView({
                 )}
 
                 <div style={{ fontSize: "11.5px", color: "#475569", background: "#f1f5f9", padding: "8px 10px", borderRadius: "8px" }}>
-                  💡 <b>कॉलम्स:</b> भाग सं., क्र. सं., नाम, पिता/पति, वोट डाला, सपोर्टर, बाहर, मोबाइल, मकान, एड्रेस, बूथ पता।
+                  💡 <b>कॉलम्स:</b> वार्ड सं., क्र. सं., नाम, पिता/पति, वोट डाला, सपोर्टर, बाहर, मोबाइल, मकान, एड्रेस, बूथ पता।
                 </div>
               </div>
             </div>
@@ -3153,7 +3153,7 @@ function SuperAdminView({
 
               <div className="inputGrid">
                 <div className="formGroup">
-                  <label>बूथ / भाग संख्या (Booth Number) *</label>
+                  <label>वार्ड संख्या (Ward Number) *</label>
                   <input
                     required
                     placeholder="उदा. 1"
@@ -3964,7 +3964,7 @@ function BoothManagerView({
   // 4. वोटर स्लिप (Formatted Slip Copy & Share)
   const handleShareVoterSlip = async () => {
     if (!activeActionVoter) return;
-    const slipText = `क्रम सं : ${activeActionVoter.serialNo || "—"}     भाग सं : ${activeActionVoter.booth}
+    const slipText = `क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth}
 नाम : ${activeActionVoter.name}
 पिता/पति : ${activeActionVoter.guardian || "—"}
 उम्र : ${activeActionVoter.age || "—"}     मकान नंबर : ${activeActionVoter.house || "—"}
@@ -4144,7 +4144,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.fillStyle = "#64748b";
       ctx.font = "bold 18px sans-serif";
       ctx.textAlign = "right";
-      ctx.fillText(`भाग संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`, w - 40, 808);
+      ctx.fillText(`वार्ड संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`, w - 40, 808);
 
       // Thin separator line
       ctx.strokeStyle = "#cbd5e1";
@@ -4192,7 +4192,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.textAlign = "left";
           ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : slotIndex + 1}`, x + 16, y + 29);
           ctx.textAlign = "right";
-          ctx.fillText(`भाग सं : ${v.booth || "—"}`, x + cardW - 16, y + 29);
+          ctx.fillText(`वार्ड सं : ${v.booth || "—"}`, x + cardW - 16, y + 29);
 
           // Name
           ctx.fillStyle = "#0f172a";
@@ -4371,7 +4371,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.textAlign = "left";
       ctx.fillText(`क्रम सं : ${v.serialNo || "—"}`, cardX + 20, cardY + 40);
       ctx.textAlign = "right";
-      ctx.fillText(`भाग सं : ${v.booth || "—"}`, cardX + cardW - 20, cardY + 40);
+      ctx.fillText(`वार्ड सं : ${v.booth || "—"}`, cardX + cardW - 20, cardY + 40);
 
       // Name (Large Bold)
       ctx.fillStyle = "#0f172a";
@@ -4449,7 +4449,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 *उम्मीदवार:* ${candName} (${candParty})
 🗳️ *${campaignMsg}*
 ----------------------------------------
-*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *भाग सं (Part) :* ${v.booth}
+*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}
 *नाम (Name) :* ${v.name}
 *पिता/पति (Guardian) :* ${v.guardian || "—"}
 *वोटर ID (EPIC) :* ${v.epic}
@@ -4467,6 +4467,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   };
 
   // 2. Send Single Voter Slip as Image on WhatsApp
+  // 2. Send Single Voter Slip as Image on WhatsApp (Direct to recipient WhatsApp number with preview card)
   const handleSendSingleVoterSlipImage = async (v: VoterRecord, targetPhone?: string) => {
     setIsGeneratingSingleImage(true);
     setLocalToast("⏳ वोटर स्लिप इमेज तैयार हो रही है...");
@@ -4479,47 +4480,118 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
       const ph = (targetPhone || activeVoterPhone || v.phone || "").replace(/[^0-9]/g, "");
       const cleanPh = ph.length === 10 ? `91${ph}` : ph;
-      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*भाग सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
-      const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Part${v.booth}.png`;
-      const file = new File([res.blob], fileName, { type: "image/png" });
+      const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Ward${v.booth || "1"}.png`;
 
-      // If Web Share API supports sharing files (Mobile browsers like Android Chrome / iOS Safari)
+      // A. Auto-download the high-res image to user's device / gallery
+      try {
+        const a = document.createElement("a");
+        a.href = res.dataUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } catch (dlErr) {
+        console.warn("Auto-download skipped:", dlErr);
+      }
+
+      // B. Auto-copy image to clipboard if supported by browser/device
+      try {
+        if (navigator.clipboard && window.ClipboardItem && res.blob) {
+          await navigator.clipboard.write([
+            new ClipboardItem({ "image/png": res.blob })
+          ]);
+        }
+      } catch (clipErr) {
+        console.warn("Clipboard copy skipped:", clipErr);
+      }
+
+      const candName = candidate ? candidate.name : "प्रत्याशी";
+      const candParty = candidate ? candidate.party : "निर्दलीय";
+      const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
+      const origin = typeof window !== "undefined" ? window.location.origin : "https://voterdesk-six.vercel.app";
+      const slipLink = `${origin}/slip/${v.id}?c=${candidate?.id || ""}`;
+
+      const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
+*उम्मीदवार:* ${candName} (${candParty})
+🗳️ *${campaignMsg}*
+----------------------------------------
+*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}
+*नाम (Name) :* ${v.name}
+*पिता/पति (Guardian) :* ${v.guardian || "—"}
+*वोटर ID (EPIC) :* ${v.epic}
+*उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *मकान नं :* ${v.house || "—"}
+*बुथ पता :* ${v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
+----------------------------------------
+🖼️ *फोटो पर्ची (डिजिटल स्लिप लिंक):*
+${slipLink}
+----------------------------------------
+🙏 कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏`;
+
+      // C. Direct WhatsApp Chat Opening for this voter's number!
+      if (cleanPh) {
+        window.open(`https://wa.me/${cleanPh}?text=${encodeURIComponent(text)}`, "_blank");
+        setLocalToast(`✅ ${ph} का व्हाट्सएप खुल रहा है! फ़ोटो गैलरी में सेव हो गई है।`);
+        setTimeout(() => setLocalToast(""), 4500);
+        return;
+      }
+
+      // Fallback if no phone number was entered: open Android Share Sheet
+      const file = new File([res.blob], fileName, { type: "image/png" });
       if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
         try {
           await navigator.share({
             files: [file],
             title: `वोटर पर्ची - ${v.name}`,
-            text: caption,
+            text: text,
           });
           setLocalToast("✅ पर्ची सफलतापूर्वक शेयर की गई!");
           setTimeout(() => setLocalToast(""), 3000);
           return;
         } catch (shareErr: any) {
-          if (shareErr.name === "AbortError") {
-            return;
-          }
+          if (shareErr.name === "AbortError") return;
         }
       }
 
-      // Fallback for Desktop / unsupported browsers:
-      // 1. Auto-download the high-res image
-      const a = document.createElement("a");
-      a.href = res.dataUrl;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-
-      // 2. Open WhatsApp with prefilled text and image prompt
-      const waUrl = cleanPh
-        ? `https://wa.me/${cleanPh}?text=${encodeURIComponent(caption + "\n\n(✅ पर्ची इमेज आपके डिवाइस में डाउनलोड हो गई है, कृपया चैट में अटैच करके भेजें)")}`
-        : `https://api.whatsapp.com/send?text=${encodeURIComponent(caption + "\n\n(✅ पर्ची इमेज आपके डिवाइस में डाउनलोड हो गई है, कृपया चैट में अटैच करके भेजें)")}`;
-
-      window.open(waUrl, "_blank");
-      setLocalToast(`✅ पर्ची इमेज डाउनलोड हो गई! व्हाट्सएप खुल रहा है...`);
-      setTimeout(() => setLocalToast(""), 4000);
+      // Generic WhatsApp fallback
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
+      setLocalToast(`✅ व्हाट्सएप खुल रहा है!`);
+      setTimeout(() => setLocalToast(""), 3000);
     } catch (err) {
       alert("इमेज भेजने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsGeneratingSingleImage(false);
+    }
+  };
+
+  // 3. Share raw image file explicitly via Android Share Sheet
+  const handleShareSingleVoterSlipFile = async (v: VoterRecord) => {
+    setIsGeneratingSingleImage(true);
+    setLocalToast("⏳ इमेज तैयार हो रही है...");
+    try {
+      const res = await generateSingleVoterSlipImage(v);
+      if (!res) return;
+      const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Ward${v.booth || "1"}.png`;
+      const file = new File([res.blob], fileName, { type: "image/png" });
+      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*वार्ड सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
+
+      if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `वोटर पर्ची - ${v.name}`,
+          text: caption,
+        });
+      } else {
+        const a = document.createElement("a");
+        a.href = res.dataUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setLocalToast("✅ इमेज डाउनलोड हो गई!");
+        setTimeout(() => setLocalToast(""), 3000);
+      }
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsGeneratingSingleImage(false);
     }
@@ -4740,7 +4812,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const exportRows = paginatedVoters.map((v, idx) => {
         const row: Record<string, any> = {
-          "भाग संख्या (Part No)": v.booth || "—",
+          "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
           "पिता/पति का नाम (Guardian)": v.guardian || "—",
@@ -4820,7 +4892,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const exportRows = voters.map((v, idx) => {
         const row: Record<string, any> = {
-          "भाग संख्या (Part No)": v.booth || "—",
+          "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
           "पिता/पति का नाम (Guardian)": v.guardian || "—",
@@ -5092,7 +5164,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       `----------------------------------------%0A` +
       `👤 *मतदाता:* ${v.name}%0A` +
       `👨‍👧 *पिता/पति:* ${v.guardian || "—"}%0A` +
-      `🔢 *भाग सं. (Part No):* ${v.booth} | *क्र सं. (Sr No):* ${v.serialNo || "—"}%0A` +
+      `🔢 *वार्ड सं. (Ward No):* ${v.booth} | *क्र सं. (Sr No):* ${v.serialNo || "—"}%0A` +
       `🆔 *पहचान पत्र (EPIC):* ${v.epic}%0A` +
       `🏠 *मकान नं.:* ${v.house || "—"}${v.address ? ` (${v.address})` : ""}%0A` +
       `📍 *मतदान केंद्र:* ${t.pollingStationName}%0A` +
@@ -5711,10 +5783,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   fontWeight: 600,
                 }}
               >
-                <option value="ALL">{lang === "hi" ? "सभी भाग" : "All Parts"}</option>
+                <option value="ALL">{lang === "hi" ? "सभी वार्ड" : "All Wards"}</option>
                 {allParts.map((p) => (
                   <option key={p} value={p}>
-                    {lang === "hi" ? `भाग ${p}` : `Part ${p}`}
+                    {lang === "hi" ? `वार्ड ${p}` : `Ward ${p}`}
                   </option>
                 ))}
               </select>
@@ -6111,7 +6183,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 border: "1px solid #fca5a5",
               }}
             >
-              भाग {familyFilter.booth} • मकान नं {familyFilter.house || "—"}
+              वार्ड {familyFilter.booth} • मकान नं {familyFilter.house || "—"}
             </span>
             <span style={{ fontSize: "12.5px", color: "#7f1d1d", fontWeight: 600 }}>
               ({selectedFamilyVoterIds.length}/{filteredVoters.length}{" "}
@@ -6934,7 +7006,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     borderRadius: "6px",
                   }}
                 >
-                  {lang === "hi" ? `भाग: ${selectedVoter.booth} • क्र: ${selectedVoter.serialNo || "—"}` : `Part: ${selectedVoter.booth} • Sr: ${selectedVoter.serialNo || "—"}`}
+                  {lang === "hi" ? `वार्ड: ${selectedVoter.booth} • क्र: ${selectedVoter.serialNo || "—"}` : `Ward: ${selectedVoter.booth} • Sr: ${selectedVoter.serialNo || "—"}`}
                 </span>
                 <span className={`status ${selectedVoter.status.toLowerCase()}`}>
                   {selectedVoter.status}
@@ -7598,7 +7670,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             >
               <div className="bmSlipRow">
                 <span><b>क्रम सं : {activeActionVoter.serialNo || "—"}</b></span>
-                <span><b>भाग सं : {activeActionVoter.booth || "—"}</b></span>
+                <span><b>वार्ड सं : {activeActionVoter.booth || "—"}</b></span>
               </div>
               <div className="bmSlipField">
                 <b>नाम : {activeActionVoter.name}</b>
@@ -7663,7 +7735,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             <div className="bmDottedSlipCard">
               <div className="bmSlipRow">
                 <span><b>क्रम सं :</b> {activeActionVoter.serialNo || "—"}</span>
-                <span><b>भाग सं :</b> {activeActionVoter.booth || "—"}</span>
+                <span><b>वार्ड सं :</b> {activeActionVoter.booth || "—"}</span>
               </div>
               <div className="bmSlipField">
                 <span><b>नाम :</b> {activeActionVoter.name}</span>
@@ -7765,8 +7837,29 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
               {/* Helper explanation note */}
               <p style={{ margin: "2px 0 0", textAlign: "center", fontSize: "11.5px", color: "#64748b" }}>
-                💡 <b>टेक्स्ट पर्ची:</b> उम्मीदवार व वोटर विवरण सीधे टेक्स्ट में जाएगा | <b>इमेज पर्ची:</b> पोस्टर सहित फ़ोटो जाएगी
+                💡 <b>टेक्स्ट पर्ची:</b> केवल टेक्स्ट जाएगा | <b>इमेज पर्ची:</b> डायरेक्ट व्हाट्सएप पर फोटो लिंक व विवरण जाएगा
               </p>
+
+              {/* Extra Share Option */}
+              <div style={{ textAlign: "center", marginTop: "4px" }}>
+                <button
+                  type="button"
+                  onClick={() => handleShareSingleVoterSlipFile(activeActionVoter)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#0284c7",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                    padding: "4px 8px",
+                  }}
+                  title="Android सिस्टम शेयर मेन्यू से फ़ोटो फाइल भेजें"
+                >
+                  📤 अन्य ऐप / शेयर मेन्यू से फ़ोटो भेजें (Android Share)
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -7791,7 +7884,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           <div className="bmScreenContent">
             {/* Voter Header Badge */}
             <div style={{ background: "#e0f2fe", padding: "10px 14px", borderRadius: "8px", marginBottom: "16px", color: "#0369a1", fontSize: "14px", fontWeight: 600 }}>
-              👤 <b>{activeActionVoter.name}</b> (भाग सं: {activeActionVoter.booth}, क्र सं: {activeActionVoter.serialNo || "—"}, मकान: {activeActionVoter.house || "—"})
+              👤 <b>{activeActionVoter.name}</b> (वार्ड सं: {activeActionVoter.booth}, क्र सं: {activeActionVoter.serialNo || "—"}, मकान: {activeActionVoter.house || "—"})
             </div>
 
             {/* 1. समर्थक */}
@@ -8986,7 +9079,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       👤 <b>बूथ प्रभारी (Supervisor):</b> Amit Joshi (+91 98290 12345)
                     </p>
                     <p style={{ margin: "0 0 8px" }}>
-                      🗳️ <b>भाग / बूथ संख्या:</b> {partFilter === "ALL" ? "1 (वार्ड 34)" : `भाग सं. ${partFilter}`}
+                      🗳️ <b>वार्ड संख्या:</b> {partFilter === "ALL" ? "1 (वार्ड 34)" : `वार्ड सं. ${partFilter}`}
                     </p>
                     <p style={{ margin: "0" }}>
                       📍 <b>निकटतम लैंडमार्क:</b> सुभाष नगर चौराहा, भीलवाड़ा
@@ -9230,7 +9323,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     .join("\n");
                   const text = `*परिवार मतदाता पर्ची / Family Voter Slip*\n\n` +
                     `*प्रत्याशी:* ${candidate?.name || "सम्मानित प्रत्याशी"}\n` +
-                    `*भाग संख्या:* ${familyFilter?.booth || "—"} | *मकान नं:* ${familyFilter?.house || "—"}\n\n` +
+                    `*वार्ड संख्या:* ${familyFilter?.booth || "—"} | *मकान नं:* ${familyFilter?.house || "—"}\n\n` +
                     `*परिवार के मतदाता:*\n${slipSummary}\n\n` +
                     `*मतदान केंद्र:* ${selectedFamilyVoters[0]?.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}\n\n` +
                     `कृपया अपना मतदान अवश्य करें! 🗳️`;
@@ -9337,7 +9430,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   </div>
                   <div>
                     <span className="a4BottomSub">
-                      भाग सं: {familyFilter?.booth || "—"} • {selectedFamilyVoters.length} सदस्य ({6 - selectedFamilyVoters.length} रिक्त स्थान)
+                      वार्ड सं: {familyFilter?.booth || "—"} • {selectedFamilyVoters.length} सदस्य ({6 - selectedFamilyVoters.length} रिक्त स्थान)
                     </span>
                   </div>
                 </div>
@@ -9352,7 +9445,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                           <div>
                             <div className="a4SlipTopRow">
                               <span>क्रम सं : {v.serialNo !== undefined ? v.serialNo : slotIdx + 1}</span>
-                              <span>भाग सं : {v.booth || "—"}</span>
+                              <span>वार्ड सं : {v.booth || "—"}</span>
                             </div>
                             <div className="a4SlipNameRow">
                               <span>नाम : <b>{v.name}</b></span>
@@ -9756,7 +9849,7 @@ function VotersTable({
   const handleExportCSV = () => {
     if (filtered.length === 0) return;
     const headers = [
-      "भाग संख्या",
+      "वार्ड संख्या",
       "क्रम संख्या",
       "नाम",
       "पिता/पति",
@@ -9808,7 +9901,7 @@ function VotersTable({
     try {
       const exportRows = filtered.map((v, idx) => {
         const row: Record<string, any> = {
-          "भाग संख्या (Part No)": v.booth || "—",
+          "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
           "पिता/पति का नाम (Guardian)": v.guardian || "—",
@@ -10085,7 +10178,7 @@ function VotersTable({
           <table style={{ minWidth: "1150px" }}>
             <thead>
               <tr>
-                <th style={{ width: "65px" }}>भाग संख्या</th>
+                <th style={{ width: "65px" }}>वार्ड संख्या</th>
                 <th
                   style={{ width: "85px", position: "relative", cursor: "pointer", userSelect: "none" }}
                   onClick={() => {
@@ -10751,7 +10844,7 @@ function VotersTable({
 
               <div className="inputGrid">
                 <div className="formGroup">
-                  <label>Booth / Part Number * (भाग संख्या)</label>
+                  <label>Ward Number * (वार्ड संख्या)</label>
                   <input
                     required
                     placeholder="e.g. 1"
@@ -11099,7 +11192,7 @@ function RealExcelImporter({
 
             <div className="mapping">
               {[
-                { key: "booth", label: "1. भाग संख्या (Part / Booth No.) *" },
+                { key: "booth", label: "1. वार्ड संख्या (Ward / Booth No.) *" },
                 { key: "serialNo", label: "2. क्रम संख्या (Serial No. / क्र.सं.)" },
                 { key: "name", label: "3. नाम (Voter Full Name) *" },
                 { key: "guardian", label: "4. पिता/पति (Guardian / Father / Husband)" },

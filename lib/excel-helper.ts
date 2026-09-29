@@ -223,7 +223,7 @@ export function detectFieldMapping(columns: string[]) {
 export function downloadSampleExcelTemplate() {
   const sampleData = [
     {
-      "भाग संख्या": "1",
+      "वार्ड संख्या": "1",
       "क्रम संख्या": 1,
       "नाम": "मंगल चन्द",
       "पिता/पति": "पांचू राम",
@@ -238,7 +238,7 @@ export function downloadSampleExcelTemplate() {
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
     },
     {
-      "भाग संख्या": "1",
+      "वार्ड संख्या": "1",
       "क्रम संख्या": 2,
       "नाम": "ज़रीना",
       "पिता/पति": "मुनवर अली",
@@ -253,7 +253,7 @@ export function downloadSampleExcelTemplate() {
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
     },
     {
-      "भाग संख्या": "1",
+      "वार्ड संख्या": "1",
       "क्रम संख्या": 3,
       "नाम": "गौरव शर्मा",
       "पिता/पति": "संतोष शर्मा",
@@ -268,7 +268,7 @@ export function downloadSampleExcelTemplate() {
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
     },
     {
-      "भाग संख्या": "1",
+      "वार्ड संख्या": "1",
       "क्रम संख्या": 4,
       "नाम": "राकेश कुमार शर्मा",
       "पिता/पति": "सोहन लाल शर्मा",

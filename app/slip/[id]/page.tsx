@@ -25,7 +25,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   const serialNo = voter?.serialNo || "—";
 
   const title = `🇮🇳 मतदाता पर्ची (Voter Slip) - ${voterName}`;
-  const description = `उम्मीदवार: ${candName} | भाग सं: ${partNo} | क्रम सं: ${serialNo} | पहचान पत्र: ${epicNo}`;
+  const description = `उम्मीदवार: ${candName} | वार्ड सं: ${partNo} | क्रम सं: ${serialNo} | पहचान पत्र: ${epicNo}`;
   const posterUrl = cand?.posterUrl || "https://voterdesk-six.vercel.app/images/campaign-poster.jpg";
 
   return {
@@ -108,7 +108,7 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
         <div style={{ margin: "20px 16px 16px", border: "2px dashed #0062cc", borderRadius: "10px", padding: "14px", background: "#ffffff" }}>
           <div style={{ display: "flex", justifyContent: "space-between", background: "#eff6ff", padding: "6px 12px", borderRadius: "6px", marginBottom: "12px", color: "#1e40af", fontWeight: 800, fontSize: "14px" }}>
             <span>क्रम सं : {voter.serialNo || "—"}</span>
-            <span>भाग सं : {voter.booth || "1"}</span>
+            <span>वार्ड सं : {voter.booth || "1"}</span>
           </div>
 
           <div style={{ display: "grid", gap: "8px", fontSize: "14.5px", color: "#1e293b" }}>
@@ -137,7 +137,7 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
         {/* Action Buttons */}
         <div style={{ padding: "0 16px 20px", display: "flex", gap: "10px" }}>
           <a
-            href={`https://wa.me/?text=${encodeURIComponent(`*🇮🇳 मतदाता पर्ची - ${voter.name}*\nउम्मीदवार: ${candName} (${candParty})\n🗳️ *${slipMsg}*\nभाग सं: ${voter.booth} | क्रम सं: ${voter.serialNo || "—"}\nपहचान पत्र: ${voter.epic}\nबुथ पता: ${voter.boothAddress || ""}`)}`}
+            href={`https://wa.me/?text=${encodeURIComponent(`*🇮🇳 मतदाता पर्ची - ${voter.name}*\nउम्मीदवार: ${candName} (${candParty})\n🗳️ *${slipMsg}*\nवार्ड सं: ${voter.booth} | क्रम सं: ${voter.serialNo || "—"}\nपहचान पत्र: ${voter.epic}\nबुथ पता: ${voter.boothAddress || ""}`)}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
