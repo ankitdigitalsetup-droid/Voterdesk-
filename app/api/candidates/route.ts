@@ -70,11 +70,14 @@ export async function POST(req: Request) {
       candidatePassword,
       workerPassword,
       voters,
+      slipMessage,
     } = body;
 
     if (!name || !phone) {
       return NextResponse.json({ error: "Candidate name and phone number are required" }, { status: 400 });
     }
+
+    const defaultSlip = slipMessage || (name ? `Vote for ${String(name).trim()}` : undefined);
 
     const candidate = await createCandidate({
       name,
@@ -92,6 +95,7 @@ export async function POST(req: Request) {
       candidatePassword: candidatePassword || "voterdesk",
       workerPassword: workerPassword || "karyakarta",
       voters: Array.isArray(voters) ? voters : undefined,
+      slipMessage: defaultSlip,
       status: "ACTIVE",
     });
 

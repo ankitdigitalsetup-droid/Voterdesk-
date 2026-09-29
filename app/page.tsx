@@ -1285,6 +1285,8 @@ function SuperAdminView({
       // If larger, send candidate first then chunk-upload voters to avoid serverless timeout.
       const initialVoters = parsedVoters.length <= 200 ? parsedVoters : undefined;
 
+      const defaultCandidateSlipMsg = `Vote for ${candName.trim()}`;
+
       const apiRes = await fetch("/api/candidates", {
         method: "POST",
         headers,
@@ -1303,6 +1305,7 @@ function SuperAdminView({
           passwords: pwdsToSave,
           passwordsJson: serializedPwds,
           voters: initialVoters,
+          slipMessage: defaultCandidateSlipMsg,
         }),
       });
 
@@ -1317,6 +1320,13 @@ function SuperAdminView({
       }
 
       const finalCandId = createdCandidateId || `cand_${Date.now()}`;
+
+      // Pre-set candidate's scoped slip message in localStorage
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`voterdesk_slip_msg_${finalCandId}`, defaultCandidateSlipMsg);
+        } catch {}
+      }
 
       // If voters > 200, upload in background chunks
       if (parsedVoters.length > 200 && finalCandId) {
@@ -1352,6 +1362,7 @@ function SuperAdminView({
         nikay: finalNikay,
         passwordsJson: serializedPwds,
         electionType: electionType,
+        slipMessage: defaultCandidateSlipMsg,
       };
 
       // 2. Register in client-side store
@@ -3500,18 +3511,33 @@ function BoothManagerView({
   // Check if current user is Member (Karyakarta) vs Admin (Candidate / Super Admin)
   const isMember = user.role === "KARYAKARTA";
 
-  // Voter Slip Custom Message (1:1 with user screenshot)
-  const defaultSlipMsg = `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
+  // Voter Slip Custom Message (Scoped per candidate)
+  const defaultSlipMsg = candidate?.slipMessage || (candidate?.name ? `Vote for ${candidate.name}` : "Vote for Candidate Name");
   const [customSlipMsg, setCustomSlipMsg] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("voterdesk_slip_msg");
-      if (saved) return saved;
+    if (typeof window !== "undefined" && candidate?.id) {
+      const savedScoped = localStorage.getItem(`voterdesk_slip_msg_${candidate.id}`);
+      if (savedScoped) return savedScoped;
     }
-    return `vote for "${candidate ? candidate.name : "Candidate Name"}"`;
+    if (candidate?.slipMessage) return candidate.slipMessage;
+    return candidate?.name ? `Vote for ${candidate.name}` : "Vote for Candidate Name";
   });
   const [showSlipMsgModal, setShowSlipMsgModal] = useState(false);
   const [tempSlipMsg, setTempSlipMsg] = useState(customSlipMsg);
   const [localToast, setLocalToast] = useState("");
+
+  // Synchronize customSlipMsg & tempSlipMsg whenever candidate changes or updates
+  useEffect(() => {
+    if (!candidate) return;
+    let initialMsg = candidate.slipMessage || `Vote for ${candidate.name}`;
+    if (typeof window !== "undefined" && candidate.id) {
+      const savedScoped = localStorage.getItem(`voterdesk_slip_msg_${candidate.id}`);
+      if (savedScoped) {
+        initialMsg = savedScoped;
+      }
+    }
+    setCustomSlipMsg(initialMsg);
+    setTempSlipMsg(initialMsg);
+  }, [candidate?.id, candidate?.slipMessage, candidate?.name]);
 
   // Age column sorting state (Ascending, Descending, None)
   const [ageSortOrder, setAgeSortOrder] = useState<"none" | "asc" | "desc">("none");
@@ -3565,7 +3591,26 @@ function BoothManagerView({
     const finalMsg = tempSlipMsg.trim() || defaultSlipMsg;
     setCustomSlipMsg(finalMsg);
     if (typeof window !== "undefined") {
+      if (candidate?.id) {
+        localStorage.setItem(`voterdesk_slip_msg_${candidate.id}`, finalMsg);
+      }
       localStorage.setItem("voterdesk_slip_msg", finalMsg);
+    }
+    if (candidate?.id) {
+      try {
+        const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        fetch("/api/candidates", {
+          method: "PATCH",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({ id: candidate.id, slipMessage: finalMsg }),
+        }).catch((e) => console.warn("Slip msg patch notice:", e));
+        store.updateCandidate(candidate.id, { slipMessage: finalMsg });
+      } catch (e) {
+        console.warn("Failed to patch candidate slip message:", e);
+      }
     }
     setShowSlipMsgModal(false);
     setLocalToast("✅ वोटर स्लिप मैसेज सेव हो गया!");
@@ -4262,7 +4307,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.fillStyle = "#fef08a";
       ctx.font = "bold 24px sans-serif";
       ctx.textAlign = "center";
-      const msg = activeVoterSlipMsg || `vote for ${candidate?.name || "प्रत्याशी"}`;
+      const msg = activeVoterSlipMsg || customSlipMsg || (candidate?.name ? `Vote for ${candidate.name}` : "Vote for Candidate");
       ctx.fillText(msg.length > 55 ? msg.substring(0, 55) + "..." : msg, w / 2, 688);
 
       // 4. Divider / Cut Line (710 to 730px)
@@ -4373,7 +4418,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     const ph = (targetPhone || activeVoterPhone || v.phone || "").replace(/[^0-9]/g, "");
     const candName = candidate ? candidate.name : "प्रत्याशी";
     const candParty = candidate ? candidate.party : "निर्दलीय";
-    const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || `vote for "${candName}"`;
+    const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
 
     const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
 *उम्मीदवार:* ${candName} (${candParty})
@@ -5000,7 +5045,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   const generateWhatsAppSlipText = (v: VoterRecord) => {
     const candName = candidate ? candidate.name : "अभय कुमार";
     const candParty = candidate ? candidate.party : "निर्दलीय";
-    const campaignMsg = customSlipMsg.trim() || `vote for "${candName}"`;
+    const campaignMsg = customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
     return `🇮🇳 *मतदाता पर्ची (OFFICIAL VOTER SLIP)* 🇮🇳%0A` +
       `*उम्मीदवार:* ${candName} (${candParty})%0A` +
       `----------------------------------------%0A` +
@@ -6961,7 +7006,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               onChange={(e) => {
                 if (!isMember) setTempSlipMsg(e.target.value);
               }}
-              placeholder='vote for "Candidate Name"'
+              placeholder={`Vote for ${candidate?.name || "Candidate Name"}`}
               style={isMember ? { backgroundColor: "#f3f4f6", cursor: "not-allowed", color: "#374151" } : undefined}
               autoFocus={!isMember}
             />
@@ -7254,7 +7299,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
             {/* Custom campaign message text */}
             <div className="bmCustomMsgText">
-              {activeVoterSlipMsg || `vote for ${candidate?.name || "bb"}`}
+              {activeVoterSlipMsg || customSlipMsg || (candidate?.name ? `Vote for ${candidate.name}` : "Vote for Candidate")}
             </div>
 
             {/* Dotted Voter Slip Card */}

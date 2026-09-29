@@ -297,6 +297,7 @@ class DataStore {
       id,
       voterCount: 0,
       createdAt: new Date().toISOString().split("T")[0],
+      slipMessage: cand.slipMessage || (cand.name ? `Vote for ${cand.name}` : undefined),
     };
     this.candidates.unshift(newCand);
 
@@ -386,6 +387,7 @@ class DataStore {
       passwordsJson: passwordsJsonStr,
       voterCount: 0,
       createdAt: new Date().toISOString().split("T")[0],
+      slipMessage: data.candidate.slipMessage || (data.candidate.name ? `Vote for ${data.candidate.name}` : undefined),
     };
     this.candidates.unshift(newCand);
 

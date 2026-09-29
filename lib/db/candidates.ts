@@ -19,6 +19,7 @@ function mapDbCandidateToAccount(c: any): CandidateAccount {
     nikay: c.nikay || undefined,
     passwordsJson: c.passwordsJson || undefined,
     electionType: c.electionType || (c.electionName?.includes("पंचायत") || c.electionName?.toLowerCase().includes("panchayat") ? "PANCHAYAT" : "NIKAY"),
+    slipMessage: c.slipMessage || (c.name ? `Vote for ${c.name}` : undefined),
   };
 }
 
@@ -85,6 +86,7 @@ export async function createCandidate(data: {
   nikay?: string;
   passwords?: BoothAccessPassword[];
   passwordsJson?: string;
+  slipMessage?: string;
   voters?: any[];
 }): Promise<CandidateAccount> {
   const boothTotal = Number(data.boothCount) || 10;
@@ -202,6 +204,7 @@ export async function createCandidate(data: {
       posterUrl: data.posterUrl,
       symbolName: data.symbolName,
       nikay: data.nikay,
+      slipMessage: data.slipMessage || (data.name ? `Vote for ${data.name.trim()}` : undefined),
       passwordsJson: serializedPasswords || undefined,
     });
 
@@ -280,6 +283,7 @@ export async function updateCandidate(
     posterUrl: string;
     symbolName: string;
     voterLimit: number;
+    slipMessage: string;
   }>
 ): Promise<CandidateAccount | null> {
   let updatedRecord: CandidateAccount | null = null;

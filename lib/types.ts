@@ -25,6 +25,7 @@ export interface CandidateAccount {
   nikay?: string;
   passwordsJson?: string;
   electionType?: "NIKAY" | "PANCHAYAT";
+  slipMessage?: string;
 }
 
 export interface CandidateCredential {
