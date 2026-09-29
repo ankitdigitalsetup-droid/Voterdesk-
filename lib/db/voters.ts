@@ -244,6 +244,25 @@ export async function createVoter(
 }
 
 /**
+ * Retrieves a single voter by ID with database and in-memory store fallback.
+ */
+export async function getVoterById(id: string): Promise<VoterRecord | null> {
+  try {
+    const dbVoter = await prisma.voter.findUnique({
+      where: { id },
+    });
+    if (dbVoter) {
+      return mapDbVoterToRecord(dbVoter);
+    }
+  } catch (err) {
+    console.warn(`Neon DB getVoterById(${id}) notice:`, err);
+  }
+
+  const localVoter = store.getVoter(id);
+  return localVoter || null;
+}
+
+/**
  * Updates an existing voter in Neon PostgreSQL and syncs with memory store.
  */
 export async function updateVoter(

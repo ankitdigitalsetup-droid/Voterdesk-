@@ -490,6 +490,10 @@ class DataStore {
     return [...list].sort((a, b) => compareVotersBySerial(a, b));
   }
 
+  getVoter(id: string) {
+    return this.voters.find((v) => v.id === id);
+  }
+
   addVoter(voter: Omit<VoterRecord, "id"> & { id?: string }) {
     let serialNo = voter.serialNo;
     if (!serialNo) {
