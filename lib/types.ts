@@ -68,6 +68,7 @@ export interface VoterRecord {
   isSupporter?: boolean | string; // सपोर्टर है (हाँ/नहीं / Yes/No)
   isOutside?: boolean | string; // बाहर है (हाँ/नहीं / Yes/No)
   boothAddress?: string; // Booth Address (मतदान केंद्र पता)
+  voterStatus?: "Active" | "Deleted" | string; // Electoral Roll Status: Active vs Deleted (विलोपित/हटाया गया)
   notes?: string;
   candidateId: string;
   slipMessage?: string; // स्लिप मैसेज (Custom message per voter)

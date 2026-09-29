@@ -40,7 +40,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import { store, compareVotersBySerial } from "@/lib/data-store";
+import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword, isSuperAdminEntity } from "@/lib/types";
 import { generateCandidateBoothPasswords, generateBoothPassword } from "@/lib/password-helper";
 import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
@@ -392,6 +392,7 @@ export default function Page() {
                 "लिंग (Gender)": v.gender || "—",
                 "स्थिति (Status)": v.status || "Pending",
                 "कार्यकर्ता (Worker)": v.worker || "—",
+                "Status (Active/Deleted)": isVoterDeleted(v) ? "Deleted" : "Active",
               }));
               const ws = XLSX.utils.json_to_sheet(exportRows);
               const wb = XLSX.utils.book_new();
@@ -978,6 +979,8 @@ function SuperAdminView({
         if (!epicVal) {
           epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
         }
+        const voterStatusVal = mapping.voterStatus && r[mapping.voterStatus] ? String(r[mapping.voterStatus]).trim() : "";
+        const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData: r } as VoterRecord);
         return {
           candidateId: saUploadCand ? saUploadCand.id : "cand_1",
           booth: boothVal,
@@ -994,6 +997,7 @@ function SuperAdminView({
           address: addressVal,
           boothAddress: boothAddrVal,
           epic: epicVal,
+          voterStatus: isDel ? "Deleted" : (voterStatusVal || "Active"),
           status: "Pending",
           worker: "Super Admin",
           extraData: r,
@@ -1213,6 +1217,9 @@ function SuperAdminView({
             }
           }
 
+          const voterStatusVal = mapping.voterStatus && row[mapping.voterStatus] !== undefined ? String(row[mapping.voterStatus]).trim() : "";
+          const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData, ...extraData } as VoterRecord);
+
           return {
             name: String(row[mapping.name] || "").trim(),
             guardian: String(row[mapping.guardian] || "").trim(),
@@ -1228,6 +1235,7 @@ function SuperAdminView({
             voted: row[mapping.voted] === "हाँ" || row[mapping.voted] === "Yes" ? "हाँ" : "नहीं",
             isSupporter: row[mapping.isSupporter] === "हाँ" || row[mapping.isSupporter] === "Yes" ? "हाँ" : "नहीं",
             isOutside: row[mapping.isOutside] === "हाँ" || row[mapping.isOutside] === "Yes" ? "हाँ" : "नहीं",
+            voterStatus: isDel ? "Deleted" : (voterStatusVal || "Active"),
             status: "Pending" as VoterRecord["status"],
             worker: "Unassigned",
             candidateId: "",
@@ -3583,7 +3591,7 @@ function BoothManagerView({
     const standardKeys = new Set([
       "id", "candidateId", "booth", "serialNo", "name", "guardian", "age", "gender",
       "house", "address", "boothAddress", "phone", "epic", "voted", "isSupporter",
-      "isOutside", "status", "worker", "notes", "slipMessage", "survey", "extraData",
+      "isOutside", "status", "voterStatus", "worker", "notes", "slipMessage", "survey", "extraData",
       "voterCount", "createdAt", "updatedAt"
     ]);
 
@@ -4839,6 +4847,7 @@ ${slipLink}
             row[col] = val !== undefined && val !== null ? val : "—";
           });
         }
+        row["Status (Active/Deleted)"] = isVoterDeleted(v) ? "Deleted" : "Active";
         return row;
       });
 
@@ -4919,6 +4928,7 @@ ${slipLink}
             row[col] = val !== undefined && val !== null ? val : "—";
           });
         }
+        row["Status (Active/Deleted)"] = isVoterDeleted(v) ? "Deleted" : "Active";
         return row;
       });
 
@@ -5103,6 +5113,9 @@ ${slipLink}
           }
         }
 
+        const voterStatusVal = mapping.voterStatus && row[mapping.voterStatus] !== undefined ? String(row[mapping.voterStatus]).trim() : "";
+        const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData, ...extraData } as VoterRecord);
+
         return {
           name: String(row[mapping.name] || "").trim(),
           epic: epicVal,
@@ -5118,6 +5131,7 @@ ${slipLink}
           isSupporter: isSupp || "हाँ",
           isOutside: outsideVal || "नहीं",
           boothAddress: String(row[mapping.boothAddress] || "").trim(),
+          voterStatus: isDel ? "Deleted" : (voterStatusVal || "Active"),
           status: (isSupp === "हाँ" || isSupp === "Yes") ? ("In-Favor" as VoterRecord["status"]) : ("Pending" as VoterRecord["status"]),
           worker: "Unassigned",
           extraData,
@@ -6680,18 +6694,23 @@ ${slipLink}
                   {colName}
                 </th>
               ))}
+              {/* 15. Status (Active/Deleted) */}
+              <th style={{ minWidth: "150px", textAlign: "center" }}>
+                Status (Active/Deleted)
+              </th>
             </tr>
           </thead>
           <tbody>
             {filteredVoters.length === 0 ? (
               <tr>
-                <td colSpan={(familyFilter ? 14 : 13) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                <td colSpan={(familyFilter ? 15 : 14) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
                   {t.noVotersMatch}
                 </td>
               </tr>
             ) : (
               paginatedVoters.map((v, idx) => {
                 const isSelected = selectedVoter?.id === v.id;
+                const isDeleted = isVoterDeleted(v);
                 const isVoted = v.voted === "हाँ" || v.voted === "Yes" || v.voted === true;
                 const isSupp = v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor";
                 const isOut = v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true;
@@ -6699,12 +6718,12 @@ ${slipLink}
                 return (
                   <tr
                     key={v.id}
-                    className={isSelected ? "selectedRow" : ""}
+                    className={`${isSelected ? "selectedRow" : ""} ${isDeleted ? "deletedRow" : ""}`}
                     onClick={() => {
                       setSelectedVoter(v);
                       handleOpenVoterAction(v);
                     }}
-                    title={lang === "hi" ? "मैसेज व एक्शन मेन्यू खोलने के लिए क्लिक करें" : "Click to open action menu"}
+                    title={isDeleted ? (lang === "hi" ? "विलोपित मतदाता (Deleted Voter)" : "Deleted Voter") : (lang === "hi" ? "मैसेज व एक्शन मेन्यू खोलने के लिए क्लिक करें" : "Click to open action menu")}
                   >
                     {/* Checkbox cell when Family List filter is active */}
                     {familyFilter && (
@@ -6870,6 +6889,49 @@ ${slipLink}
                         </td>
                       );
                     })}
+
+                    {/* 15. Status (Active/Deleted) */}
+                    <td className="colCenter" onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
+                      {isDeleted ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: "3px 8px",
+                            borderRadius: "9999px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            backgroundColor: "#fee2e2",
+                            color: "#b91c1c",
+                            border: "1px solid #fca5a5",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={lang === "hi" ? "विलोपित मतदाता" : "Deleted Voter"}
+                        >
+                          🗑️ Deleted (विलोपित)
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: "3px 8px",
+                            borderRadius: "9999px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            backgroundColor: "#dcfce7",
+                            color: "#15803d",
+                            border: "1px solid #86efac",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={lang === "hi" ? "सक्रिय मतदाता" : "Active Voter"}
+                        >
+                          ✓ Active (सक्रिय)
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })
@@ -9694,7 +9756,7 @@ function VotersTable({
     const standardKeys = new Set([
       "id", "candidateId", "booth", "serialNo", "name", "guardian", "age", "gender",
       "house", "address", "boothAddress", "phone", "epic", "voted", "isSupporter",
-      "isOutside", "status", "worker", "notes", "slipMessage", "survey", "extraData",
+      "isOutside", "status", "voterStatus", "worker", "notes", "slipMessage", "survey", "extraData",
       "voterCount", "createdAt", "updatedAt"
     ]);
 
@@ -9864,7 +9926,8 @@ function VotersTable({
       "आयु",
       "लिंग",
       "कार्यकर्ता",
-      "स्थिति"
+      "स्थिति",
+      "Status (Active/Deleted)"
     ];
     const rows = filtered.map((v, idx) => [
       v.booth,
@@ -9883,6 +9946,7 @@ function VotersTable({
       v.gender || "",
       `"${(v.worker || "").replace(/"/g, '""')}"`,
       v.status || "Pending",
+      isVoterDeleted(v) ? "Deleted" : "Active",
     ]);
     const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((e) => e.join(","))].join("\r\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -9928,6 +9992,7 @@ function VotersTable({
             row[col] = val !== undefined && val !== null ? val : "—";
           });
         }
+        row["Status (Active/Deleted)"] = isVoterDeleted(v) ? "Deleted" : "Active";
         return row;
       });
 
@@ -10576,17 +10641,20 @@ function VotersTable({
                     {colName}
                   </th>
                 ))}
+                {/* 15. Status (Active/Deleted) */}
+                <th style={{ minWidth: "150px", textAlign: "center" }}>Status (Active/Deleted)</th>
                 <th style={{ width: "50px" }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((v, idx) => {
+                const isDeleted = isVoterDeleted(v);
                 const isVoted = v.voted === "हाँ" || v.voted === "Yes" || v.voted === true;
                 const isSupp = v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor";
                 const isOut = v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true;
 
                 return (
-                  <tr key={v.id}>
+                  <tr key={v.id} className={isDeleted ? "deletedRow" : ""}>
                     {/* 1. भाग संख्या */}
                     <td style={{ textAlign: "center", fontWeight: 600 }}>{v.booth}</td>
 
@@ -10749,6 +10817,47 @@ function VotersTable({
                       );
                     })}
 
+                    {/* 15. Status (Active/Deleted) */}
+                    <td style={{ textAlign: "center" }}>
+                      {isDeleted ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: "3px 8px",
+                            borderRadius: "9999px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            backgroundColor: "#fee2e2",
+                            color: "#b91c1c",
+                            border: "1px solid #fca5a5",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          🗑️ Deleted (विलोपित)
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            padding: "3px 8px",
+                            borderRadius: "9999px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            backgroundColor: "#dcfce7",
+                            color: "#15803d",
+                            border: "1px solid #86efac",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          ✓ Active (सक्रिय)
+                        </span>
+                      )}
+                    </td>
+
                     {/* Delete Action */}
                     <td style={{ textAlign: "center" }}>
                       <button
@@ -10771,7 +10880,7 @@ function VotersTable({
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={13} style={{ textAlign: "center", padding: "30px", color: "var(--muted)" }}>
+                  <td colSpan={15 + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "var(--muted)" }}>
                     No voters match your search or filter criteria.
                   </td>
                 </tr>
@@ -11054,6 +11163,9 @@ function RealExcelImporter({
         }
       }
 
+      const voterStatusVal = fieldMap.voterStatus && row[fieldMap.voterStatus] !== undefined ? String(row[fieldMap.voterStatus]).trim() : "";
+      const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData, ...extraData } as VoterRecord);
+
       return {
         name,
         epic,
@@ -11069,6 +11181,7 @@ function RealExcelImporter({
         voted: votedVal || "नहीं",
         isSupporter: isSupp || "हाँ",
         isOutside: outsideVal || "नहीं",
+        voterStatus: isDel ? "Deleted" : (voterStatusVal || "Active"),
         status: (isSupp === "हाँ" || isSupp === "Yes") ? ("In-Favor" as VoterRecord["status"]) : ("Pending" as VoterRecord["status"]),
         worker: "Unassigned",
         extraData,
@@ -11206,6 +11319,7 @@ function RealExcelImporter({
                 { key: "epic", label: "वैकल्पिक: पहचान पत्र (EPIC - खाली होने पर स्वतः बनेगा)" },
                 { key: "age", label: "वैकल्पिक: आयु (Age)" },
                 { key: "gender", label: "वैकल्पिक: लिंग (Gender)" },
+                { key: "voterStatus", label: "वैकल्पिक: स्थिति (Status - Active/Deleted / विलोपित)" },
               ].map((field) => (
                 <div key={field.key}>
                   <span><b>{field.label}</b></span>

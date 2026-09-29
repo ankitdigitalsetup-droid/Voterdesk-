@@ -628,6 +628,23 @@
   cursor: pointer;
 }
 
+/* Light red row styling for Deleted (विलोपित) voters */
+.bmTable tr.deletedRow,
+tr.deletedRow {
+  background-color: #fff1f2 !important;
+  border-left: 4px solid #ef4444;
+}
+
+.bmTable tr.deletedRow:hover,
+tr.deletedRow:hover {
+  background-color: #fee2e2 !important;
+}
+
+.bmTable tr.deletedRow.selectedRow,
+tr.deletedRow.selectedRow {
+  background-color: #fecdd3 !important;
+}
+
 .bmTable td.colIndex {
   text-align: center;
   font-size: 11px;

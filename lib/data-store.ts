@@ -27,6 +27,52 @@ export function compareVotersBySerial(a: VoterRecord, b: VoterRecord, desc = fal
   return (a.name || "").localeCompare(b.name || "");
 }
 
+/**
+ * Detects whether a voter record has "Deleted" / "विलोपित" status.
+ * Checks voterStatus property, extraData, and any raw fields matching "status", "deleted", "विलोपित", etc.
+ */
+export function isVoterDeleted(v: VoterRecord): boolean {
+  if (!v) return false;
+
+  // 1. Direct voterStatus property
+  if (v.voterStatus) {
+    const s = String(v.voterStatus).trim().toLowerCase();
+    if (s.includes("delete") || s.includes("विलोपित") || s.includes("हटा") || s.includes("निरस्त") || s.includes("inactive") || s === "d" || s === "del") {
+      return true;
+    }
+    if (s.includes("active") || s.includes("सक्रिय") || s === "a") {
+      return false;
+    }
+  }
+
+  // 2. Extra data or any dynamic column
+  if (v.extraData && typeof v.extraData === "object") {
+    for (const [k, val] of Object.entries(v.extraData)) {
+      const kLow = k.toLowerCase();
+      if (kLow.includes("status") || kLow.includes("स्थिति") || kLow.includes("active") || kLow.includes("delete") || kLow.includes("विलोपित") || kLow.includes("हटा")) {
+        const vStr = String(val || "").trim().toLowerCase();
+        if (vStr.includes("delete") || vStr.includes("विलोपित") || vStr.includes("हटा") || vStr.includes("निरस्त") || vStr.includes("inactive") || vStr === "d" || vStr === "del") {
+          return true;
+        }
+      }
+    }
+  }
+
+  // 3. Fallback check on top-level record keys
+  for (const [k, val] of Object.entries(v as Record<string, any>)) {
+    if (k === "status" || k === "worker" || k === "notes" || k === "slipMessage" || k === "survey" || k === "extraData") continue; // campaign fields
+    const kLow = k.toLowerCase();
+    if (kLow.includes("status") || kLow.includes("स्थिति") || kLow.includes("active") || kLow.includes("delete") || kLow.includes("विलोपित") || kLow.includes("हटा")) {
+      const vStr = String(val || "").trim().toLowerCase();
+      if (vStr.includes("delete") || vStr.includes("विलोपित") || vStr.includes("हटा") || vStr.includes("निरस्त") || vStr.includes("inactive") || vStr === "d" || vStr === "del") {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // In-Memory & Persistent global store for high-speed multi-mobile synchronization
 class DataStore {
   private version: number = Date.now();

@@ -124,6 +124,7 @@ export function detectFieldMapping(columns: string[]) {
     epic: "",
     age: "",
     gender: "",
+    voterStatus: "",
   };
 
   for (const col of columns) {
@@ -204,6 +205,13 @@ export function detectFieldMapping(columns: string[]) {
     if (!mapping.gender && (c.includes("gender") || c.includes("sex") || c.includes("लिंग") || c.includes("स्त्री/पुरुष") || c.includes("m/f"))) {
       mapping.gender = col;
     }
+
+    // 15. Status (Active/Deleted / स्थिति / विलोपित)
+    if (!mapping.voterStatus && (c.includes("deleted") || c.includes("विलोपित") || c.includes("हटाया") || c.includes("हटाये") || c.includes("active/deleted") || c.includes("voter status") || c === "status" || c === "स्थिति" || c.includes("active") || c.includes("सक्रिय"))) {
+      if (!c.includes("campaign") && !c.includes("marital") && !c.includes("वैवाहिक")) {
+        mapping.voterStatus = col;
+      }
+    }
   }
 
   // Fallback: If name was not matched by keyword, pick the second column if serial was column 0, or first text column
@@ -236,6 +244,7 @@ export function downloadSampleExcelTemplate() {
       "हाउस No": "12",
       "एड्रेस": "वार्ड 34, स्टेशन रोड",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
+      "Status (Active/Deleted)": "Active",
     },
     {
       "वार्ड संख्या": "1",
@@ -251,6 +260,7 @@ export function downloadSampleExcelTemplate() {
       "हाउस No": "14",
       "एड्रेस": "वार्ड 34, गांधी नगर",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
+      "Status (Active/Deleted)": "Active",
     },
     {
       "वार्ड संख्या": "1",
@@ -266,6 +276,7 @@ export function downloadSampleExcelTemplate() {
       "हाउस No": "64",
       "एड्रेस": "वार्ड 34, शास्त्री नगर",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
+      "Status (Active/Deleted)": "Deleted",
     },
     {
       "वार्ड संख्या": "1",
@@ -281,6 +292,7 @@ export function downloadSampleExcelTemplate() {
       "हाउस No": "52",
       "एड्रेस": "वार्ड 34, शांति नगर",
       "Booth Address": "रा.उ.मा.वि. भीलवाड़ा, कमरा नं. 1",
+      "Status (Active/Deleted)": "Active",
     }
   ];
 
