@@ -766,9 +766,12 @@ function SuperAdminView({
     password: "",
   });
 
-  // Dedicated Ward Onboarding Card States (1 Booth = 4 Passwords, 2 Booths = 8 Passwords)
+  // Dedicated Ward / Panchayat Onboarding Card States (1 Booth/Ward = 4 Passwords, 2 = 8 Passwords)
+  const [electionType, setElectionType] = useState<"NIKAY" | "PANCHAYAT">("NIKAY");
   const [nikay, setNikay] = useState("");
   const [wardNo, setWardNo] = useState("");
+  const [panchayatSamiti, setPanchayatSamiti] = useState("");
+  const [panchayatName, setPanchayatName] = useState("");
   const [electionName, setElectionName] = useState("");
   const [candName, setCandName] = useState("");
   const [candParty, setCandParty] = useState("");
@@ -776,7 +779,7 @@ function SuperAdminView({
   const [candPhone, setCandPhone] = useState("");
   const [candPassword, setCandPassword] = useState("");
   const [workerPassword, setWorkerPassword] = useState("");
-  const [boothCount, setBoothCount] = useState<number>(1); // Default 1 booth = 4 passwords (1 Admin + 3 Member)
+  const [boothCount, setBoothCount] = useState<number>(1); // Default 1 booth/ward = 4 passwords (1 Admin + 3 Member)
 
   // 9-digit + 1 special char Booth Access Passwords
   const [boothPasswords, setBoothPasswords] = useState<BoothAccessPassword[]>([]);
@@ -1252,9 +1255,18 @@ function SuperAdminView({
     const cleanPhone = candPhone.replace(/\D/g, "");
     const finalPhone = cleanPhone.length === 10 ? cleanPhone : `98290${Math.floor(10000 + Math.random() * 90000)}`;
     if (boothCount < 1) {
-      alert("कम से कम 1 बूथ होना आवश्यक है!");
+      alert(electionType === "PANCHAYAT" ? "कम से कम 1 वार्ड होना आवश्यक है!" : "कम से कम 1 बूथ होना आवश्यक है!");
       return;
     }
+
+    const isPanchayat = electionType === "PANCHAYAT";
+    const finalWardConstituency = isPanchayat
+      ? (panchayatName.trim() || "Gram Panchayat")
+      : (wardNo.trim() || "Ward");
+    const finalNikay = isPanchayat
+      ? (panchayatSamiti.trim() || "Panchayat Samiti")
+      : (nikay.trim() || "Nikay");
+    const finalElectionName = electionName.trim() || (isPanchayat ? `पंचायत चुनाव (${panchayatName || "ग्राम पंचायत"})` : "Municipal Election 2026");
 
     setIsActivating(true);
     try {
@@ -1281,12 +1293,13 @@ function SuperAdminView({
           name: candName.trim(),
           phone: finalPhone,
           party: candParty.trim(),
-          electionName: electionName.trim(),
-          wardConstituency: wardNo.trim(),
+          electionName: finalElectionName,
+          wardConstituency: finalWardConstituency,
           boothCount: Number(boothCount),
           posterUrl: posterPreview || undefined,
           symbolName: symbolName.trim(),
-          nikay: nikay.trim(),
+          nikay: finalNikay,
+          electionType: electionType,
           passwords: pwdsToSave,
           passwordsJson: serializedPwds,
           voters: initialVoters,
@@ -1328,16 +1341,17 @@ function SuperAdminView({
         name: candName.trim(),
         phone: finalPhone,
         party: candParty.trim(),
-        electionName: electionName.trim(),
-        wardConstituency: wardNo.trim(),
+        electionName: finalElectionName,
+        wardConstituency: finalWardConstituency,
         boothCount: Number(boothCount),
         voterCount: parsedVoters.length,
         status: "ACTIVE",
         createdAt: new Date().toISOString().split("T")[0],
         posterUrl: posterPreview || undefined,
         symbolName: symbolName.trim(),
-        nikay: nikay.trim(),
+        nikay: finalNikay,
         passwordsJson: serializedPwds,
+        electionType: electionType,
       };
 
       // 2. Register in client-side store
@@ -1359,17 +1373,22 @@ function SuperAdminView({
         hour12: true,
       });
 
-      setActivationToast(`🎉 ${wardNo ? `वार्ड ${wardNo}` : "वार्ड"} के लिए प्रत्याशी एवं ${pwdsToSave.length} बूथ पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`);
+      setActivationToast(
+        isPanchayat
+          ? `🎉 ग्राम पंचायत ${panchayatName || ""} के लिए प्रत्याशी एवं ${pwdsToSave.length} वार्ड पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`
+          : `🎉 ${wardNo ? `वार्ड ${wardNo}` : "वार्ड"} के लिए प्रत्याशी एवं ${pwdsToSave.length} बूथ पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`
+      );
       setTimeout(() => setActivationToast(""), 4000);
 
       // Open credentials export modal so admin can immediately print / copy / download
       setViewCredsModal({
         candidate: {
           ...newCandObj,
-          nikay: nikay.trim(),
+          nikay: finalNikay,
           symbolName: symbolName.trim(),
-          wardConstituency: wardNo.trim(),
-          electionName: electionName.trim(),
+          wardConstituency: finalWardConstituency,
+          electionName: finalElectionName,
+          electionType: electionType,
         },
         creds: pwdsToSave,
         createdAtStr: createdTime,
@@ -1378,6 +1397,8 @@ function SuperAdminView({
       // Clear form
       setNikay("");
       setWardNo("");
+      setPanchayatSamiti("");
+      setPanchayatName("");
       setElectionName("");
       setCandName("");
       setCandParty("");
@@ -1399,18 +1420,32 @@ function SuperAdminView({
     }
   };
 
-  // Download Booth Passwords as Excel Sheet matching the card format
+  // Download Passwords as Excel Sheet matching the card format
   const downloadCredentialsExcel = (cand: CandidateAccount, creds: (BoothAccessPassword | CandidateCredential)[]) => {
+    const isPanchayat = cand.electionType === "PANCHAYAT" || cand.electionName?.includes("पंचायत");
     const data = creds.map((c, idx) => {
       const serial = (c as any).serialNumber || (idx + 1);
       const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+      if (isPanchayat) {
+        return {
+          "#": serial,
+          "पंचायत समिति": cand.nikay || panchayatSamiti || "—",
+          "ग्राम पंचायत": cand.wardConstituency || panchayatName || "—",
+          "विवरण": cand.electionName || electionName || "पंचायत चुनाव",
+          "प्रत्याशी": cand.name,
+          "चुनाव चिन्ह": cand.symbolName || symbolName || "—",
+          "वार्ड": `वार्ड ${c.boothNumber}`,
+          "भूमिका": roleTitle,
+          "पासवर्ड": c.password,
+        };
+      }
       return {
         "#": serial,
-        "निकाय": cand.nikay || nikay || "3000039",
-        "वार्ड": cand.wardConstituency || wardNo,
-        "विवरण": cand.electionName || electionName,
+        "निकाय": cand.nikay || nikay || "—",
+        "वार्ड": cand.wardConstituency || wardNo || "—",
+        "विवरण": cand.electionName || electionName || "—",
         "प्रत्याशी": cand.name,
-        "चुनाव चिन्ह": cand.symbolName || symbolName || "गुब्बारा",
+        "चुनाव चिन्ह": cand.symbolName || symbolName || "—",
         "बूथ": `बूथ ${c.boothNumber}`,
         "भूमिका": roleTitle,
         "पासवर्ड": c.password,
@@ -1418,34 +1453,58 @@ function SuperAdminView({
     });
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Booth_Passwords");
-    XLSX.writeFile(workbook, `Booth_Passwords_Ward_${(cand.wardConstituency || wardNo).replace(/\s+/g, "_")}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, isPanchayat ? "Ward_Passwords" : "Booth_Passwords");
+    const fileName = isPanchayat
+      ? `Ward_Passwords_Panchayat_${(cand.wardConstituency || panchayatName || "Panchayat").replace(/\s+/g, "_")}.xlsx`
+      : `Booth_Passwords_Ward_${(cand.wardConstituency || wardNo || "Ward").replace(/\s+/g, "_")}.xlsx`;
+    XLSX.writeFile(workbook, fileName);
   };
 
-  // Copy Booth Passwords formatted for WhatsApp sharing matching the card format
+  // Copy Passwords formatted for WhatsApp sharing matching the card format
   const copyCredentialsForWhatsApp = (cand: CandidateAccount, creds: (BoothAccessPassword | CandidateCredential)[]) => {
+    const isPanchayat = cand.electionType === "PANCHAYAT" || cand.electionName?.includes("पंचायत");
     const totalCount = creds.length;
-    const text =
-      `🗳️ *वोटर डेस्क - बूथ पासवर्ड कार्ड* 🗳️\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `🏛️ *निकाय:* ${cand.nikay || nikay || "3000039"}\n` +
-      `📍 *वार्ड:* ${cand.wardConstituency || wardNo}\n` +
-      `📋 *विवरण:* ${cand.electionName || electionName}\n` +
-      `👤 *प्रत्याशी:* ${cand.name}\n` +
-      `🎈 *चुनाव चिन्ह:* ${cand.symbolName || symbolName || "गुब्बारा"}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `*कुल बूथ:* ${cand.boothCount || boothCount} | *कुल पासवर्ड:* ${totalCount}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      creds
-        .map((c, idx) => {
-          const serial = (c as any).serialNumber || (idx + 1);
-          const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
-          return `${serial}. [${roleTitle}] : *${c.password}* (बूथ ${c.boothNumber})`;
-        })
-        .join("\n") +
-      `\n━━━━━━━━━━━━━━━━━━━━\n` +
-      `🌐 *लॉगिन वेबसाइट:* ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
-      `ℹ️ *लॉगिन नियम:* कोई भी नाम और मोबाइल नंबर लिखकर पासवर्ड से लॉगिन करें। पासवर्ड ही तय करेगा कि आप ADMIN हैं या MEMBER।`;
+    const text = isPanchayat
+      ? `🗳️ *वोटर डेस्क - पंचायत वार्ड पासवर्ड कार्ड* 🗳️\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `🏛️ *पंचायत समिति:* ${cand.nikay || panchayatSamiti || "—"}\n` +
+        `📍 *ग्राम पंचायत:* ${cand.wardConstituency || panchayatName || "—"}\n` +
+        `📋 *विवरण:* ${cand.electionName || electionName || "पंचायत चुनाव"}\n` +
+        `👤 *प्रत्याशी:* ${cand.name}\n` +
+        `🎈 *चुनाव चिन्ह:* ${cand.symbolName || symbolName || "—"}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `*कुल वार्ड:* ${cand.boothCount || boothCount} | *कुल पासवर्ड:* ${totalCount}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        creds
+          .map((c, idx) => {
+            const serial = (c as any).serialNumber || (idx + 1);
+            const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+            return `${serial}. [${roleTitle}] : *${c.password}* (वार्ड ${c.boothNumber})`;
+          })
+          .join("\n") +
+        `\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `🌐 *लॉगिन वेबसाइट:* ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
+        `ℹ️ *लॉगिन नियम:* कोई भी नाम और मोबाइल नंबर लिखकर पासवर्ड से लॉगिन करें। पासवर्ड ही तय करेगा कि आप ADMIN हैं या MEMBER।`
+      : `🗳️ *वोटर डेस्क - बूथ पासवर्ड कार्ड* 🗳️\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `🏛️ *निकाय:* ${cand.nikay || nikay || "—"}\n` +
+        `📍 *वार्ड:* ${cand.wardConstituency || wardNo || "—"}\n` +
+        `📋 *विवरण:* ${cand.electionName || electionName || "—"}\n` +
+        `👤 *प्रत्याशी:* ${cand.name}\n` +
+        `🎈 *चुनाव चिन्ह:* ${cand.symbolName || symbolName || "—"}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `*कुल बूथ:* ${cand.boothCount || boothCount} | *कुल पासवर्ड:* ${totalCount}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        creds
+          .map((c, idx) => {
+            const serial = (c as any).serialNumber || (idx + 1);
+            const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+            return `${serial}. [${roleTitle}] : *${c.password}* (बूथ ${c.boothNumber})`;
+          })
+          .join("\n") +
+        `\n━━━━━━━━━━━━━━━━━━━━\n` +
+        `🌐 *लॉगिन वेबसाइट:* ${typeof window !== "undefined" ? window.location.origin : ""}\n` +
+        `ℹ️ *लॉगिन नियम:* कोई भी नाम और मोबाइल नंबर लिखकर पासवर्ड से लॉगिन करें। पासवर्ड ही तय करेगा कि आप ADMIN हैं या MEMBER।`;
 
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text);
@@ -1484,6 +1543,11 @@ function SuperAdminView({
 
   const totalVotersAcross = candidates.reduce((acc, c) => acc + (c.voterCount || 0), 0);
   const totalBoothsAcross = candidates.reduce((acc, c) => acc + (c.boothCount || 0), 0);
+
+  const isPanchayatModal = Boolean(
+    viewCredsModal?.candidate?.electionType === "PANCHAYAT" ||
+    viewCredsModal?.candidate?.electionName?.includes("पंचायत")
+  );
 
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg)" }}>
@@ -1608,9 +1672,13 @@ function SuperAdminView({
                 <Sparkles size={22} />
               </div>
               <div>
-                <h2 className="saCardTitle">🎯 वार्ड ऑनबोर्डिंग एवं पासवर्ड जनरेटर (Ward Onboarding & Multi-Booth Engine)</h2>
+                <h2 className="saCardTitle">
+                  🎯 {electionType === "PANCHAYAT" ? "पंचायत ऑनबोर्डिंग एवं पासवर्ड जनरेटर" : "वार्ड ऑनबोर्डिंग एवं पासवर्ड जनरेटर"} (Onboarding & Password Engine)
+                </h2>
                 <p className="saCardSubtitle">
-                  वार्ड का डेटा (Excel) व प्रत्याशी का पोस्टर अपलोड करें, और 1 बूथ = 4 पासवर्ड्स के अनुपात से तुरंत क्रेडेंशियल्स जनरेट करें।
+                  {electionType === "PANCHAYAT"
+                    ? "पंचायत का डेटा (Excel) व प्रत्याशी का पोस्टर अपलोड करें, और 1 वार्ड = 4 पासवर्ड्स के अनुपात से तुरंत क्रेडेंशियल्स जनरेट करें।"
+                    : "वार्ड का डेटा (Excel) व प्रत्याशी का पोस्टर अपलोड करें, और 1 बूथ = 4 पासवर्ड्स के अनुपात से तुरंत क्रेडेंशियल्स जनरेट करें।"}
                 </p>
               </div>
             </div>
@@ -1627,154 +1695,391 @@ function SuperAdminView({
           </div>
 
           <div className="saCardBody">
-            {/* Live Formula Banner */}
-            <div className="saFormulaBanner">
-              <div className="saFormulaText">
-                <span>⚡ <b>बूथ पासवर्ड नियम:</b></span>
-                <span>1 बूथ पर 4 पासवर्ड | 2 बूथ पर 8 | 3 बूथ पर 12 | (प्रति बूथ: 1 ADMIN + 3 MEMBER)</span>
+            {/* 1. Nikay Chunav / 2. Panchayat Chunav Mode Selector Button */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "12px",
+                background: "#f8fafc",
+                padding: "8px 12px",
+                borderRadius: "12px",
+                border: "1.5px solid #cbd5e1",
+                marginBottom: "18px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                <span style={{ fontSize: "12.5px", fontWeight: 800, color: "#1e293b" }}>
+                  🗳️ चुनाव का प्रकार चुनें:
+                </span>
+                <div style={{ display: "inline-flex", background: "#e2e8f0", padding: "3px", borderRadius: "10px", gap: "4px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setElectionType("NIKAY")}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: 800,
+                      fontSize: "13px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: electionType === "NIKAY" ? "#0062cc" : "transparent",
+                      color: electionType === "NIKAY" ? "#ffffff" : "#475569",
+                      boxShadow: electionType === "NIKAY" ? "0 2px 6px rgba(0, 98, 204, 0.3)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    🏛️ 1. निकाय चुनाव (Nikay Chunav)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setElectionType("PANCHAYAT")}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "none",
+                      cursor: "pointer",
+                      fontWeight: 800,
+                      fontSize: "13px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: electionType === "PANCHAYAT" ? "#16a34a" : "transparent",
+                      color: electionType === "PANCHAYAT" ? "#ffffff" : "#475569",
+                      boxShadow: electionType === "PANCHAYAT" ? "0 2px 6px rgba(22, 163, 74, 0.3)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    🌾 2. पंचायत चुनाव (Panchayat Chunav)
+                  </button>
+                </div>
               </div>
-              <div className="saFormulaBadge">
-                कुल {boothCount} बूथ = {boothPasswords.length} पासवर्ड (9 अंक + 1 स्पेशल कैरेक्टर)
+
+              <div style={{ fontSize: "11.5px", fontWeight: 700, color: electionType === "PANCHAYAT" ? "#15803d" : "#0284c7" }}>
+                {electionType === "PANCHAYAT"
+                  ? "✓ पंचायत समिति, ग्राम पंचायत एवं वार्ड वार पासवर्ड इंजन सक्रिय"
+                  : "✓ निकाय, वार्ड एवं बूथ वार पासवर्ड इंजन सक्रिय"}
               </div>
             </div>
+
+            {/* Live Formula Banner */}
+            {electionType === "PANCHAYAT" ? (
+              <div className="saFormulaBanner" style={{ background: "linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)", borderColor: "#86efac" }}>
+                <div className="saFormulaText" style={{ color: "#166534" }}>
+                  <span>⚡ <b>पंचायत वार्ड पासवर्ड नियम:</b></span>
+                  <span>1 वार्ड पर 4 पासवर्ड | 2 वार्ड पर 8 | 3 वार्ड पर 12 | (प्रति वार्ड: 1 ADMIN + 3 MEMBER)</span>
+                </div>
+                <div className="saFormulaBadge" style={{ background: "#15803d", color: "#ffffff" }}>
+                  कुल {boothCount} वार्ड = {boothPasswords.length} पासवर्ड (9 अंक + 1 स्पेशल कैरेक्टर)
+                </div>
+              </div>
+            ) : (
+              <div className="saFormulaBanner">
+                <div className="saFormulaText">
+                  <span>⚡ <b>बूथ पासवर्ड नियम:</b></span>
+                  <span>1 बूथ पर 4 पासवर्ड | 2 बूथ पर 8 | 3 बूथ पर 12 | (प्रति बूथ: 1 ADMIN + 3 MEMBER)</span>
+                </div>
+                <div className="saFormulaBadge">
+                  कुल {boothCount} बूथ = {boothPasswords.length} पासवर्ड (9 अंक + 1 स्पेशल कैरेक्टर)
+                </div>
+              </div>
+            )}
 
             {/* Inputs Grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "20px", marginBottom: "24px" }}>
               
-              {/* Column 1: Ward & Candidate Information */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
-                  🏛️ 1. वार्ड एवं प्रत्याशी विवरण
-                </h4>
+              {/* Column 1: Ward & Candidate Information (Nikay Chunav vs Panchayat Chunav) */}
+              {electionType === "NIKAY" ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
+                    🏛️ 1. वार्ड एवं प्रत्याशी विवरण
+                  </h4>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>निकाय संख्या (Nikay)</label>
+                      <input
+                        type="text"
+                        value={nikay}
+                        onChange={(e) => setNikay(e.target.value)}
+                        placeholder="निकाय संख्या दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
+
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>वार्ड संख्या (Ward No.)</label>
+                      <input
+                        type="text"
+                        value={wardNo}
+                        onChange={(e) => setWardNo(e.target.value)}
+                        placeholder="वार्ड संख्या दर्ज करें"
+                        required
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+
                   <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700 }}>निकाय संख्या (Nikay)</label>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>विवरण / चुनाव का नाम</label>
                     <input
                       type="text"
-                      value={nikay}
-                      onChange={(e) => setNikay(e.target.value)}
-                      placeholder="निकाय संख्या दर्ज करें"
-                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      value={electionName}
+                      onChange={(e) => setElectionName(e.target.value)}
+                      placeholder="चुनाव / वार्ड का विवरण दर्ज करें"
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
 
                   <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700 }}>वार्ड संख्या (Ward No.)</label>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी का पूरा नाम</label>
                     <input
                       type="text"
-                      value={wardNo}
-                      onChange={(e) => setWardNo(e.target.value)}
-                      placeholder="वार्ड संख्या दर्ज करें"
+                      value={candName}
+                      onChange={(e) => setCandName(e.target.value)}
+                      placeholder="प्रत्याशी का पूरा नाम दर्ज करें"
                       required
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                     />
                   </div>
-                </div>
 
-                <div className="formGroup" style={{ margin: 0 }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700 }}>विवरण / चुनाव का नाम</label>
-                  <input
-                    type="text"
-                    value={electionName}
-                    onChange={(e) => setElectionName(e.target.value)}
-                    placeholder="चुनाव / वार्ड का विवरण दर्ज करें"
-                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                  />
-                </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>चुनाव चिन्ह (Symbol)</label>
+                      <input
+                        type="text"
+                        value={symbolName}
+                        onChange={(e) => setSymbolName(e.target.value)}
+                        placeholder="चुनाव चिन्ह दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
 
-                <div className="formGroup" style={{ margin: 0 }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी का पूरा नाम</label>
-                  <input
-                    type="text"
-                    value={candName}
-                    onChange={(e) => setCandName(e.target.value)}
-                    placeholder="प्रत्याशी का पूरा नाम दर्ज करें"
-                    required
-                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
-                  />
-                </div>
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>पार्टी / दल</label>
+                      <input
+                        type="text"
+                        value={candParty}
+                        onChange={(e) => setCandParty(e.target.value)}
+                        placeholder="पार्टी / दल का नाम दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      />
+                    </div>
+                  </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                   <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700 }}>चुनाव चिन्ह (Symbol)</label>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी संपर्क मोबाइल नं. (लॉगिन व डेटाबेस हेतु)</label>
+                    <input
+                      type="tel"
+                      value={candPhone}
+                      onChange={(e) => setCandPhone(e.target.value)}
+                      placeholder="मोबाइल नंबर दर्ज करें"
+                      style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                    />
+                  </div>
+
+                  {/* Booth Count Selector */}
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>वार्ड में कुल बूथ संख्या (Total Booths)</label>
+                      <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7" }}>
+                        {boothCount} बूथ = {boothPasswords.length} पासवर्ड (प्रति बूथ 1 ADMIN + 3 MEMBER)
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      {[1, 2, 3, 4, 5].map((cnt) => (
+                        <button
+                          key={cnt}
+                          type="button"
+                          onClick={() => setBoothCount(cnt)}
+                          style={{
+                            flex: 1,
+                            padding: "7px 4px",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            border: boothCount === cnt ? "2px solid #0062cc" : "1px solid #cbd5e1",
+                            background: boothCount === cnt ? "#eff6ff" : "#ffffff",
+                            color: boothCount === cnt ? "#0062cc" : "#334155",
+                          }}
+                        >
+                          {cnt} {cnt === 1 ? "बूथ (4)" : cnt === 2 ? "बूथ (8)" : cnt === 3 ? "बूथ (12)" : `बूथ (${cnt * 4})`}
+                        </button>
+                      ))}
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={boothCount}
+                        onChange={(e) => setBoothCount(Math.max(1, Number(e.target.value) || 1))}
+                        style={{ width: "65px", padding: "7px 8px", borderRadius: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: 700 }}
+                        title="कस्टम बूथ संख्या"
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ fontSize: "11.5px", color: "#0369a1", background: "#f0f9ff", padding: "8px 10px", borderRadius: "8px", border: "1px solid #bae6fd" }}>
+                    🔒 <b>पासवर्ड नियम:</b> कोई नाम या नंबर जनरेट नहीं होंगे। केवल 9 अंक + 1 स्पेशल कैरेक्टर पासवर्ड तैयार होंगे। पासवर्ड ही तय करेगा कि कौन ADMIN है और कौन MEMBER।
+                  </div>
+                </div>
+              ) : (
+                /* Panchayat Chunav Mode Form */
+                <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+                  <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#166534", display: "flex", alignItems: "center", gap: "6px" }}>
+                    🌾 1. पंचायत समिति/पंचायत एवं प्रत्याशी का विवरण
+                  </h4>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>पंचायत समिति का नाम (Panchayat Samiti)</label>
+                      <input
+                        type="text"
+                        value={panchayatSamiti}
+                        onChange={(e) => setPanchayatSamiti(e.target.value)}
+                        placeholder="पंचायत समिति का नाम दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
+
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>पंचायत का नाम (Gram Panchayat)</label>
+                      <input
+                        type="text"
+                        value={panchayatName}
+                        onChange={(e) => setPanchayatName(e.target.value)}
+                        placeholder="ग्राम पंचायत का नाम दर्ज करें"
+                        required
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>वार्डों की कुल संख्या (Total Wards)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={boothCount}
+                        onChange={(e) => setBoothCount(Math.max(1, Number(e.target.value) || 1))}
+                        placeholder="वार्डों की कुल संख्या दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
+
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>विवरण / पद (उदा. सरपंच / पंच चुनाव)</label>
+                      <input
+                        type="text"
+                        value={electionName}
+                        onChange={(e) => setElectionName(e.target.value)}
+                        placeholder="उदा. ग्राम पंचायत सरपंच चुनाव 2026"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी का पूरा नाम</label>
                     <input
                       type="text"
-                      value={symbolName}
-                      onChange={(e) => setSymbolName(e.target.value)}
-                      placeholder="चुनाव चिन्ह दर्ज करें"
+                      value={candName}
+                      onChange={(e) => setCandName(e.target.value)}
+                      placeholder="प्रत्याशी का पूरा नाम दर्ज करें"
+                      required
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                     />
                   </div>
 
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>चुनाव चिन्ह (Symbol)</label>
+                      <input
+                        type="text"
+                        value={symbolName}
+                        onChange={(e) => setSymbolName(e.target.value)}
+                        placeholder="चुनाव चिन्ह दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
+                      />
+                    </div>
+
+                    <div className="formGroup" style={{ margin: 0 }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700 }}>पार्टी / दल</label>
+                      <input
+                        type="text"
+                        value={candParty}
+                        onChange={(e) => setCandParty(e.target.value)}
+                        placeholder="पार्टी / दल का नाम दर्ज करें"
+                        style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
+                      />
+                    </div>
+                  </div>
+
                   <div className="formGroup" style={{ margin: 0 }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700 }}>पार्टी / दल</label>
+                    <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी संपर्क मोबाइल नं. (लॉगिन व डेटाबेस हेतु)</label>
                     <input
-                      type="text"
-                      value={candParty}
-                      onChange={(e) => setCandParty(e.target.value)}
-                      placeholder="पार्टी / दल का नाम दर्ज करें"
+                      type="tel"
+                      value={candPhone}
+                      onChange={(e) => setCandPhone(e.target.value)}
+                      placeholder="मोबाइल नंबर दर्ज करें"
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
-                </div>
 
-                <div className="formGroup" style={{ margin: 0 }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700 }}>प्रत्याशी संपर्क मोबाइल नं. (लॉगिन व डेटाबेस हेतु)</label>
-                  <input
-                    type="tel"
-                    value={candPhone}
-                    onChange={(e) => setCandPhone(e.target.value)}
-                    placeholder="मोबाइल नंबर दर्ज करें"
-                    style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
-                  />
-                </div>
-
-                {/* Booth Count Selector */}
-                <div className="formGroup" style={{ margin: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
-                    <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>वार्ड में कुल बूथ संख्या (Total Booths)</label>
-                    <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7" }}>
-                      {boothCount} बूथ = {boothPasswords.length} पासवर्ड (प्रति बूथ 1 ADMIN + 3 MEMBER)
-                    </span>
+                  {/* Total Wards in Panchayat Selector */}
+                  <div className="formGroup" style={{ margin: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>पंचायत में कुल वार्ड संख्या (Total Wards)</label>
+                      <span style={{ fontSize: "11px", fontWeight: 800, color: "#16a34a" }}>
+                        {boothCount} वार्ड = {boothPasswords.length} पासवर्ड (प्रति वार्ड 1 ADMIN + 3 MEMBER)
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      {[1, 2, 3, 4, 5].map((cnt) => (
+                        <button
+                          key={cnt}
+                          type="button"
+                          onClick={() => setBoothCount(cnt)}
+                          style={{
+                            flex: 1,
+                            padding: "7px 4px",
+                            borderRadius: "8px",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            border: boothCount === cnt ? "2px solid #16a34a" : "1px solid #cbd5e1",
+                            background: boothCount === cnt ? "#f0fdf4" : "#ffffff",
+                            color: boothCount === cnt ? "#16a34a" : "#334155",
+                          }}
+                        >
+                          {cnt} {cnt === 1 ? "वार्ड (4)" : cnt === 2 ? "वार्ड (8)" : cnt === 3 ? "वार्ड (12)" : `वार्ड (${cnt * 4})`}
+                        </button>
+                      ))}
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={boothCount}
+                        onChange={(e) => setBoothCount(Math.max(1, Number(e.target.value) || 1))}
+                        style={{ width: "65px", padding: "7px 8px", borderRadius: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: 700 }}
+                        title="कस्टम वार्ड संख्या"
+                      />
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                    {[1, 2, 3, 4, 5].map((cnt) => (
-                      <button
-                        key={cnt}
-                        type="button"
-                        onClick={() => setBoothCount(cnt)}
-                        style={{
-                          flex: 1,
-                          padding: "7px 4px",
-                          borderRadius: "8px",
-                          fontSize: "12px",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                          border: boothCount === cnt ? "2px solid #0062cc" : "1px solid #cbd5e1",
-                          background: boothCount === cnt ? "#eff6ff" : "#ffffff",
-                          color: boothCount === cnt ? "#0062cc" : "#334155",
-                        }}
-                      >
-                        {cnt} {cnt === 1 ? "बूथ (4)" : cnt === 2 ? "बूथ (8)" : cnt === 3 ? "बूथ (12)" : `बूथ (${cnt * 4})`}
-                      </button>
-                    ))}
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={boothCount}
-                      onChange={(e) => setBoothCount(Math.max(1, Number(e.target.value) || 1))}
-                      style={{ width: "65px", padding: "7px 8px", borderRadius: "8px", border: "1px solid #cbd5e1", textAlign: "center", fontWeight: 700 }}
-                      title="कस्टम बूथ संख्या"
-                    />
+
+                  <div style={{ fontSize: "11.5px", color: "#166534", background: "#f0fdf4", padding: "8px 10px", borderRadius: "8px", border: "1px solid #bbf7d0" }}>
+                    🔒 <b>पासवर्ड नियम:</b> कोई नाम या नंबर जनरेट नहीं होंगे। केवल 9 अंक + 1 स्पेशल कैरेक्टर पासवर्ड तैयार होंगे। प्रति वार्ड 1 ADMIN + 3 MEMBER पासवर्ड होंगे। पासवर्ड ही तय करेगा कि कौन ADMIN है और कौन MEMBER।
                   </div>
                 </div>
-
-                <div style={{ fontSize: "11.5px", color: "#0369a1", background: "#f0f9ff", padding: "8px 10px", borderRadius: "8px", border: "1px solid #bae6fd" }}>
-                  🔒 <b>पासवर्ड नियम:</b> कोई नाम या नंबर जनरेट नहीं होंगे। केवल 9 अंक + 1 स्पेशल कैरेक्टर पासवर्ड तैयार होंगे। पासवर्ड ही तय करेगा कि कौन ADMIN है और कौन MEMBER।
-                </div>
-              </div>
+              )}
 
               {/* Column 2: Candidate Campaign Poster Upload */}
               <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -1895,10 +2200,10 @@ function SuperAdminView({
               {/* Column 3: Excel Voter Data Upload */}
               <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
                 <h4 style={{ margin: "0 0 4px", fontSize: "14.5px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
-                  📊 3. वार्ड वोटर लिस्ट डेटा (Excel Upload)
+                  📊 3. {electionType === "PANCHAYAT" ? "पंचायत" : "वार्ड"} वोटर लिस्ट डेटा (Excel Upload)
                 </h4>
                 <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
-                  इस वार्ड के सभी मतदाताओं की एक्सेल (.xlsx / .csv) फ़ाइल अपलोड करें।
+                  इस {electionType === "PANCHAYAT" ? "पंचायत" : "वार्ड"} के सभी मतदाताओं की एक्सेल (.xlsx / .csv) फ़ाइल अपलोड करें।
                 </p>
 
                 <input
@@ -1938,7 +2243,9 @@ function SuperAdminView({
                     </>
                   ) : (
                     <>
-                      <b style={{ fontSize: "13.5px", color: "#0f172a" }}>वार्ड वोटर एक्सेल फ़ाइल चुनें</b>
+                      <b style={{ fontSize: "13.5px", color: "#0f172a" }}>
+                        {electionType === "PANCHAYAT" ? "पंचायत" : "वार्ड"} वोटर एक्सेल फ़ाइल चुनें
+                      </b>
                       <span style={{ fontSize: "11px", color: "#64748b" }}>.xlsx, .xls, .csv (11 कॉलम स्वतः मैच होंगे)</span>
                       <button
                         type="button"
@@ -1993,15 +2300,15 @@ function SuperAdminView({
               </div>
             </div>
 
-            {/* Booth Passwords Live Preview Card - Matching the exact uploaded image */}
+            {/* Booth / Ward Passwords Live Preview Card */}
             <div style={{ marginTop: "24px", paddingTop: "20px", borderTop: "1px solid #e2e8f0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px", marginBottom: "14px" }}>
                 <div>
                   <h4 style={{ margin: "0 0 2px", fontSize: "16px", fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: "6px" }}>
-                    🔑 4. बूथ पासवर्ड कार्ड प्रीव्यू ({boothPasswords.length} पासवर्ड्स)
+                    🔑 4. {electionType === "PANCHAYAT" ? "पंचायत वार्ड" : "बूथ"} पासवर्ड कार्ड प्रीव्यू ({boothPasswords.length} पासवर्ड्स)
                   </h4>
                   <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
-                    {boothCount} बूथ = {boothPasswords.length} पासवर्ड (प्रति बूथ 1 ADMIN + 3 MEMBER)। कोई नाम व नंबर जनरेट नहीं होंगे।
+                    {boothCount} {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} = {boothPasswords.length} पासवर्ड (प्रति {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} 1 ADMIN + 3 MEMBER)। कोई नाम व नंबर जनरेट नहीं होंगे।
                   </p>
                 </div>
 
@@ -2011,9 +2318,11 @@ function SuperAdminView({
                     onChange={(e) => setPreviewBoothFilter(e.target.value)}
                     style={{ padding: "6px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700, color: "#334155" }}
                   >
-                    <option value="ALL">सभी बूथ देखें ({boothPasswords.length} पासवर्ड)</option>
+                    <option value="ALL">सभी {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} देखें ({boothPasswords.length} पासवर्ड)</option>
                     {Array.from({ length: boothCount }, (_, i) => i + 1).map((b) => (
-                      <option key={b} value={String(b)}>बूथ {b} के 4 पासवर्ड्स</option>
+                      <option key={b} value={String(b)}>
+                        {electionType === "PANCHAYAT" ? `वार्ड ${b}` : `बूथ ${b}`} के 4 पासवर्ड्स
+                      </option>
                     ))}
                   </select>
 
@@ -2029,11 +2338,11 @@ function SuperAdminView({
                 </div>
               </div>
 
-              {/* Visual Card (Identical to uploaded image) */}
+              {/* Visual Card */}
               <div className="boothPassCard">
                 <div className="boothPassHeader">
                   <Key size={18} />
-                  <span>बूथ पासवर्ड</span>
+                  <span>{electionType === "PANCHAYAT" ? "वार्ड पासवर्ड" : "बूथ पासवर्ड"}</span>
                 </div>
 
                 <div className="boothPassCandidateStrip">
@@ -2046,7 +2355,11 @@ function SuperAdminView({
                     </div>
                   )}
                   <div className="boothPassCandidateInfo">
-                    <span className="boothPassWardTag">{wardNo ? `वार्ड नं. ${wardNo}` : "वार्ड संख्या"}</span>
+                    <span className="boothPassWardTag">
+                      {electionType === "PANCHAYAT"
+                        ? (panchayatName ? `ग्राम पंचायत ${panchayatName}` : "ग्राम पंचायत")
+                        : (wardNo ? `वार्ड नं. ${wardNo}` : "वार्ड संख्या")}
+                    </span>
                     <h3 className="boothPassCandidateName">{candName || "प्रत्याशी का नाम"}</h3>
                     <div className="boothPassSymbol">
                       <span>चुनाव चिन्ह:</span>
@@ -2057,9 +2370,19 @@ function SuperAdminView({
                 </div>
 
                 <div className="boothPassMetaStrip">
-                  <div>निकाय : {nikay || "—"}</div>
-                  <div>वार्ड : {wardNo || "—"}</div>
-                  <div>विवरण : {electionName || (wardNo ? `वार्ड-${wardNo}` : "—")}</div>
+                  {electionType === "PANCHAYAT" ? (
+                    <>
+                      <div>पं. समिति : {panchayatSamiti || "—"}</div>
+                      <div>ग्राम पंचायत : {panchayatName || "—"}</div>
+                      <div>कुल वार्ड : {boothCount}</div>
+                    </>
+                  ) : (
+                    <>
+                      <div>निकाय : {nikay || "—"}</div>
+                      <div>वार्ड : {wardNo || "—"}</div>
+                      <div>विवरण : {electionName || (wardNo ? `वार्ड-${wardNo}` : "—")}</div>
+                    </>
+                  )}
                 </div>
 
                 <table className="boothPassTable">
@@ -2087,7 +2410,9 @@ function SuperAdminView({
                           <td>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                               <span className="boothPassCode">{p.password}</span>
-                              <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>(बूथ {p.boothNumber})</span>
+                              <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>
+                                ({electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} {p.boothNumber})
+                              </span>
                             </div>
                           </td>
                           <td style={{ textAlign: "center" }}>
@@ -2131,12 +2456,27 @@ function SuperAdminView({
                 <button
                   type="button"
                   className="primary"
-                  style={{ padding: "12px 28px", fontSize: "14.5px", fontWeight: 800, display: "flex", alignItems: "center", gap: "8px", borderRadius: "8px", boxShadow: "0 4px 14px rgba(0, 98, 204, 0.35)" }}
+                  style={{
+                    padding: "12px 28px",
+                    fontSize: "14.5px",
+                    fontWeight: 800,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    borderRadius: "8px",
+                    boxShadow: electionType === "PANCHAYAT" ? "0 4px 14px rgba(22, 163, 74, 0.35)" : "0 4px 14px rgba(0, 98, 204, 0.35)",
+                    background: electionType === "PANCHAYAT" ? "#16a34a" : "#0062cc",
+                    borderColor: electionType === "PANCHAYAT" ? "#16a34a" : "#0062cc",
+                  }}
                   disabled={isActivating}
                   onClick={handleActivateSetup}
                 >
                   <Sparkles size={16} />
-                  {isActivating ? "सक्रिय किया जा रहा है..." : `🚀 वार्ड डेटा, पोस्टर एवं सभी ${boothPasswords.length} पासवर्ड एक्टिवेट करें`}
+                  {isActivating
+                    ? "सक्रिय किया जा रहा है..."
+                    : electionType === "PANCHAYAT"
+                    ? `🚀 पंचायत डेटा, पोस्टर एवं सभी ${boothPasswords.length} पासवर्ड एक्टिवेट करें`
+                    : `🚀 वार्ड डेटा, पोस्टर एवं सभी ${boothPasswords.length} पासवर्ड एक्टिवेट करें`}
                 </button>
               </div>
             </div>
@@ -2314,147 +2654,165 @@ function SuperAdminView({
         </Panel>
       </div>
 
-      {/* Credentials Export & View Modal (Booth Passwords Card) */}
+      {/* Credentials Export & View Modal (Booth / Ward Passwords Card) */}
       {viewCredsModal && (
         <div className="modalOverlay" onClick={() => setViewCredsModal(null)}>
-          <div className="modalBox boothPassPrintArea" style={{ maxWidth: "650px", width: "95%", background: "#ffffff", padding: 0, overflow: "hidden", borderRadius: "14px" }} onClick={(e) => e.stopPropagation()}>
-            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff", padding: "12px 18px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <Key size={18} color="#38bdf8" />
-                <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px", fontWeight: 800 }}>
-                  बूथ पासवर्ड कार्ड - {viewCredsModal.candidate.name} ({viewCredsModal.candidate.wardConstituency})
-                </h3>
-              </div>
-              <button onClick={() => setViewCredsModal(null)} style={{ color: "#ffffff" }}><X /></button>
-            </div>
-
-            <div className="modalBody" style={{ padding: "16px 18px" }}>
-              {/* Action Toolbar */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#475569" }}>बूथ:</span>
-                  <select
-                    value={modalBoothFilter}
-                    onChange={(e) => setModalBoothFilter(e.target.value)}
-                    style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
-                  >
-                    <option value="ALL">सभी ({viewCredsModal.creds.length})</option>
-                    {Array.from(new Set(viewCredsModal.creds.map((c) => c.boothNumber))).map((b) => (
-                      <option key={b} value={b}>बूथ {b}</option>
-                    ))}
-                  </select>
+            <div className="modalBox boothPassPrintArea" style={{ maxWidth: "650px", width: "95%", background: "#ffffff", padding: 0, overflow: "hidden", borderRadius: "14px" }} onClick={(e) => e.stopPropagation()}>
+              <div className="modalHead" style={{ background: isPanchayatModal ? "#064e3b" : "#0b224e", color: "#ffffff", padding: "12px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <Key size={18} color={isPanchayatModal ? "#6ee7b7" : "#38bdf8"} />
+                  <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px", fontWeight: 800 }}>
+                    {isPanchayatModal ? "वार्ड पासवर्ड कार्ड" : "बूथ पासवर्ड कार्ड"} - {viewCredsModal.candidate.name} ({viewCredsModal.candidate.wardConstituency})
+                  </h3>
                 </div>
-
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="outline"
-                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
-                    onClick={() => {
-                      document.body.classList.add("printing-booth-card");
-                      window.print();
-                      setTimeout(() => document.body.classList.remove("printing-booth-card"), 1000);
-                    }}
-                  >
-                    <Printer size={13} /> 🖨️ प्रिंट / PDF
-                  </button>
-                  <button
-                    type="button"
-                    className="primary"
-                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#16a34a", borderColor: "#16a34a" }}
-                    onClick={() => copyCredentialsForWhatsApp(viewCredsModal.candidate, viewCredsModal.creds)}
-                  >
-                    <Share2 size={13} /> {copiedSuccess ? "✓ कॉपी हो गया!" : "💬 WhatsApp"}
-                  </button>
-                  <button
-                    type="button"
-                    className="outline"
-                    style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
-                    onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
-                  >
-                    <Download size={13} /> 📥 Excel
-                  </button>
-                  <button
-                    type="button"
-                    className="primary"
-                    style={{ padding: "6px 12px", fontSize: "12px" }}
-                    onClick={() => {
-                      setViewCredsModal(null);
-                      onSelectCandidate(viewCredsModal.candidate.id);
-                    }}
-                  >
-                    ⚡ ऐप खोलें ›
-                  </button>
-                </div>
+                <button onClick={() => setViewCredsModal(null)} style={{ color: "#ffffff" }}><X /></button>
               </div>
 
-              {/* Printable Booth Passwords Card matching uploaded image */}
-              <div className="boothPassCard">
-                <div className="boothPassHeader">
-                  <Key size={18} />
-                  <span>बूथ पासवर्ड</span>
-                </div>
+              <div className="modalBody" style={{ padding: "16px 18px" }}>
+                {/* Action Toolbar */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "8px", marginBottom: "14px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#475569" }}>
+                      {isPanchayatModal ? "वार्ड:" : "बूथ:"}
+                    </span>
+                    <select
+                      value={modalBoothFilter}
+                      onChange={(e) => setModalBoothFilter(e.target.value)}
+                      style={{ padding: "5px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px", fontWeight: 700 }}
+                    >
+                      <option value="ALL">सभी ({viewCredsModal.creds.length})</option>
+                      {Array.from(new Set(viewCredsModal.creds.map((c) => c.boothNumber))).map((b) => (
+                        <option key={b} value={b}>{isPanchayatModal ? "वार्ड" : "बूथ"} {b}</option>
+                      ))}
+                    </select>
+                  </div>
 
-                <div className="boothPassCandidateStrip">
-                  {viewCredsModal.candidate.posterUrl ? (
-                    <img src={viewCredsModal.candidate.posterUrl} alt="Candidate Poster" className="boothPassPoster" />
-                  ) : (
-                    <div className="boothPassPosterPlaceholder">
-                      <ImageIcon size={22} color="#94a3b8" />
-                      <span>पोस्टर</span>
-                    </div>
-                  )}
-                  <div className="boothPassCandidateInfo">
-                    <span className="boothPassWardTag">वार्ड नं. {viewCredsModal.candidate.wardConstituency || "39"}</span>
-                    <h3 className="boothPassCandidateName">{viewCredsModal.candidate.name}</h3>
-                    <div className="boothPassSymbol">
-                      <span>चुनाव चिन्ह:</span>
-                      <b>{viewCredsModal.candidate.symbolName || "गुब्बारा"}</b>
-                      {viewCredsModal.candidate.party && (
-                        <span style={{ color: "#64748b", fontSize: "11px" }}>({viewCredsModal.candidate.party})</span>
-                      )}
-                    </div>
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="outline"
+                      style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
+                      onClick={() => {
+                        document.body.classList.add("printing-booth-card");
+                        window.print();
+                        setTimeout(() => document.body.classList.remove("printing-booth-card"), 1000);
+                      }}
+                    >
+                      <Printer size={13} /> 🖨️ प्रिंट / PDF
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#16a34a", borderColor: "#16a34a" }}
+                      onClick={() => copyCredentialsForWhatsApp(viewCredsModal.candidate, viewCredsModal.creds)}
+                    >
+                      <Share2 size={13} /> {copiedSuccess ? "✓ कॉपी हो गया!" : "💬 WhatsApp"}
+                    </button>
+                    <button
+                      type="button"
+                      className="outline"
+                      style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
+                      onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
+                    >
+                      <Download size={13} /> 📥 Excel
+                    </button>
+                    <button
+                      type="button"
+                      className="primary"
+                      style={{ padding: "6px 12px", fontSize: "12px" }}
+                      onClick={() => {
+                        setViewCredsModal(null);
+                        onSelectCandidate(viewCredsModal.candidate.id);
+                      }}
+                    >
+                      ⚡ ऐप खोलें ›
+                    </button>
                   </div>
                 </div>
 
-                <div className="boothPassMetaStrip">
-                  <div>निकाय : {viewCredsModal.candidate.nikay || "3000039"}</div>
-                  <div>वार्ड : {viewCredsModal.candidate.wardConstituency || "39"}</div>
-                  <div>विवरण : {viewCredsModal.candidate.electionName || `BHILWARA-${viewCredsModal.candidate.wardConstituency || "39"}`}</div>
-                </div>
+                {/* Printable Passwords Card matching uploaded image */}
+                <div className="boothPassCard">
+                  <div className="boothPassHeader" style={{ background: isPanchayatModal ? "#065f46" : undefined }}>
+                    <Key size={18} />
+                    <span>{isPanchayatModal ? "वार्ड पासवर्ड" : "बूथ पासवर्ड"}</span>
+                  </div>
 
-                <table className="boothPassTable">
-                  <thead>
-                    <tr>
-                      <th style={{ width: "45px", textAlign: "center" }}>#</th>
-                      <th style={{ width: "120px", textAlign: "center" }}>भूमिका</th>
-                      <th style={{ textAlign: "left" }}>पासवर्ड</th>
-                      <th style={{ width: "65px", textAlign: "center" }}>कॉपी</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {viewCredsModal.creds
-                      .filter((c) => modalBoothFilter === "ALL" || c.boothNumber === modalBoothFilter)
-                      .map((c, idx) => {
-                        const serial = (c as any).serialNumber || (idx + 1);
-                        const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
-                        return (
-                          <tr key={c.id || idx} style={{ background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
-                            <td style={{ textAlign: "center", fontWeight: 800, color: "#64748b", fontSize: "13px" }}>
-                              {serial}
-                            </td>
-                            <td style={{ textAlign: "center" }}>
-                              <span className={roleTitle === "ADMIN" ? "pillAdmin" : "pillMember"}>
-                                {roleTitle}
-                              </span>
-                            </td>
-                            <td>
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                <span className="boothPassCode">{c.password}</span>
-                                <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>(बूथ {c.boothNumber})</span>
-                              </div>
-                            </td>
-                            <td style={{ textAlign: "center" }}>
+                  <div className="boothPassCandidateStrip">
+                    {viewCredsModal.candidate.posterUrl ? (
+                      <img src={viewCredsModal.candidate.posterUrl} alt="Candidate Poster" className="boothPassPoster" />
+                    ) : (
+                      <div className="boothPassPosterPlaceholder">
+                        <ImageIcon size={22} color="#94a3b8" />
+                        <span>पोस्टर</span>
+                      </div>
+                    )}
+                    <div className="boothPassCandidateInfo">
+                      <span className="boothPassWardTag" style={{ background: isPanchayatModal ? "#ecfdf5" : undefined, color: isPanchayatModal ? "#047857" : undefined, borderColor: isPanchayatModal ? "#a7f3d0" : undefined }}>
+                        {isPanchayatModal
+                          ? (viewCredsModal.candidate.wardConstituency ? `ग्राम पंचायत ${viewCredsModal.candidate.wardConstituency}` : "ग्राम पंचायत")
+                          : (viewCredsModal.candidate.wardConstituency ? `वार्ड नं. ${viewCredsModal.candidate.wardConstituency}` : "वार्ड संख्या")}
+                      </span>
+                      <h3 className="boothPassCandidateName">{viewCredsModal.candidate.name}</h3>
+                      <div className="boothPassSymbol">
+                        <span>चुनाव चिन्ह:</span>
+                        <b>{viewCredsModal.candidate.symbolName || "—"}</b>
+                        {viewCredsModal.candidate.party && (
+                          <span style={{ color: "#64748b", fontSize: "11px" }}>({viewCredsModal.candidate.party})</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="boothPassMetaStrip">
+                    {isPanchayatModal ? (
+                      <>
+                        <div>पं. समिति : {viewCredsModal.candidate.nikay || "—"}</div>
+                        <div>ग्राम पंचायत : {viewCredsModal.candidate.wardConstituency || "—"}</div>
+                        <div>विवरण : {viewCredsModal.candidate.electionName || "पंचायत चुनाव"}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div>निकाय : {viewCredsModal.candidate.nikay || "—"}</div>
+                        <div>वार्ड : {viewCredsModal.candidate.wardConstituency || "—"}</div>
+                        <div>विवरण : {viewCredsModal.candidate.electionName || (viewCredsModal.candidate.wardConstituency ? `वार्ड-${viewCredsModal.candidate.wardConstituency}` : "—")}</div>
+                      </>
+                    )}
+                  </div>
+
+                  <table className="boothPassTable">
+                    <thead>
+                      <tr>
+                        <th style={{ width: "45px", textAlign: "center" }}>#</th>
+                        <th style={{ width: "120px", textAlign: "center" }}>भूमिका</th>
+                        <th style={{ textAlign: "left" }}>पासवर्ड</th>
+                        <th style={{ width: "65px", textAlign: "center" }}>कॉपी</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewCredsModal.creds
+                        .filter((c) => modalBoothFilter === "ALL" || c.boothNumber === modalBoothFilter)
+                        .map((c, idx) => {
+                          const serial = (c as any).serialNumber || (idx + 1);
+                          const roleTitle = (c as any).roleTitle || (c.role === "CANDIDATE_ADMIN" ? "ADMIN" : "MEMBER");
+                          return (
+                            <tr key={c.id || idx} style={{ background: idx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
+                              <td style={{ textAlign: "center", fontWeight: 800, color: "#64748b", fontSize: "13px" }}>
+                                {serial}
+                              </td>
+                              <td style={{ textAlign: "center" }}>
+                                <span className={roleTitle === "ADMIN" ? "pillAdmin" : "pillMember"}>
+                                  {roleTitle}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <span className="boothPassCode">{c.password}</span>
+                                  <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700 }}>
+                                    ({isPanchayatModal ? "वार्ड" : "बूथ"} {c.boothNumber})
+                                  </span>
+                                </div>
+                              </td>
+                              <td style={{ textAlign: "center" }}>
                               <button
                                 type="button"
                                 className="outline"

@@ -18,6 +18,7 @@ function mapDbCandidateToAccount(c: any): CandidateAccount {
     symbolName: c.symbolName || undefined,
     nikay: c.nikay || undefined,
     passwordsJson: c.passwordsJson || undefined,
+    electionType: c.electionType || (c.electionName?.includes("पंचायत") || c.electionName?.toLowerCase().includes("panchayat") ? "PANCHAYAT" : "NIKAY"),
   };
 }
 

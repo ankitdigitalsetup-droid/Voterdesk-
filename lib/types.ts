@@ -24,6 +24,7 @@ export interface CandidateAccount {
   symbolName?: string;
   nikay?: string;
   passwordsJson?: string;
+  electionType?: "NIKAY" | "PANCHAYAT";
 }
 
 export interface CandidateCredential {
