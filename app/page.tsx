@@ -759,23 +759,23 @@ function SuperAdminView({
   const [newCand, setNewCand] = useState({
     name: "",
     phone: "",
-    party: "Independent (निर्दलीय)",
-    electionName: "Municipal Election 2026",
-    wardConstituency: "Ward 01",
-    boothCount: "10",
-    password: "voterdesk",
+    party: "",
+    electionName: "",
+    wardConstituency: "",
+    boothCount: "1",
+    password: "",
   });
 
   // Dedicated Ward Onboarding Card States (1 Booth = 4 Passwords, 2 Booths = 8 Passwords)
-  const [nikay, setNikay] = useState("3000039");
-  const [wardNo, setWardNo] = useState("39");
-  const [electionName, setElectionName] = useState("BHILWARA-39");
+  const [nikay, setNikay] = useState("");
+  const [wardNo, setWardNo] = useState("");
+  const [electionName, setElectionName] = useState("");
   const [candName, setCandName] = useState("");
-  const [candParty, setCandParty] = useState("निर्दलीय");
-  const [symbolName, setSymbolName] = useState("गुब्बारा");
+  const [candParty, setCandParty] = useState("");
+  const [symbolName, setSymbolName] = useState("");
   const [candPhone, setCandPhone] = useState("");
-  const [candPassword, setCandPassword] = useState("Cand@2026");
-  const [workerPassword, setWorkerPassword] = useState("Worker@2026");
+  const [candPassword, setCandPassword] = useState("");
+  const [workerPassword, setWorkerPassword] = useState("");
   const [boothCount, setBoothCount] = useState<number>(1); // Default 1 booth = 4 passwords (1 Admin + 3 Member)
 
   // 9-digit + 1 special char Booth Access Passwords
@@ -797,6 +797,8 @@ function SuperAdminView({
   const [excelFileName, setExcelFileName] = useState<string>("");
   const [parsedVoters, setParsedVoters] = useState<Omit<VoterRecord, "id">[]>([]);
   const [isParsingExcel, setIsParsingExcel] = useState<boolean>(false);
+  const [availableSheets, setAvailableSheets] = useState<string[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
   const excelInputRef = useRef<HTMLInputElement>(null);
 
   const [previewBoothFilter, setPreviewBoothFilter] = useState<string>("ALL");
@@ -817,6 +819,9 @@ function SuperAdminView({
   const [saUploadFileName, setSaUploadFileName] = useState("");
   const [saParsedVoters, setSaParsedVoters] = useState<Omit<VoterRecord, "id">[]>([]);
   const [isParsingSaExcel, setIsParsingSaExcel] = useState(false);
+  const [saAvailableSheets, setSaAvailableSheets] = useState<string[]>([]);
+  const [saSelectedSheet, setSaSelectedSheet] = useState<string>("");
+  const [saExcelFile, setSaExcelFile] = useState<File | null>(null);
   const saExcelInputRef = useRef<HTMLInputElement>(null);
 
   // Dedicated Add Single Voter Modal for Existing Candidate (Super Admin exclusive)
@@ -917,13 +922,23 @@ function SuperAdminView({
     }
   };
 
-  const handleSaExcelSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleSaExcelSelect = async (
+    e?: React.ChangeEvent<HTMLInputElement>,
+    sheetNameToLoad?: string,
+    existingFile?: File
+  ) => {
+    const file = e?.target.files?.[0] || existingFile || saExcelFile;
     if (!file) return;
     setIsParsingSaExcel(true);
     setSaUploadFileName(file.name);
+    setSaExcelFile(file);
     try {
-      const parsed = await parseExcelFile(file);
+      const parsed = await parseExcelFile(file, sheetNameToLoad);
+      const sheets = parsed.sheetNames || [];
+      setSaAvailableSheets(sheets);
+      const activeSheet = parsed.selectedSheet || sheets[0] || "";
+      setSaSelectedSheet(activeSheet);
+
       const mapping = detectFieldMapping(parsed.columns);
       const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx) => {
         const boothVal = mapping.booth && r[mapping.booth] ? String(r[mapping.booth]).trim() : "1";
@@ -969,9 +984,16 @@ function SuperAdminView({
       alert("Excel फ़ाइल पार्स करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
       setSaUploadFileName("");
       setSaParsedVoters([]);
+      setSaAvailableSheets([]);
+      setSaSelectedSheet("");
     } finally {
       setIsParsingSaExcel(false);
     }
+  };
+
+  const handleSaSheetChange = (sheetName: string) => {
+    if (!saExcelFile || sheetName === saSelectedSheet) return;
+    handleSaExcelSelect(undefined, sheetName, saExcelFile);
   };
 
   const handleSaveSaExcel = async () => {
@@ -1004,10 +1026,13 @@ function SuperAdminView({
 
       store.importVoters(saUploadCand.id, saParsedVoters);
       onCandidateCreated();
-      alert(`✅ ${saParsedVoters.length} मतदाता ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक डेटाबेस में अपलोड हो गए और सभी 15 मोबाइल्स पर लाइव हो गए!`);
+      alert(`✅ ${saParsedVoters.length} मतदाता (${saSelectedSheet ? `शीट: ${saSelectedSheet}` : ""}) ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक डेटाबेस में अपलोड हो गए और सभी 15 मोबाइल्स पर लाइव हो गए!`);
       setSaUploadCand(null);
       setSaUploadFileName("");
       setSaParsedVoters([]);
+      setSaAvailableSheets([]);
+      setSaSelectedSheet("");
+      setSaExcelFile(null);
     } catch (err: unknown) {
       alert("वोटर अपलोड करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -1132,13 +1157,18 @@ function SuperAdminView({
   };
 
   // Excel File Handler
-  const handleExcelUpload = async (file: File) => {
+  const handleExcelUpload = async (file: File, sheetNameToLoad?: string) => {
     if (!file) return;
     setExcelFile(file);
     setExcelFileName(file.name);
     setIsParsingExcel(true);
     try {
-      const parsed = await parseExcelFile(file);
+      const parsed = await parseExcelFile(file, sheetNameToLoad);
+      const sheets = parsed.sheetNames || [];
+      setAvailableSheets(sheets);
+      const activeSheet = parsed.selectedSheet || sheets[0] || "";
+      setSelectedSheet(activeSheet);
+
       const mapping = detectFieldMapping(parsed.columns);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
@@ -1201,9 +1231,16 @@ function SuperAdminView({
       }
     } catch (err) {
       alert("एक्सेल पार्स करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+      setAvailableSheets([]);
+      setSelectedSheet("");
     } finally {
       setIsParsingExcel(false);
     }
+  };
+
+  const handleSheetChange = (sheetName: string) => {
+    if (!excelFile || sheetName === selectedSheet) return;
+    handleExcelUpload(excelFile, sheetName);
   };
 
   // Submit Activation
@@ -1213,7 +1250,7 @@ function SuperAdminView({
       return;
     }
     const cleanPhone = candPhone.replace(/\D/g, "");
-    const finalPhone = cleanPhone.length === 10 ? cleanPhone : "9829012345";
+    const finalPhone = cleanPhone.length === 10 ? cleanPhone : `98290${Math.floor(10000 + Math.random() * 90000)}`;
     if (boothCount < 1) {
       alert("कम से कम 1 बूथ होना आवश्यक है!");
       return;
@@ -1249,7 +1286,7 @@ function SuperAdminView({
           boothCount: Number(boothCount),
           posterUrl: posterPreview || undefined,
           symbolName: symbolName.trim(),
-          nikay: nikay.trim() || "3000039",
+          nikay: nikay.trim(),
           passwords: pwdsToSave,
           passwordsJson: serializedPwds,
           voters: initialVoters,
@@ -1299,7 +1336,7 @@ function SuperAdminView({
         createdAt: new Date().toISOString().split("T")[0],
         posterUrl: posterPreview || undefined,
         symbolName: symbolName.trim(),
-        nikay: nikay.trim() || "3000039",
+        nikay: nikay.trim(),
         passwordsJson: serializedPwds,
       };
 
@@ -1322,15 +1359,15 @@ function SuperAdminView({
         hour12: true,
       });
 
-      setActivationToast(`🎉 ${wardNo} के लिए प्रत्याशी एवं ${pwdsToSave.length} बूथ पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`);
+      setActivationToast(`🎉 ${wardNo ? `वार्ड ${wardNo}` : "वार्ड"} के लिए प्रत्याशी एवं ${pwdsToSave.length} बूथ पासवर्ड सफलतापूर्वक एक्टिवेट हो गए!`);
       setTimeout(() => setActivationToast(""), 4000);
 
       // Open credentials export modal so admin can immediately print / copy / download
       setViewCredsModal({
         candidate: {
           ...newCandObj,
-          nikay: nikay.trim() || "3000039",
-          symbolName: symbolName.trim() || "गुब्बारा",
+          nikay: nikay.trim(),
+          symbolName: symbolName.trim(),
           wardConstituency: wardNo.trim(),
           electionName: electionName.trim(),
         },
@@ -1339,13 +1376,22 @@ function SuperAdminView({
       });
 
       // Clear form
+      setNikay("");
+      setWardNo("");
+      setElectionName("");
       setCandName("");
+      setCandParty("");
+      setSymbolName("");
       setCandPhone("");
+      setCandPassword("");
+      setWorkerPassword("");
       setPosterPreview("");
       setPosterFileName("");
       setExcelFile(null);
       setExcelFileName("");
       setParsedVoters([]);
+      setAvailableSheets([]);
+      setSelectedSheet("");
     } catch (err) {
       alert("सक्रिय करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -1608,8 +1654,7 @@ function SuperAdminView({
                       type="text"
                       value={nikay}
                       onChange={(e) => setNikay(e.target.value)}
-                      placeholder="उदा. 3000039"
-                      required
+                      placeholder="निकाय संख्या दर्ज करें"
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                     />
                   </div>
@@ -1620,7 +1665,7 @@ function SuperAdminView({
                       type="text"
                       value={wardNo}
                       onChange={(e) => setWardNo(e.target.value)}
-                      placeholder="उदा. 39"
+                      placeholder="वार्ड संख्या दर्ज करें"
                       required
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                     />
@@ -1633,8 +1678,7 @@ function SuperAdminView({
                     type="text"
                     value={electionName}
                     onChange={(e) => setElectionName(e.target.value)}
-                    placeholder="उदा. BHILWARA-39"
-                    required
+                    placeholder="चुनाव / वार्ड का विवरण दर्ज करें"
                     style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                   />
                 </div>
@@ -1645,7 +1689,7 @@ function SuperAdminView({
                     type="text"
                     value={candName}
                     onChange={(e) => setCandName(e.target.value)}
-                    placeholder="उदा. लखन सोनी"
+                    placeholder="प्रत्याशी का पूरा नाम दर्ज करें"
                     required
                     style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                   />
@@ -1658,7 +1702,7 @@ function SuperAdminView({
                       type="text"
                       value={symbolName}
                       onChange={(e) => setSymbolName(e.target.value)}
-                      placeholder="उदा. गुब्बारा"
+                      placeholder="चुनाव चिन्ह दर्ज करें"
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1", fontWeight: 700 }}
                     />
                   </div>
@@ -1669,7 +1713,7 @@ function SuperAdminView({
                       type="text"
                       value={candParty}
                       onChange={(e) => setCandParty(e.target.value)}
-                      placeholder="निर्दलीय / BJP / INC"
+                      placeholder="पार्टी / दल का नाम दर्ज करें"
                       style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
@@ -1681,7 +1725,7 @@ function SuperAdminView({
                     type="tel"
                     value={candPhone}
                     onChange={(e) => setCandPhone(e.target.value)}
-                    placeholder="उदा. 98290XXXXX"
+                    placeholder="मोबाइल नंबर दर्ज करें"
                     style={{ padding: "9px 12px", borderRadius: "8px", border: "1px solid #cbd5e1" }}
                   />
                 </div>
@@ -1907,6 +1951,42 @@ function SuperAdminView({
                   )}
                 </div>
 
+                {/* Sheet Selection Dropdown (Only upload selected sheet) */}
+                {availableSheets.length > 0 && (
+                  <div style={{ padding: "10px 12px", background: "#f0f9ff", border: "1.5px solid #0284c7", borderRadius: "8px" }}>
+                    <label style={{ fontSize: "12px", fontWeight: 800, color: "#0369a1", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                      <span>📑 केवल वही शीट चुनें जिसे अपलोड करना है:</span>
+                      <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#0284c7", background: "#e0f2fe", padding: "1px 6px", borderRadius: "10px" }}>
+                        {availableSheets.length} शीट उपलब्ध
+                      </span>
+                    </label>
+                    <select
+                      value={selectedSheet}
+                      onChange={(e) => handleSheetChange(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        border: "1.5px solid #0284c7",
+                        background: "#ffffff",
+                        fontWeight: 700,
+                        color: "#0f172a",
+                        fontSize: "12.5px",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {availableSheets.map((s) => (
+                        <option key={s} value={s}>
+                          📄 {s} {s === selectedSheet ? `(सक्रिय - ${parsedVoters.length} मतदाता)` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ marginTop: "4px", fontSize: "11px", color: "#0369a1", fontWeight: 600 }}>
+                      ✓ केवल चुनी गई शीट <b>&ldquo;{selectedSheet}&rdquo;</b> का ही डेटा अपलोड होगा।
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ fontSize: "11.5px", color: "#475569", background: "#f1f5f9", padding: "8px 10px", borderRadius: "8px" }}>
                   💡 <b>कॉलम्स:</b> भाग सं., क्र. सं., नाम, पिता/पति, वोट डाला, सपोर्टर, बाहर, मोबाइल, मकान, एड्रेस, बूथ पता।
                 </div>
@@ -1966,20 +2046,20 @@ function SuperAdminView({
                     </div>
                   )}
                   <div className="boothPassCandidateInfo">
-                    <span className="boothPassWardTag">वार्ड नं. {wardNo || "39"}</span>
-                    <h3 className="boothPassCandidateName">{candName || "लखन सोनी"}</h3>
+                    <span className="boothPassWardTag">{wardNo ? `वार्ड नं. ${wardNo}` : "वार्ड संख्या"}</span>
+                    <h3 className="boothPassCandidateName">{candName || "प्रत्याशी का नाम"}</h3>
                     <div className="boothPassSymbol">
                       <span>चुनाव चिन्ह:</span>
-                      <b>{symbolName || "गुब्बारा"}</b>
+                      <b>{symbolName || "—"}</b>
                       {candParty && <span style={{ color: "#64748b", fontSize: "11px" }}>({candParty})</span>}
                     </div>
                   </div>
                 </div>
 
                 <div className="boothPassMetaStrip">
-                  <div>निकाय : {nikay || "3000039"}</div>
-                  <div>वार्ड : {wardNo || "39"}</div>
-                  <div>विवरण : {electionName || `BHILWARA-${wardNo || "39"}`}</div>
+                  <div>निकाय : {nikay || "—"}</div>
+                  <div>वार्ड : {wardNo || "—"}</div>
+                  <div>विवरण : {electionName || (wardNo ? `वार्ड-${wardNo}` : "—")}</div>
                 </div>
 
                 <table className="boothPassTable">
@@ -2501,6 +2581,42 @@ function SuperAdminView({
                   </div>
                 )}
               </div>
+
+              {/* Sheet Selection Option */}
+              {saAvailableSheets.length > 0 && (
+                <div style={{ marginTop: "14px", padding: "12px", background: "#f0f9ff", border: "1.5px solid #0284c7", borderRadius: "8px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 800, color: "#0369a1", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <span>📑 केवल वही शीट चुनें जिसे अपलोड करना है:</span>
+                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#0284c7", background: "#e0f2fe", padding: "2px 8px", borderRadius: "10px" }}>
+                      {saAvailableSheets.length} शीट उपलब्ध
+                    </span>
+                  </label>
+                  <select
+                    value={saSelectedSheet}
+                    onChange={(e) => handleSaSheetChange(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "6px",
+                      border: "1.5px solid #0284c7",
+                      background: "#ffffff",
+                      fontWeight: 700,
+                      color: "#0f172a",
+                      fontSize: "13px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    {saAvailableSheets.map((s) => (
+                      <option key={s} value={s}>
+                        📄 {s} {s === saSelectedSheet ? `(सक्रिय - ${saParsedVoters.length} मतदाता)` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <p style={{ margin: "6px 0 0", fontSize: "11.5px", color: "#0369a1", fontWeight: 600 }}>
+                    ✓ केवल चुनी गई शीट <b>&ldquo;{saSelectedSheet}&rdquo;</b> का ही डेटा अपलोड होगा।
+                  </p>
+                </div>
+              )}
 
               {/* Preview of Parsed Voters */}
               {saParsedVoters.length > 0 && (
@@ -9995,6 +10111,7 @@ function RealExcelImporter({
 }) {
   const [step, setStep] = useState(1);
   const [parsedData, setParsedData] = useState<ParsedSheetData | null>(null);
+  const [currentFile, setCurrentFile] = useState<File | null>(null);
   const [fieldMap, setFieldMap] = useState<Record<string, string>>({});
   const [parsing, setParsing] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -10007,11 +10124,12 @@ function RealExcelImporter({
     processFile(file);
   };
 
-  const processFile = async (file: File) => {
+  const processFile = async (file: File, sheetName?: string) => {
     setParsing(true);
     setErrorMsg("");
+    setCurrentFile(file);
     try {
-      const data = await parseExcelFile(file);
+      const data = await parseExcelFile(file, sheetName);
       setParsedData(data);
       const autoMap = detectFieldMapping(data.columns);
       setFieldMap(autoMap);
@@ -10193,6 +10311,27 @@ function RealExcelImporter({
             <span className="file">
               <FileSpreadsheet /> {parsedData.fileName} ({parsedData.totalRows} rows detected)
             </span>
+
+            {/* Sheet Selection Dropdown */}
+            {parsedData.sheetNames && parsedData.sheetNames.length > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", margin: "10px 0 16px", padding: "10px 14px", background: "#f0f9ff", borderRadius: "8px", border: "1.5px solid #0284c7" }}>
+                <label style={{ fontSize: "13px", fontWeight: 800, color: "#0369a1", whiteSpace: "nowrap" }}>📑 शीट चुनें (Select Sheet):</label>
+                <select
+                  value={parsedData.selectedSheet}
+                  onChange={(e) => {
+                    if (currentFile) processFile(currentFile, e.target.value);
+                  }}
+                  style={{ flex: 1, padding: "7px 12px", borderRadius: "6px", border: "1.5px solid #0284c7", fontWeight: 700, fontSize: "13px", background: "#ffffff", color: "#0f172a", cursor: "pointer" }}
+                >
+                  {parsedData.sheetNames.map((s) => (
+                    <option key={s} value={s}>
+                      📄 {s} {s === parsedData.selectedSheet ? `(सक्रिय - ${parsedData.totalRows} पंक्तियाँ)` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <h2>Match Your File Columns</h2>
             <p className="muted">
               We automatically identified standard columns. Please verify the mapping below.

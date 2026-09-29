@@ -5,23 +5,33 @@ export interface ParsedSheetData {
   columns: string[];
   rows: Record<string, any>[];
   totalRows: number;
+  sheetNames?: string[];
+  selectedSheet?: string;
 }
 
-export function parseExcelFile(file: File): Promise<ParsedSheetData> {
+export function parseExcelFile(file: File, sheetName?: string): Promise<ParsedSheetData> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         const workbook = XLSX.read(data, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
+        const sheetNames = workbook.SheetNames || [];
+        if (sheetNames.length === 0) {
+          throw new Error("फ़ाइल में कोई शीट नहीं मिली। (No sheets found in workbook)");
+        }
+
+        const targetSheetName = sheetName && sheetNames.includes(sheetName) ? sheetName : sheetNames[0];
+        const worksheet = workbook.Sheets[targetSheetName];
+        if (!worksheet) {
+          throw new Error(`शीट '${targetSheetName}' नहीं मिली।`);
+        }
 
         // Read as 2D array of rows to intelligently detect the header row
         // Many Indian election Excel exports have title rows like "विधानसभा क्षेत्र 178..." at row 0/1
         const rawGrid = XLSX.utils.sheet_to_json<any[]>(worksheet, { header: 1, defval: "" });
         if (rawGrid.length === 0) {
-          throw new Error("फ़ाइल खाली है या पार्स नहीं हो सकी। (File is empty)");
+          throw new Error(`शीट '${targetSheetName}' खाली है या पार्स नहीं हो सकी। (Sheet is empty)`);
         }
 
         const keywords = [
@@ -58,7 +68,7 @@ export function parseExcelFile(file: File): Promise<ParsedSheetData> {
         });
 
         if (jsonData.length === 0) {
-          throw new Error("फ़ाइल में कोई डेटा पंक्ति नहीं मिली। (No data rows found)");
+          throw new Error(`शीट '${targetSheetName}' में कोई डेटा पंक्ति नहीं मिली। (No data rows found)`);
         }
 
         const columns = Object.keys(jsonData[0]);
@@ -67,7 +77,27 @@ export function parseExcelFile(file: File): Promise<ParsedSheetData> {
           columns,
           rows: jsonData,
           totalRows: jsonData.length,
+          sheetNames,
+          selectedSheet: targetSheetName,
         });
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// Quick sheet names extractor
+export function getExcelSheetNames(file: File): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array", bookSheets: true });
+        resolve(workbook.SheetNames || []);
       } catch (err) {
         reject(err);
       }
