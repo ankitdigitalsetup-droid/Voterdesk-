@@ -131,7 +131,9 @@ export default function Page() {
   const syncWithServer = useCallback(
     async (force = false) => {
       try {
-        setIsSyncing(true);
+        if (force) {
+          setIsSyncing(true);
+        }
         const curVer = force ? 0 : serverVersionRef.current;
         const workerName = user ? user.name : "Karyakarta";
         const res = await fetch(
@@ -171,16 +173,18 @@ export default function Page() {
           }
         }
 
-        // Live team sync so candidate sees any karyakarta who logs in with their name
-        try {
-          const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`);
-          if (tRes.ok) {
-            const tData = await tRes.json();
-            if (Array.isArray(tData.team)) {
-              setTeam(tData.team);
+        // Live team sync on manual force or periodic check
+        if (force) {
+          try {
+            const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`);
+            if (tRes.ok) {
+              const tData = await tRes.json();
+              if (Array.isArray(tData.team)) {
+                setTeam(tData.team);
+              }
             }
-          }
-        } catch {}
+          } catch {}
+        }
       } catch {
         if (force) {
           refreshData();
@@ -188,7 +192,9 @@ export default function Page() {
           setTimeout(() => setSyncToast(""), 2500);
         }
       } finally {
-        setIsSyncing(false);
+        if (force) {
+          setIsSyncing(false);
+        }
       }
     },
     [activeCandidateId, user, refreshData, handleLogout]
@@ -199,14 +205,14 @@ export default function Page() {
     syncWithServer(true);
   }, [activeCandidateId]);
 
-  // Live polling every 3 seconds so if any of 15 mobiles makes an edit, all other mobiles see it live!
+  // Optimized background polling: 8 seconds (fast sync without burning mobile CPU/battery)
   useEffect(() => {
-    if (user?.role === "SUPER_ADMIN") return;
+    if (!user || user.role === "SUPER_ADMIN" || !activeCandidateId) return;
     const timer = setInterval(() => {
       syncWithServer(false);
-    }, 3000);
+    }, 8000);
     return () => clearInterval(timer);
-  }, [syncWithServer, user?.role]);
+  }, [syncWithServer, user?.role, activeCandidateId]);
 
   // Restore logged-in session on page reload if present
   useEffect(() => {
@@ -4683,6 +4689,22 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     return list;
   }, [voters, user, partFilter, search, advName, advFather, advAddress, advEpic, familyFilter, ageSortOrder, nameSortOrder, serialSortOrder]);
 
+  // Fast Mobile Pagination (50 voters per page for buttery-smooth mobile performance)
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const pageSize = 50;
+
+  // Reset page to 1 whenever search, booth, or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [partFilter, search, advName, advFather, advAddress, advEpic, familyFilter, ageSortOrder, nameSortOrder, serialSortOrder]);
+
+  const totalPages = Math.ceil(filteredVoters.length / pageSize) || 1;
+  const paginatedVoters = useMemo(() => {
+    if (familyFilter) return filteredVoters; // Family filter shows family members directly
+    const start = (currentPage - 1) * pageSize;
+    return filteredVoters.slice(start, start + pageSize);
+  }, [filteredVoters, currentPage, pageSize, familyFilter]);
+
   // Auto-select and show details drawer when search pinpoints a single voter
   useEffect(() => {
     if (filteredVoters.length === 1 && (activeAdvFiltersCount >= 2 || (activeAdvFiltersCount >= 1 && search.trim()))) {
@@ -4710,13 +4732,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       setTimeout(() => setLocalToast(""), 3500);
       return;
     }
-    if (filteredVoters.length === 0) {
+    if (paginatedVoters.length === 0) {
       setLocalToast("⚠️ डाउनलोड करने के लिए कोई मतदाता डेटा उपलब्ध नहीं है!");
       setTimeout(() => setLocalToast(""), 3500);
       return;
     }
     try {
-      const exportRows = filteredVoters.map((v, idx) => {
+      const exportRows = paginatedVoters.map((v, idx) => {
         const row: Record<string, any> = {
           "भाग संख्या (Part No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
@@ -6151,7 +6173,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       )}
 
       {/* 4. Tabular Voter Roll (Exact Layout from Screenshot) */}
-      <div className={`bmTableContainer ${showPrintSlipScreen || showSlipModal ? "noPrint" : "printableArea"}`}>
+      <div id="voters-table-container" className={`bmTableContainer ${showPrintSlipScreen || showSlipModal ? "noPrint" : "printableArea"}`}>
         <table className="bmTable">
           <thead>
             <tr>
@@ -6596,7 +6618,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 </td>
               </tr>
             ) : (
-              filteredVoters.map((v, idx) => {
+              paginatedVoters.map((v, idx) => {
                 const isSelected = selectedVoter?.id === v.id;
                 const isVoted = v.voted === "हाँ" || v.voted === "Yes" || v.voted === true;
                 const isSupp = v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor";
@@ -6645,7 +6667,11 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
                     {/* 2. क्रम संख्या */}
                     <td className="colSerial" style={{ textAlign: "center", fontWeight: 700 }}>
-                      {v.serialNo !== undefined && v.serialNo !== "" && v.serialNo !== null ? v.serialNo : idx + 1}
+                      {v.serialNo !== undefined && v.serialNo !== "" && v.serialNo !== null
+                        ? v.serialNo
+                        : familyFilter
+                        ? idx + 1
+                        : (currentPage - 1) * pageSize + idx + 1}
                     </td>
 
                     {/* 3. नाम */}
@@ -6779,6 +6805,104 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           </tbody>
         </table>
       </div>
+
+      {/* Fast Mobile-Friendly Pagination Bar */}
+      {!familyFilter && filteredVoters.length > 0 && (
+        <div
+          className="noPrint"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "10px",
+            padding: "10px 14px",
+            background: "#ffffff",
+            border: "1px solid #e2e8f0",
+            borderTop: "none",
+            borderRadius: "0 0 10px 10px",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.03)",
+            marginBottom: "16px",
+          }}
+        >
+          <div style={{ fontSize: "13px", color: "#475569", fontWeight: 600 }}>
+            {lang === "hi"
+              ? `दिखा रहे हैं: ${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, filteredVoters.length)} (कुल ${filteredVoters.length})`
+              : `Showing: ${(currentPage - 1) * pageSize + 1} - ${Math.min(currentPage * pageSize, filteredVoters.length)} of ${filteredVoters.length}`}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              type="button"
+              disabled={currentPage <= 1}
+              onClick={() => {
+                setCurrentPage((p) => Math.max(1, p - 1));
+                const tbl = document.getElementById("voters-table-container");
+                if (tbl) tbl.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              style={{
+                minHeight: "36px",
+                padding: "6px 14px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                background: currentPage <= 1 ? "#f1f5f9" : "#ffffff",
+                color: currentPage <= 1 ? "#94a3b8" : "#0f172a",
+                cursor: currentPage <= 1 ? "not-allowed" : "pointer",
+                fontWeight: 600,
+                fontSize: "13px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              ◀ {lang === "hi" ? "पिछला" : "Prev"}
+            </button>
+
+            <span
+              style={{
+                minHeight: "36px",
+                padding: "6px 12px",
+                borderRadius: "6px",
+                background: "#f0f9ff",
+                border: "1px solid #bae6fd",
+                fontSize: "13px",
+                fontWeight: 700,
+                color: "#0284c7",
+                display: "inline-flex",
+                alignItems: "center",
+              }}
+            >
+              {currentPage} / {totalPages}
+            </span>
+
+            <button
+              type="button"
+              disabled={currentPage >= totalPages}
+              onClick={() => {
+                setCurrentPage((p) => Math.min(totalPages, p + 1));
+                const tbl = document.getElementById("voters-table-container");
+                if (tbl) tbl.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              style={{
+                minHeight: "36px",
+                padding: "6px 14px",
+                borderRadius: "6px",
+                border: "1px solid #0284c7",
+                background: currentPage >= totalPages ? "#f1f5f9" : "#0284c7",
+                color: currentPage >= totalPages ? "#94a3b8" : "#ffffff",
+                cursor: currentPage >= totalPages ? "not-allowed" : "pointer",
+                fontWeight: 600,
+                fontSize: "13px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+              }}
+            >
+              {lang === "hi" ? "अगला" : "Next"} ▶
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 5. Selected Voter Quick Action Drawer / Bottom Sheet */}
       {selectedVoter && (
