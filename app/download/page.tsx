@@ -89,7 +89,7 @@ export default function DownloadPage() {
         {platform === "android" && (
           <div className="space-y-4">
             <a
-              href="/voterdesk.apk"
+              href={process.env.NEXT_PUBLIC_APK_URL || "https://pub-022ed4526cb24661a8141d7d1fd1949a.r2.dev/voterdesk.apk"}
               download="VoterDesk.apk"
               className="w-full inline-flex items-center justify-center gap-3 px-6 py-4 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-base shadow-lg shadow-orange-500/25 transition transform active:scale-95"
             >
