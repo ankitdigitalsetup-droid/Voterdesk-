@@ -7974,56 +7974,78 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               />
             </div>
 
-            {/* WhatsApp Send Primary Action: 100% 1:1 with Screenshot media_1790757863696.jpg */}
+            {/* WhatsApp Send Options: 2 Equal-Sized Buttons - 1. Text Slip, 2. Image Slip */}
             <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "8px" }}>
-              <button
-                type="button"
-                disabled={isGeneratingSingleImage}
-                onClick={() => handleSendSingleVoterSlipImage(activeActionVoter, activeVoterPhone)}
-                style={{
-                  width: "100%",
-                  background: isGeneratingSingleImage ? "#15803d" : "#22c55e",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "10px",
-                  padding: "15px 20px",
-                  fontSize: "19px",
-                  fontWeight: 800,
-                  cursor: isGeneratingSingleImage ? "wait" : "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: "10px",
-                  boxShadow: "0 4px 14px rgba(34, 197, 94, 0.4)",
-                  letterSpacing: "0.5px",
-                  transition: "all 0.15s ease",
-                }}
-                title="फोटो पर्ची सीधे वोटर के WhatsApp पर भेजें"
-              >
-                <span>{isGeneratingSingleImage ? "इमेज तैयार हो रही है..." : "Send"}</span>
-                <Send size={22} />
-              </button>
-
-              {/* Secondary Options */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", padding: "0 4px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                {/* 1. Text Slip Button */}
                 <button
                   type="button"
                   onClick={() => handleSendSingleVoterSlipText(activeActionVoter, activeVoterPhone)}
                   style={{
-                    background: "none",
+                    background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+                    color: "#ffffff",
                     border: "none",
-                    color: "#0284c7",
-                    fontSize: "12px",
-                    fontWeight: 600,
+                    borderRadius: "10px",
+                    padding: "13px 8px",
+                    fontSize: "15px",
+                    fontWeight: 800,
                     cursor: "pointer",
-                    textDecoration: "underline",
-                    padding: "4px 2px",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    boxShadow: "0 4px 12px rgba(22, 163, 74, 0.35)",
+                    transition: "transform 0.1s ease",
                   }}
-                  title="केवल टेक्स्ट के रूप में संदेश भेजें"
+                  title="मतदाता पर्ची टेक्स्ट रूप में WhatsApp पर भेजें"
                 >
-                  💬 केवल टेक्स्ट पर्ची
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Share2 size={18} />
+                    <span>💬 Text Slip</span>
+                  </div>
+                  <small style={{ fontSize: "11px", fontWeight: 600, opacity: 0.9 }}>
+                    (टेक्स्ट पर्ची)
+                  </small>
                 </button>
 
+                {/* 2. Image Slip Button */}
+                <button
+                  type="button"
+                  disabled={isGeneratingSingleImage}
+                  onClick={() => handleSendSingleVoterSlipImage(activeActionVoter, activeVoterPhone)}
+                  style={{
+                    background: isGeneratingSingleImage ? "#0369a1" : "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "10px",
+                    padding: "13px 8px",
+                    fontSize: "15px",
+                    fontWeight: 800,
+                    cursor: isGeneratingSingleImage ? "wait" : "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: "4px",
+                    boxShadow: "0 4px 12px rgba(2, 132, 199, 0.35)",
+                    opacity: isGeneratingSingleImage ? 0.85 : 1,
+                    transition: "transform 0.1s ease",
+                  }}
+                  title="उम्मीदवार के पोस्टर सहित वोटर स्लिप इमेज WhatsApp पर भेजें"
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Send size={18} />
+                    <span>{isGeneratingSingleImage ? "बन रही है..." : "🖼️ Image Slip"}</span>
+                  </div>
+                  <small style={{ fontSize: "11px", fontWeight: 600, opacity: 0.9 }}>
+                    (इमेज पर्ची)
+                  </small>
+                </button>
+              </div>
+
+              {/* Secondary Option: Other Apps Share */}
+              <div style={{ textAlign: "center", marginTop: "4px" }}>
                 <button
                   type="button"
                   onClick={() => handleShareSingleVoterSlipFile(activeActionVoter)}
@@ -8035,17 +8057,17 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     fontWeight: 600,
                     cursor: "pointer",
                     textDecoration: "underline",
-                    padding: "4px 2px",
+                    padding: "4px 8px",
                   }}
                   title="Android सिस्टम शेयर मेन्यू से फ़ोटो फाइल भेजें"
                 >
-                  📤 अन्य ऐप्स पर शेयर
+                  📤 अन्य ऐप्स पर शेयर करें
                 </button>
               </div>
 
               {/* Helper explanation note */}
               <p style={{ margin: "2px 0 0", textAlign: "center", fontSize: "11px", color: "#64748b" }}>
-                💡 <b>Send:</b> सीधे WhatsApp पर जनरेटेड फोटो पर्ची जाएगी
+                💡 <b>Text Slip:</b> केवल विवरण व अपील | <b>Image Slip:</b> सीधे WhatsApp पर जनरेटेड फोटो पर्ची
               </p>
             </div>
           </div>
