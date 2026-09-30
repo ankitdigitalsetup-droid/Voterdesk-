@@ -4140,15 +4140,19 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
       // 4. Bottom A5: Family Voter Slips (790 to 1660)
       // Header Banner
+      ctx.direction = "ltr";
       ctx.fillStyle = "#0284c7";
-      ctx.font = "bold 26px sans-serif";
+      ctx.font = "bold 24px sans-serif";
       ctx.textAlign = "left";
       ctx.fillText(`👨‍👩‍👧‍👦 परिवार मतदाता पर्ची / FAMILY VOTER SLIP (मकान नं: ${familyFilter?.house || "—"})`, 40, 808);
 
       ctx.fillStyle = "#64748b";
       ctx.font = "bold 18px sans-serif";
-      ctx.textAlign = "right";
-      ctx.fillText(`वार्ड संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`, w - 40, 808);
+      const rightHeaderText = `वार्ड संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`;
+      const rHeaderW = ctx.measureText(rightHeaderText).width;
+      const rHeaderX = Math.max(w / 2 + 20, (w - 40) - rHeaderW);
+      ctx.textAlign = "left";
+      ctx.fillText(rightHeaderText, rHeaderX, 808);
 
       // Thin separator line
       ctx.strokeStyle = "#cbd5e1";
@@ -4195,26 +4199,36 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.font = "bold 18px sans-serif";
           ctx.textAlign = "left";
           ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : slotIndex + 1}`, x + 16, y + 29);
-          ctx.textAlign = "right";
-          ctx.fillText(`वार्ड सं : ${v.booth || "—"}`, x + cardW - 16, y + 29);
+
+          const wardText = `वार्ड सं : ${v.booth || "—"}`;
+          const wardW = ctx.measureText(wardText).width;
+          const wardX = Math.max(x + 320, (x + cardW - 18) - wardW);
+          ctx.textAlign = "left";
+          ctx.fillText(wardText, wardX, y + 29);
 
           // Name
           ctx.fillStyle = "#0f172a";
-          ctx.font = "bold 22px sans-serif";
+          ctx.font = "bold 21px sans-serif";
           ctx.textAlign = "left";
           ctx.fillText(`नाम : ${v.name}`, x + 16, y + 74);
 
           // Guardian
           ctx.fillStyle = "#334155";
-          ctx.font = "18px sans-serif";
+          ctx.font = "17px sans-serif";
+          ctx.textAlign = "left";
           ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 106);
 
           // Age & House
           ctx.fillStyle = "#334155";
           ctx.font = "bold 17px sans-serif";
+          ctx.textAlign = "left";
           ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 138);
-          ctx.textAlign = "right";
-          ctx.fillText(`मकान नं : ${v.house || "—"}`, x + cardW - 16, y + 138);
+
+          const houseText = `मकान नं : ${v.house || "—"}`;
+          const houseW = ctx.measureText(houseText).width;
+          const houseX = Math.max(x + 320, (x + cardW - 18) - houseW);
+          ctx.textAlign = "left";
+          ctx.fillText(houseText, houseX, y + 138);
 
           // Voter ID (EPIC)
           ctx.textAlign = "left";
@@ -4233,8 +4247,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           // Polling Station / Booth Address
           ctx.fillStyle = "#64748b";
           ctx.font = "14px sans-serif";
+          ctx.textAlign = "left";
           const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
-          ctx.fillText(addrText.length > 48 ? addrText.substring(0, 48) + "..." : addrText, x + 16, y + 218);
+          ctx.fillText(addrText.length > 44 ? addrText.substring(0, 44) + "..." : addrText, x + 16, y + 218);
         } else {
           // Draw empty / blank card placeholder (preserving the 6-slot geometry, leaving slot blank)
           ctx.fillStyle = "#ffffff";
@@ -4394,9 +4409,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.fillStyle = "#1e40af";
       ctx.font = "bold 26px sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(`क्रम सं : ${v.serialNo || "—"}`, cardX + 20, cardY + 40);
-      ctx.textAlign = "right";
-      ctx.fillText(`वार्ड सं : ${v.booth || "—"}`, cardX + cardW - 20, cardY + 40);
+      ctx.fillText(`क्रम सं : ${v.serialNo || "—"}`, cardX + 24, cardY + 40);
+
+      const wardText = `वार्ड सं : ${v.booth || "—"}`;
+      const wardW = ctx.measureText(wardText).width;
+      const wardX = Math.max(cardX + 450, (cardX + cardW - 24) - wardW);
+      ctx.textAlign = "left";
+      ctx.fillText(wardText, wardX, cardY + 40);
 
       // Name (Large Bold)
       ctx.fillStyle = "#0f172a";
@@ -4417,41 +4436,49 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       // Age (Left) & House No (Right)
       ctx.fillStyle = "#334155";
       ctx.font = "bold 24px sans-serif";
-      ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, cardX + 20, cardY + 250);
-      ctx.textAlign = "right";
-      ctx.fillText(`मकान नंबर : ${v.house || "—"}`, cardX + cardW - 20, cardY + 250);
+      ctx.textAlign = "left";
+      ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, cardX + 24, cardY + 250);
+
+      const houseText = `मकान नंबर : ${v.house || "—"}`;
+      const houseW = ctx.measureText(houseText).width;
+      const houseX = Math.max(cardX + 450, (cardX + cardW - 24) - houseW);
+      ctx.textAlign = "left";
+      ctx.fillText(houseText, houseX, cardY + 250);
 
       // Thin separator line
       ctx.strokeStyle = "#e2e8f0";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(cardX + 16, cardY + 278);
-      ctx.lineTo(cardX + cardW - 16, cardY + 278);
+      ctx.moveTo(cardX + 20, cardY + 278);
+      ctx.lineTo(cardX + cardW - 20, cardY + 278);
       ctx.stroke();
 
       // Booth Address / Polling Station
       ctx.textAlign = "left";
       ctx.fillStyle = "#64748b";
       ctx.font = "bold 18px sans-serif";
-      ctx.fillText("बुथ पता :", cardX + 20, cardY + 312);
+      ctx.fillText("बुथ पता :", cardX + 24, cardY + 312);
 
       ctx.fillStyle = "#1e293b";
       ctx.font = "20px sans-serif";
       const boothAddr = v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर";
-      if (boothAddr.length > 45) {
-        ctx.fillText(boothAddr.substring(0, 45), cardX + 20, cardY + 345);
-        ctx.fillText(boothAddr.substring(45, 90), cardX + 20, cardY + 375);
+      if (boothAddr.length > 42) {
+        ctx.fillText(boothAddr.substring(0, 42), cardX + 24, cardY + 342);
+        ctx.fillText(boothAddr.substring(42, 85), cardX + 24, cardY + 372);
       } else {
-        ctx.fillText(boothAddr, cardX + 20, cardY + 345);
+        ctx.fillText(boothAddr, cardX + 24, cardY + 342);
       }
 
       // Bottom appeal strip inside card
       ctx.fillStyle = "#f0fdf4";
-      ctx.fillRect(cardX + 4, cardY + cardH - 50, cardW - 8, 46);
+      ctx.fillRect(cardX + 4, cardY + cardH - 52, cardW - 8, 48);
       ctx.fillStyle = "#15803d";
-      ctx.font = "bold 19px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("🗳️ कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏", cardX + cardW / 2, cardY + cardH - 20);
+      ctx.font = "bold 18px sans-serif";
+      const appealText = "🗳️ कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏";
+      const appealW = ctx.measureText(appealText).width;
+      const appealX = Math.max(cardX + 16, cardX + (cardW - appealW) / 2);
+      ctx.textAlign = "left";
+      ctx.fillText(appealText, appealX, cardY + cardH - 20);
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       const dataUrl = canvas.toDataURL("image/png");
