@@ -48,6 +48,77 @@ import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, Parsed
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
 
+/**
+ * ============================================================================
+ * 🗳️ VOTERDESK ELECTION MANAGEMENT PLATFORM - MASTER SOURCE CODE (app/page.tsx)
+ * ============================================================================
+ * Welcome Developer! Yeh file VoterDesk application ka main monolithic page component hai.
+ * Yahan sabhi major features, authentication, Super Admin, Booth Manager, voter slips,
+ * WhatsApp image sharing, aur UI modals ek organized structure me implement kiye gaye hain.
+ *
+ * ----------------------------------------------------------------------------
+ * 📌 QUICK NAVIGATION INDEX (प्रमुख फीचर्स और सेक्शन्स की डायरेक्टरी):
+ * ----------------------------------------------------------------------------
+ * [00] ROOT AUTH ROUTER & SHELL (Page component)       -> Lines ~50 - 510
+ *      - Global Session / User Context, Candidate Active Switcher, Theme & Language
+ *
+ * [01] 1. LOGIN COMPONENT (LoginView)                   -> Lines ~510 - 750
+ *      - 3-Role Quick Tabs (Super Admin / Candidate / Karyakarta)
+ *      - Ward / Booth-wise auto password authentication
+ *
+ * [02] 2. SUPER ADMIN PORTAL (SuperAdminView)           -> Lines ~750 - 3458
+ *      - Multi-Candidate Management (Add / Edit / Delete)
+ *      - Election Types: Vidhan Sabha, Lok Sabha, Ward / Nagar Palika, Panchayat
+ *      - Candidate Campaign Poster Upload (Cloudflare R2 Bucket Integration)
+ *      - Ward 1-15 Passwords & Karyakarta Credentials Generator
+ *      - Multi-Sheet Excel Voter Roll Importer with Auto-Mapping
+ *
+ * [03] 3. BOOTH MANAGER VIEW (BoothManagerView)         -> Lines ~3459 - 9714
+ *      🔥 CORE FIELD WORKER & BOOTH AGENT INTERFACE:
+ *      - State Declarations & Filter Hooks              -> Lines ~3500 - 3650
+ *      - Live GPS Location Tracking Modal               -> Lines ~3650 - 3730
+ *      - Voter Phone Number Instant Update & Multi-Sync -> Lines ~3830 - 3910
+ *      - 7 Voter Actions Trigger & Handlers             -> Lines ~3915 - 4050
+ *      - A4 Family Voter Slip Generator (Canvas)        -> Lines ~4050 - 4275
+ *      - Single Voter Slip 850x1250 Generator (Canvas)  -> Lines ~4275 - 4490
+ *      - WhatsApp Direct Share Native Bridge & Web API  -> Lines ~4490 - 4600
+ *      - WhatsApp Slip Send Handlers (Text & Image)     -> Lines ~4600 - 4740
+ *      - Voter Survey Form Submission Handler           -> Lines ~4740 - 4805
+ *      - Search, Hindi Transliteration, A-Z Sorting     -> Lines ~4805 - 4935
+ *      - Excel Download (Current Page & All Voters)     -> Lines ~4935 - 5085
+ *      - Quick Status Change (Voted, Pending, Support)  -> Lines ~5085 - 5295
+ *      - Main Voter Roll Table (With Deleted Tagging)   -> Lines ~6350 - 7420
+ *      - Login Poster Modal (Opening upon app start)    -> Lines ~7430 - 7610
+ *      - Voter Slip Message Modal                       -> Lines ~7610 - 7660
+ *      - Voter Action Sheet (मैसेज - 7 Action Buttons)  -> Lines ~7661 - 7805
+ *      - Single Voter Slip Screen (Text & Image Slip)   -> Lines ~7806 - 8075
+ *      - Voter Survey Screen Modal (Form & Feedback)    -> Lines ~8076 - 8300
+ *      - Print Slip Modal (Desktop & Thermal Printers)  -> Lines ~8301 - 8440
+ *      - Family Slip Preview & Generation Modal         -> Lines ~9400 - 9710
+ *
+ * [04] 4. CANDIDATE ADMIN DASHBOARD (CandidateDashboard) -> Lines ~9715 - 9855
+ *      - High-level Voter Outreach & Turnout Analytics
+ *
+ * [05] 5. CLASSIC VOTERS TABLE (VotersTable)            -> Lines ~9856 - 11225
+ *      - Desktop Grid with Bulk Operations & CSV Export
+ *
+ * [06] 6. REAL EXCEL IMPORTER (RealExcelImporter)       -> Lines ~11226 - 11545
+ *      - SheetJS XLSX parser, Auto-Column Matching
+ *
+ * [07] 7. TEAM MANAGEMENT (TeamManagement)              -> Lines ~11546 - 11731
+ *      - Karyakarta Roster & Assigned Booths
+ *
+ * [08] 8. ANALYTICS & REPORTS (ReportsView)             -> Lines ~11732 - 11770
+ *
+ * [09] 9. COMMON UI PRIMITIVES (Title, Panel, Foot...)  -> Lines ~11771 - 11834
+ * ============================================================================
+ */
+
+// ============================================================================
+// SECTION 0: ROOT COMPONENT & AUTH ROUTER
+// - Checks if user is logged in (Super Admin, Candidate, or Karyakarta)
+// - Handles global state: candidate context, active tab/page, language (hi/en)
+// ============================================================================
 export default function Page() {
   const [user, setUser] = useState<UserAccount | null>(null);
   const [page, setPage] = useState<string>("boothmanager");
@@ -507,9 +578,15 @@ export default function Page() {
   );
 }
 
-// -------------------------------------------------------------
-// 1. LOGIN COMPONENT (WITH 3-ROLE QUICK TABS)
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 1: LOGIN COMPONENT (LoginView)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Multi-Role Authentication Screen: Super Admin, Candidate, aur Karyakarta.
+// - 3 Quick Role Selection Tabs upar diye gaye hain taaki demo ya live testing aasaani se ho sake.
+// - Karyakarta Login: Ward/Booth password enter karte hi system candidate credential store se match karta hai.
+// - Auto-fills assigned booths (jaise Ward 1, Ward 2 etc.) aur worker context create karta hai.
+// ============================================================================
 function Login({
   onLogin,
   lang,
@@ -748,9 +825,18 @@ function Login({
   );
 }
 
-// -------------------------------------------------------------
-// 2. SUPER ADMIN PORTAL (MANAGE ALL CANDIDATES & PLATFORM)
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 2: SUPER ADMIN PORTAL (SuperAdminView)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Central administration portal for managing candidates and multi-election campaigns.
+// - Features include:
+//   1. Candidate Setup: Name, Party, Symbol, Constituency Type (Ward / Panchayat / Vidhan Sabha).
+//   2. Campaign Poster Upload: Directly connected to Cloudflare R2 bucket (`voterdesk2026`).
+//   3. Ward / Booth Passwords: Automatically generates secure 4-digit passwords for Wards 1 to 15.
+//   4. Multi-Sheet Excel Voter Roll Importer: Intelligently detects and maps column headers
+//      (Serial No, Ward, Name, Guardian, Age, Gender, EPIC No, House, Address).
+// ============================================================================
 function SuperAdminView({
   user,
   candidates,
@@ -3455,9 +3541,22 @@ const rajasthanDistricts = [
   "Other"
 ];
 
-// -------------------------------------------------------------
-// 3. BOOTH MANAGER DIRECT VIEW (MATCHING USER SCREENSHOT)
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 3: BOOTH MANAGER DIRECT VIEW (BoothManagerView)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Yeh poore VoterDesk application ka SABSE MUKHYA (CORE) SCREEN hai.
+// - Karyakarta aur Candidate is screen se pure election day operations control karte hain:
+//   1. Voter Roll Data Table: Part No, Sr No, Name, Guardian, Voted, Phone, EPIC, House No, Status.
+//   2. High-Speed Search: Real-time English Roman phonetic transliteration aur Hindi search.
+//   3. A to Z Sorting: Roman ABCD order sorting for both English and Hindi names.
+//   4. Age Sorting: Ascending & Descending age-wise sorting.
+//   5. Deleted Voters (विलोपित मतदाता): Light red background (#fee2e2) aur "Deleted" tag indicator.
+//   6. 7-Action Popup (मैसेज): Instant phone update, print slip, SMS, Call, WhatsApp slip, Family list, Survey.
+//   7. WhatsApp Direct Image Sharing: Native Android Intent Bridge (VoterDeskNative) + Web Share Level 2.
+//   8. Dual Equal Buttons: 💬 Text Slip (#16a34a) aur 🖼️ Image Slip (#0284c7) side-by-side.
+//   9. Family Slip Generator: A4 Canvas generator with candidate poster on top and 6 voter slips below.
+// ============================================================================
 function BoothManagerView({
   user,
   candidateId,
@@ -4049,7 +4148,17 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }, 50);
   };
 
-  // High-Resolution A4 Family Voter Slip Image Generator (Top A5 Poster + Bottom A5 Slips) via HTML5 Canvas
+  // --------------------------------------------------------------------------
+  // FEATURE: A4 FAMILY VOTER SLIP CANVAS GENERATOR
+  // --------------------------------------------------------------------------
+  // 📌 How this works (यह कैसे काम करता है):
+  // 1. Creates an off-screen HTML5 <canvas> sized 1240 x 1754 px (Standard A4 @ 150 DPI).
+  // 2. Top Half (0 to 750px): Candidate Election Poster image with aspect-ratio preservation.
+  // 3. Middle Separator: Candidate name & voting appeal banner in navy blue & saffron.
+  // 4. Bottom Half (750 to 1754px): 2 Columns x 3 Rows = Up to 6 Voter Slips in neat boxes.
+  // 5. Each voter slip card has: Part No, Sr No, Name, Guardian, EPIC No, House No, Age, Polling Booth.
+  // 6. Outputs both Blob (for Web Share API Level 2 file sharing) and dataUrl (for Native APK Bridge / Download).
+  // --------------------------------------------------------------------------
   const generateFamilySlipImageBlob = async (): Promise<{ blob: Blob; dataUrl: string } | null> => {
     if (selectedFamilyVoters.length === 0) return null;
 
@@ -4302,7 +4411,19 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
   };
 
-  // High-Resolution Single Voter Slip Image Generator (Candidate Poster + Dotted Voter Slip) via HTML5 Canvas
+  // --------------------------------------------------------------------------
+  // FEATURE: SINGLE VOTER SLIP CANVAS GENERATOR (850 x 1250 px)
+  // --------------------------------------------------------------------------
+  // 📌 How this works (यह कैसे काम करता है):
+  // 1. Creates an off-screen HTML5 <canvas> sized 850 x 1250 px (optimized for smartphone screens & WhatsApp chat preview).
+  // 2. Top Portion (0 to 650px): Candidate election poster loaded with CORS anonymous handling.
+  // 3. Middle Separator: Scissor icon & dotted cut line ("कटिंग लाइन").
+  // 4. Bottom Slip Card (700 to 1210px):
+  //    - Left-to-Right Devanagari text measurement prevents text overflow outside card boundaries.
+  //    - Displays: Part No, Sr No, Name, Guardian, Voter ID (EPIC), Age, House No, Polling Station.
+  //    - Centered voting appeal: "कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं".
+  // 5. Outputs PNG Blob & Data URL for WhatsApp sharing.
+  // --------------------------------------------------------------------------
   const generateSingleVoterSlipImage = async (v: VoterRecord): Promise<{ blob: Blob; dataUrl: string } | null> => {
     try {
       const canvas = document.createElement("canvas");
@@ -4490,7 +4611,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
   };
 
-  // 1. Send Single Voter Slip as Text on WhatsApp
+  // --------------------------------------------------------------------------
+  // HANDLER: 1. Send Single Voter Slip as Text Message on WhatsApp
+  // Formats voter details & candidate appeal into markdown text and opens WhatsApp chat.
+  // --------------------------------------------------------------------------
   const handleSendSingleVoterSlipText = (v: VoterRecord, targetPhone?: string) => {
     const ph = (targetPhone || activeVoterPhone || v.phone || "").replace(/[^0-9]/g, "");
     const candName = candidate ? candidate.name : "प्रत्याशी";
@@ -4518,7 +4642,26 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
   };
 
-  // Helper to share generated slip image directly to WhatsApp (Android Native Intent with EXTRA_STREAM + Web Share / Fallback)
+  // --------------------------------------------------------------------------
+  // FEATURE: WHATSAPP DIRECT IMAGE SHARING ENGINE (3-TIER ARCHITECTURE)
+  // --------------------------------------------------------------------------
+  // 📌 How this works (यह कैसे काम करता है):
+  // 1. TIER 1 (Native Android APK Bridge):
+  //    - Checks if running inside Android WebView with `@JavascriptInterface` (`window.VoterDeskNative`).
+  //    - Calls `VoterDeskNative.shareSlipToWhatsApp(dataUrl, phone, caption)`.
+  //    - Native Java creates a temp PNG in cache, generates secure `content://com.voterdesk.app.fileprovider/...` URI,
+  //      attaches `EXTRA_STREAM`, and sets `jid: 919876543210@s.whatsapp.net` via `ACTION_SEND`.
+  //    - WhatsApp opens directly to the recipient's chat with the generated image already attached!
+  //
+  // 2. TIER 2 (Mobile Browser Web Share API Level 2):
+  //    - If running in Chrome Mobile / Safari iOS, calls `navigator.share({ files: [file], title, text })`.
+  //    - Opens native system share sheet allowing 1-tap WhatsApp image sharing.
+  //
+  // 3. TIER 3 (Desktop & Browser Fallback):
+  //    - Copies PNG image directly to system clipboard via `navigator.clipboard.write([ClipboardItem])`.
+  //    - Automatically downloads image file as backup.
+  //    - Opens WhatsApp Web chat (`https://wa.me/<phone>`), prompting user to simply press Ctrl+V to paste!
+  // --------------------------------------------------------------------------
   const shareSlipImageDirectToWhatsApp = async ({
     dataUrl,
     blob,
@@ -4652,7 +4795,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
   };
 
-  // 2. Send Single Voter Slip as Image on WhatsApp (Direct to recipient WhatsApp number with generated image)
+  // --------------------------------------------------------------------------
+  // HANDLER: 2. Send Single Voter Slip as Image on WhatsApp (Direct to recipient)
+  // Generates 850x1250 px image and sends it via WhatsApp Direct Share Engine.
+  // --------------------------------------------------------------------------
   const handleSendSingleVoterSlipImage = async (v: VoterRecord, targetPhone?: string) => {
     setIsGeneratingSingleImage(true);
     setLocalToast("⏳ वोटर स्लिप इमेज तैयार हो रही है...");
@@ -4800,7 +4946,22 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     return Array.from(set).sort((a, b) => Number(a) - Number(b));
   }, [voters]);
 
-  // Filtered voters list
+  // --------------------------------------------------------------------------
+  // FEATURE: REAL-TIME VOTER SEARCH, TRANSLITERATION & DUAL-SORT ENGINE
+  // --------------------------------------------------------------------------
+  // 📌 How this works (यह कैसे काम करता है):
+  // 1. Role Isolation: If user is KARYAKARTA, filters strictly by their `assignedBooths`.
+  // 2. Part / Ward Filter: Filters by selected booth/ward dropdown.
+  // 3. Family List Filter: Isolates all voters in the same house number (`familyFilter.house`).
+  // 4. Advanced 4-Column Search: Name, Guardian, Address, and EPIC number inputs.
+  // 5. Omni-Search (`matchesVoter`):
+  //    - Allows typing English phonetics (e.g. "Ramesh" matches "रमेश").
+  //    - Handles partial word stems and tokenized word matching.
+  // 6. Roman A-Z Sort (`getEnglishSortKey`):
+  //    - Transliterates Devanagari Hindi characters into English phonetic keys for true ABCD sorting.
+  // 7. Age Sort: Integer-extracted age comparison (Ascending / Descending).
+  // 8. Natural Serial Sort (`compareVotersBySerial`): Fallback numerical sort by Booth + Sr No.
+  // --------------------------------------------------------------------------
   const filteredVoters = useMemo(() => {
     let list = voters.filter((v) => {
       if (user.role === "KARYAKARTA" && user.assignedBooths && user.assignedBooths.length > 0) {
@@ -6841,6 +7002,11 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             ) : (
               paginatedVoters.map((v, idx) => {
                 const isSelected = selectedVoter?.id === v.id;
+                // ----------------------------------------------------------------------
+                // DELETED VOTER HIGHLIGHTING (विलोपित मतदाता पहचान):
+                // Checks if voter is deleted in DB or uploaded Excel file.
+                // Applies `.deletedRow` (light red background #fee2e2) and "Deleted" badge.
+                // ----------------------------------------------------------------------
                 const isDeleted = isVoterDeleted(v);
                 const isVoted = v.voted === "हाँ" || v.voted === "Yes" || v.voted === true;
                 const isSupp = v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor";
@@ -7974,10 +8140,16 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               />
             </div>
 
-            {/* WhatsApp Send Options: 2 Equal-Sized Buttons - 1. Text Slip, 2. Image Slip */}
+            {/* ----------------------------------------------------------------------
+                FEATURE: WHATSAPP SLIP MODAL - 2 EQUAL-SIZED BUTTONS (50-50 LAYOUT)
+                Requested by User:
+                - Button 1: 💬 Text Slip (Green #16a34a) - Sends text details directly to WhatsApp.
+                - Button 2: 🖼️ Image Slip (Blue #0284c7) - Generates & sends poster photo slip.
+                - Both buttons share equal width via CSS Grid `gridTemplateColumns: "1fr 1fr"`.
+                ---------------------------------------------------------------------- */}
             <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "8px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                {/* 1. Text Slip Button */}
+                {/* 1. Text Slip Button (टेक्स्ट पर्ची) */}
                 <button
                   type="button"
                   onClick={() => handleSendSingleVoterSlipText(activeActionVoter, activeVoterPhone)}
@@ -9712,9 +9884,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   );
 }
 
-// -------------------------------------------------------------
-// 4. CANDIDATE ADMIN DASHBOARD
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 4: CANDIDATE ADMIN DASHBOARD (CandidateDashboard)
+// ============================================================================
+// 📌 Description (विवरण):
+// - High-level Analytics & Overview screen specifically designed for the Candidate.
+// - Real-time statistics: Total voters, Contacted voters, In-Favor voters, Pending voters.
+// - Booth-by-booth breakdown showing voter outreach progress percentage across all booths.
+// ============================================================================
 function CandidateDashboard({
   go,
   candidate,
@@ -9853,9 +10030,14 @@ function CandidateDashboard({
   );
 }
 
-// -------------------------------------------------------------
-// 5. VOTERS TABLE WITH SEARCH, BOOTH FILTER & REAL CSV EXPORT
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 5: CLASSIC VOTERS TABLE (VotersTable)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Full-featured desktop data grid for comprehensive voter data management.
+// - Features: Search query, Booth/Ward filter, Status filter, Single voter manual addition modal,
+//   and real SheetJS CSV / Excel data export.
+// ============================================================================
 function VotersTable({
   candidateId,
   voters,
@@ -11223,9 +11405,15 @@ function VotersTable({
   );
 }
 
-// -------------------------------------------------------------
-// 6. REAL EXCEL & CSV IMPORTER WITH SHEETJS XLSX
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 6: REAL EXCEL & CSV IMPORTER (RealExcelImporter)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Client-side SheetJS XLSX parser for Excel files (.xlsx, .xls) and CSV (.csv).
+// - Intelligent column detection handles standard Election Commission / Rajasthan / UP formats.
+// - Auto-maps: Serial No, Booth/Ward, Name, Guardian, Age, Gender, EPIC No, House No, Address.
+// - Supports dynamic extra columns and multi-sheet workbooks.
+// ============================================================================
 function RealExcelImporter({
   candidateId,
   onImportSuccess,
@@ -11543,9 +11731,14 @@ function RealExcelImporter({
   );
 }
 
-// -------------------------------------------------------------
-// 7. TEAM & BOOTH MANAGEMENT (KARYAKARTAS)
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 7: TEAM & BOOTH MANAGEMENT (TeamManagement)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Karyakarta & Booth Supervisor roster management for Candidate / Admin.
+// - Features: Add new worker, assign specific booths/wards, auto-assign passwords,
+//   and view real-time live GPS tracking locations of field workers.
+// ============================================================================
 function TeamManagement({
   candidateId,
   team,
@@ -11729,9 +11922,12 @@ function TeamManagement({
   );
 }
 
-// -------------------------------------------------------------
-// 8. REPORTS VIEW
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 8: ANALYTICS & REPORTS (ReportsView)
+// ============================================================================
+// 📌 Description (विवरण):
+// - Campaign performance analytics, voter outreach charts, and sentiment donut visualizer.
+// ============================================================================
 function ReportsView({ voters, t }: { voters: VoterRecord[]; t: (typeof translations)["hi"] }) {
   const total = voters.length;
   const contacted = voters.filter((v) => v.status === "Contacted").length;
@@ -11773,9 +11969,12 @@ function ReportsView({ voters, t }: { voters: VoterRecord[]; t: (typeof translat
   );
 }
 
-// -------------------------------------------------------------
-// UI ATOMS
-// -------------------------------------------------------------
+// ============================================================================
+// SECTION 9: REUSABLE UI PRIMITIVES & COMPONENTS
+// ============================================================================
+// 📌 Description (विवरण):
+// - Shared presentation atoms: Title, Panel, Foot (Action Buttons), Result, Logo.
+// ============================================================================
 function Title({ tag, title, sub, children }: { tag: string; title: string; sub: string; children?: React.ReactNode }) {
   return (
     <div className="title">

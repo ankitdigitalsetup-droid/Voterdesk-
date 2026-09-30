@@ -1,10 +1,26 @@
+/**
+ * ============================================================================
+ * 📦 VOTERDESK GLOBAL DATA STORE & UTILITIES (lib/data-store.ts)
+ * ============================================================================
+ * Welcome Developer! Yeh file VoterDesk application ka central data layer hai.
+ * Yahan voter records, candidate credentials, karyakarta team, heartbeats,
+ * aur live GPS locations ka state management aur synchronization hota hai.
+ *
+ * 📌 KEY FUNCTIONS & CLASSES:
+ * 1. `compareVotersBySerial`: Natural numerical sorting (Booth -> Serial No -> Name).
+ * 2. `isVoterDeleted`: Robust detection for deleted / विलोपित voters.
+ * 3. `DataStore`: Global singleton memory store with disk backup & sync versioning.
+ * ============================================================================
+ */
+
 import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword, isSuperAdminEntity } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 
 /**
- * Natural numerical comparator for Voter Records.
- * Orders strictly by booth (1, 2, 3...) and serialNo (1, 2, 3, 4, ... 10, ... 100, ... 1000).
- * Never orders lexicographically as strings (1, 10, 100, 1000).
+ * 1. NATURAL NUMERICAL COMPARATOR (क्रम संख्या सॉर्टिंग)
+ * - Orders strictly by booth (1, 2, 3...) and serialNo (1, 2, 3, 4, ... 10, ... 100, ... 1000).
+ * - Never orders lexicographically as strings (1, 10, 100, 1000).
+ * - Solves the common JavaScript string sorting bug on serial numbers.
  */
 export function compareVotersBySerial(a: VoterRecord, b: VoterRecord, desc = false): number {
   const boothA = parseInt(String(a.booth || "").replace(/\D/g, ""), 10);

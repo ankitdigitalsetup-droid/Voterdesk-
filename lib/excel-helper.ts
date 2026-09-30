@@ -1,3 +1,19 @@
+/**
+ * ============================================================================
+ * 📊 VOTERDESK EXCEL & VOTER ROLL PARSER (lib/excel-helper.ts)
+ * ============================================================================
+ * Welcome Developer! Yeh file VoterDesk application ka intelligent Excel / CSV engine hai.
+ * Election commission voter lists me Aksar top rows me title/metadata hote hain.
+ * Yeh module automatic header detection, column auto-mapping (Hindi/English),
+ * aur multi-sheet parsing handle karta hai.
+ *
+ * 📌 KEY FEATURES:
+ * 1. `parseExcelFile`: Scans first 10 rows to detect the true header row.
+ * 2. `detectFieldMapping`: Auto-maps Indian voter list columns (नाम, पिता, क्रम, भाग, EPIC, etc.).
+ * 3. `downloadSampleExcelTemplate`: Generates standard Excel template for candidates.
+ * ============================================================================
+ */
+
 import * as XLSX from "xlsx";
 
 export interface ParsedSheetData {
