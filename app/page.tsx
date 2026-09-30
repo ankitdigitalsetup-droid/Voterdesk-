@@ -38,6 +38,7 @@ import {
   Sparkles,
   Image as ImageIcon,
   ArrowUpDown,
+  Send,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
@@ -3532,6 +3533,7 @@ function BoothManagerView({
   const [isGeneratingFamilyImage, setIsGeneratingFamilyImage] = useState(false);
   const [familySlipGridCols, setFamilySlipGridCols] = useState<number>(2);
   const [isGeneratingSingleImage, setIsGeneratingSingleImage] = useState(false);
+  const [familySlipRecipientPhone, setFamilySlipRecipientPhone] = useState("");
 
   // Check if current user is Member (Karyakarta) vs Admin (Candidate / Super Admin)
   const isMember = user.role === "KARYAKARTA";
@@ -4047,13 +4049,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }, 50);
   };
 
-  // High-Resolution A4 Image Generator (Top A5 Poster + Bottom A5 Slips) via HTML5 Canvas
-  const handleDownloadFamilyA4Image = async () => {
-    if (selectedFamilyVoters.length === 0) {
-      alert("कृपया पहले कम से कम 1 फैमिली मेंबर चेक करें!");
-      return;
-    }
-    setIsGeneratingFamilyImage(true);
+  // High-Resolution A4 Family Voter Slip Image Generator (Top A5 Poster + Bottom A5 Slips) via HTML5 Canvas
+  const generateFamilySlipImageBlob = async (): Promise<{ blob: Blob; dataUrl: string } | null> => {
+    if (selectedFamilyVoters.length === 0) return null;
 
     try {
       const canvas = document.createElement("canvas");
@@ -4063,7 +4061,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas context not available");
+      if (!ctx) return null;
 
       // 1. Fill white background
       ctx.fillStyle = "#ffffff";
@@ -4089,12 +4087,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             let drawY = 0;
 
             if (imgAspect > areaAspect) {
-              // Image is wider than 1.44:1
               drawW = topW;
               drawH = topW / imgAspect;
               drawY = (topH - drawH) / 2;
             } else {
-              // Image is taller than 1.44:1 (e.g. portrait or square)
               drawH = topH;
               drawW = topH * imgAspect;
               drawX = (topW - drawW) / 2;
@@ -4251,10 +4247,31 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         }
       }
 
-      // 5. Trigger download as PNG
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       const dataUrl = canvas.toDataURL("image/png");
+      if (!blob) return null;
+      return { blob, dataUrl };
+    } catch (err) {
+      console.error("Family slip image generation error:", err);
+      return null;
+    }
+  };
+
+  // High-Resolution A4 Image Download Trigger
+  const handleDownloadFamilyA4Image = async () => {
+    if (selectedFamilyVoters.length === 0) {
+      alert("कृपया पहले कम से कम 1 फैमिली मेंबर चेक करें!");
+      return;
+    }
+    setIsGeneratingFamilyImage(true);
+    setLocalToast("⏳ A4 फैमिली वोटर स्लिप तैयार हो रही है...");
+
+    try {
+      const res = await generateFamilySlipImageBlob();
+      if (!res) throw new Error("इमेज जनरेट करने में असमर्थ");
+
       const a = document.createElement("a");
-      a.href = dataUrl;
+      a.href = res.dataUrl;
       const fileName = `Family_Voter_Slip_House_${familyFilter?.house || "Family"}_Part_${familyFilter?.booth || "1"}.png`;
       a.download = fileName;
       document.body.appendChild(a);
@@ -4474,8 +4491,141 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
   };
 
-  // 2. Send Single Voter Slip as Image on WhatsApp
-  // 2. Send Single Voter Slip as Image on WhatsApp (Direct to recipient WhatsApp number with preview card)
+  // Helper to share generated slip image directly to WhatsApp (Android Native Intent with EXTRA_STREAM + Web Share / Fallback)
+  const shareSlipImageDirectToWhatsApp = async ({
+    dataUrl,
+    blob,
+    fileName,
+    phone,
+    caption,
+    title,
+  }: {
+    dataUrl: string;
+    blob: Blob;
+    fileName: string;
+    phone?: string;
+    caption: string;
+    title: string;
+  }): Promise<boolean> => {
+    const cleanPh = phone ? phone.replace(/[^0-9]/g, "") : "";
+    const formattedPh = cleanPh.length === 10 ? `91${cleanPh}` : cleanPh;
+
+    // 1. Native Android APK Bridge:
+    // Fires direct WhatsApp ACTION_SEND intent with content:// URI and recipient jid!
+    if (typeof window !== "undefined" && (window as any).VoterDeskNative?.shareSlipToWhatsApp) {
+      try {
+        (window as any).VoterDeskNative.shareSlipToWhatsApp(dataUrl, formattedPh, caption);
+        setLocalToast("✅ व्हाट्सएप खुल रहा है, सीधे फोटो पर्ची भेजी जा रही है...");
+        setTimeout(() => setLocalToast(""), 3500);
+        return true;
+      } catch (nativeErr) {
+        console.error("VoterDeskNative share error:", nativeErr);
+      }
+    }
+
+    // 2. Mobile Browser Web Share API (Level 2 with files)
+    const file = new File([blob], fileName, { type: "image/png" });
+    if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: title,
+          text: caption,
+        });
+        setLocalToast("✅ पर्ची सफलतापूर्वक शेयर की गई!");
+        setTimeout(() => setLocalToast(""), 3000);
+        return true;
+      } catch (shareErr: any) {
+        if (shareErr.name === "AbortError") return false;
+        console.warn("navigator.share failed, falling back:", shareErr);
+      }
+    }
+
+    // 3. Desktop / Web Fallback:
+    // Copy image to clipboard so user can press Ctrl+V directly into WhatsApp Web chat
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && window.ClipboardItem && blob) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        setLocalToast("📋 फोटो पर्ची कॉपी हो गई है! व्हाट्सएप खुलते ही Ctrl+V दबाएं।");
+      }
+    } catch (clipErr) {
+      console.warn("Clipboard copy skipped:", clipErr);
+    }
+
+    try {
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (dlErr) {
+      console.warn("Auto-download skipped:", dlErr);
+    }
+
+    if (formattedPh) {
+      window.open(`https://wa.me/${formattedPh}?text=${encodeURIComponent(caption)}`, "_blank");
+    } else {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(caption)}`, "_blank");
+    }
+    return true;
+  };
+
+  // Send Family Voter Slip as Image directly on WhatsApp
+  const handleSendFamilySlipWhatsApp = async () => {
+    if (selectedFamilyVoters.length === 0) {
+      alert("कृपया पहले कम से कम 1 फैमिली मेंबर चेक करें!");
+      return;
+    }
+    setIsGeneratingFamilyImage(true);
+    setLocalToast("⏳ फैमिली वोटर स्लिप इमेज तैयार हो रही है...");
+
+    try {
+      const res = await generateFamilySlipImageBlob();
+      if (!res) {
+        alert("फैमिली स्लिप इमेज तैयार करने में विफल रहे।");
+        return;
+      }
+
+      const firstVoterWithPhone = selectedFamilyVoters.find(
+        (v) => v.phone && v.phone.replace(/[^0-9]/g, "").length >= 10
+      );
+      const targetPhone =
+        familySlipRecipientPhone ||
+        (firstVoterWithPhone
+          ? firstVoterWithPhone.phone
+          : activeVoterPhone || "");
+
+      const slipSummary = selectedFamilyVoters
+        .map((v, i) => `${i + 1}. ${v.name} (क्र. ${v.serialNo !== undefined ? v.serialNo : i + 1}, EPIC: ${v.epic})`)
+        .join("\n");
+
+      const caption = `*🇮🇳 परिवार मतदाता पर्ची (FAMILY VOTER SLIP) 🇮🇳*\n\n` +
+        `*प्रत्याशी:* ${candidate?.name || "सम्मानित प्रत्याशी"} (${candidate?.party || "निर्दलीय"})\n` +
+        `*वार्ड संख्या:* ${familyFilter?.booth || "—"} | *मकान नं:* ${familyFilter?.house || "—"}\n\n` +
+        `*परिवार के कुल मतदाता:* ${selectedFamilyVoters.length}\n` +
+        `${slipSummary}\n\n` +
+        `*मतदान केंद्र:* ${selectedFamilyVoters[0]?.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}\n\n` +
+        `🗳️ कृपया अपना अमूल्य मतदान देकर भारी मतों से विजयी बनाएं! 🙏`;
+
+      const fileName = `Family_Slip_House_${familyFilter?.house || "Family"}_Ward_${familyFilter?.booth || "1"}.png`;
+
+      await shareSlipImageDirectToWhatsApp({
+        dataUrl: res.dataUrl,
+        blob: res.blob,
+        fileName,
+        phone: targetPhone,
+        caption,
+        title: `परिवार मतदाता पर्ची - मकान नं ${familyFilter?.house || ""}`,
+      });
+    } catch (err) {
+      alert("फैमिली स्लिप भेजने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setIsGeneratingFamilyImage(false);
+    }
+  };
+
+  // 2. Send Single Voter Slip as Image on WhatsApp (Direct to recipient WhatsApp number with generated image)
   const handleSendSingleVoterSlipImage = async (v: VoterRecord, targetPhone?: string) => {
     setIsGeneratingSingleImage(true);
     setLocalToast("⏳ वोटर स्लिप इमेज तैयार हो रही है...");
@@ -4487,83 +4637,33 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       }
 
       const ph = (targetPhone || activeVoterPhone || v.phone || "").replace(/[^0-9]/g, "");
-      const cleanPh = ph.length === 10 ? `91${ph}` : ph;
       const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Ward${v.booth || "1"}.png`;
-
-      // A. Auto-download the high-res image to user's device / gallery
-      try {
-        const a = document.createElement("a");
-        a.href = res.dataUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } catch (dlErr) {
-        console.warn("Auto-download skipped:", dlErr);
-      }
-
-      // B. Auto-copy image to clipboard if supported by browser/device
-      try {
-        if (navigator.clipboard && window.ClipboardItem && res.blob) {
-          await navigator.clipboard.write([
-            new ClipboardItem({ "image/png": res.blob })
-          ]);
-        }
-      } catch (clipErr) {
-        console.warn("Clipboard copy skipped:", clipErr);
-      }
 
       const candName = candidate ? candidate.name : "प्रत्याशी";
       const candParty = candidate ? candidate.party : "निर्दलीय";
       const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
-      const origin = typeof window !== "undefined" ? window.location.origin : "https://voterdesk-six.vercel.app";
-      const slipLink = `${origin}/slip/${v.id}?c=${candidate?.id || ""}`;
 
-      const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
-*उम्मीदवार:* ${candName} (${candParty})
-🗳️ *${campaignMsg}*
-----------------------------------------
-*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}
-*नाम (Name) :* ${v.name}
-*पिता/पति (Guardian) :* ${v.guardian || "—"}
-*वोटर ID (EPIC) :* ${v.epic}
-*उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *मकान नं :* ${v.house || "—"}
-*बुथ पता :* ${v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
-----------------------------------------
-🖼️ *फोटो पर्ची (डिजिटल स्लिप लिंक):*
-${slipLink}
-----------------------------------------
-🙏 कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏`;
+      const caption = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*\n` +
+        `*उम्मीदवार:* ${candName} (${candParty})\n` +
+        `🗳️ *${campaignMsg}*\n` +
+        `----------------------------------------\n` +
+        `*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}\n` +
+        `*नाम (Name) :* ${v.name}\n` +
+        `*पिता/पति (Guardian) :* ${v.guardian || "—"}\n` +
+        `*वोटर ID (EPIC) :* ${v.epic}\n` +
+        `*उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *मकान नं :* ${v.house || "—"}\n` +
+        `*बुथ पता :* ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}\n` +
+        `----------------------------------------\n` +
+        `🙏 कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏`;
 
-      // C. Direct WhatsApp Chat Opening for this voter's number!
-      if (cleanPh) {
-        window.open(`https://wa.me/${cleanPh}?text=${encodeURIComponent(text)}`, "_blank");
-        setLocalToast(`✅ ${ph} का व्हाट्सएप खुल रहा है! फ़ोटो गैलरी में सेव हो गई है।`);
-        setTimeout(() => setLocalToast(""), 4500);
-        return;
-      }
-
-      // Fallback if no phone number was entered: open Android Share Sheet
-      const file = new File([res.blob], fileName, { type: "image/png" });
-      if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: `वोटर पर्ची - ${v.name}`,
-            text: text,
-          });
-          setLocalToast("✅ पर्ची सफलतापूर्वक शेयर की गई!");
-          setTimeout(() => setLocalToast(""), 3000);
-          return;
-        } catch (shareErr: any) {
-          if (shareErr.name === "AbortError") return;
-        }
-      }
-
-      // Generic WhatsApp fallback
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, "_blank");
-      setLocalToast(`✅ व्हाट्सएप खुल रहा है!`);
-      setTimeout(() => setLocalToast(""), 3000);
+      await shareSlipImageDirectToWhatsApp({
+        dataUrl: res.dataUrl,
+        blob: res.blob,
+        fileName,
+        phone: ph,
+        caption,
+        title: `वोटर पर्ची - ${v.name}`,
+      });
     } catch (err) {
       alert("इमेज भेजने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -6214,6 +6314,10 @@ ${slipLink}
                   setTimeout(() => setLocalToast(""), 3500);
                   return;
                 }
+                const firstPh = selectedFamilyVoters.find(
+                  (v) => v.phone && v.phone.replace(/[^0-9]/g, "").length >= 10
+                )?.phone || activeVoterPhone || "";
+                setFamilySlipRecipientPhone(firstPh);
                 setShowFamilySlipModal(true);
               }}
               style={{
@@ -7818,110 +7922,104 @@ ${slipLink}
             </div>
 
             {/* Recipient Phone Preview / Input */}
-            <div style={{ marginTop: "12px", background: "#f8fafc", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-              <span style={{ fontSize: "12px", color: "#475569", fontWeight: 600 }}>
-                📱 प्राप्तकर्ता मोबाइल (WhatsApp No):
+            <div style={{ marginTop: "12px", background: "#f8fafc", padding: "10px 14px", borderRadius: "10px", border: "1.5px solid #cbd5e1", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+              <span style={{ fontSize: "13px", color: "#334155", fontWeight: 700 }}>
+                📱 WhatsApp नंबर :
               </span>
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a", fontFamily: "monospace" }}>
-                {activeVoterPhone || activeActionVoter.phone || "नंबर दर्ज नहीं"}
-              </span>
+              <input
+                type="tel"
+                value={activeVoterPhone}
+                onChange={(e) => setActiveVoterPhone(e.target.value)}
+                placeholder="मोबाइल नंबर दर्ज करें"
+                style={{
+                  fontSize: "14px",
+                  fontWeight: 800,
+                  color: "#0f172a",
+                  fontFamily: "monospace",
+                  background: "#ffffff",
+                  border: "1.5px solid #94a3b8",
+                  borderRadius: "6px",
+                  padding: "6px 10px",
+                  width: "160px",
+                  textAlign: "right",
+                  outline: "none",
+                }}
+              />
             </div>
 
-            {/* WhatsApp Send Options: 💬 Text vs 🖼️ Image */}
-            <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                {/* 1. Text Button */}
+            {/* WhatsApp Send Primary Action: 100% 1:1 with Screenshot media_1790757863696.jpg */}
+            <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "8px" }}>
+              <button
+                type="button"
+                disabled={isGeneratingSingleImage}
+                onClick={() => handleSendSingleVoterSlipImage(activeActionVoter, activeVoterPhone)}
+                style={{
+                  width: "100%",
+                  background: isGeneratingSingleImage ? "#15803d" : "#22c55e",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "10px",
+                  padding: "15px 20px",
+                  fontSize: "19px",
+                  fontWeight: 800,
+                  cursor: isGeneratingSingleImage ? "wait" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "10px",
+                  boxShadow: "0 4px 14px rgba(34, 197, 94, 0.4)",
+                  letterSpacing: "0.5px",
+                  transition: "all 0.15s ease",
+                }}
+                title="फोटो पर्ची सीधे वोटर के WhatsApp पर भेजें"
+              >
+                <span>{isGeneratingSingleImage ? "इमेज तैयार हो रही है..." : "Send"}</span>
+                <Send size={22} />
+              </button>
+
+              {/* Secondary Options */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px", padding: "0 4px" }}>
                 <button
                   type="button"
-                  onClick={() => handleSendSingleVoterSlipText(activeActionVoter)}
-                  style={{
-                    background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "13px 8px",
-                    fontSize: "14px",
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "4px",
-                    boxShadow: "0 3px 10px rgba(22, 163, 74, 0.35)",
-                    transition: "transform 0.1s ease",
-                  }}
-                  title="मतदाता पर्ची उम्मीदवार के नाम व विवरण के साथ टेक्स्ट फॉर्मेट में भेजें"
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <Share2 size={17} />
-                    <span>💬 टेक्स्ट पर्ची</span>
-                  </div>
-                  <small style={{ fontSize: "11px", fontWeight: 500, opacity: 0.9 }}>
-                    (Text Format में भेजें)
-                  </small>
-                </button>
-
-                {/* 2. Image Button */}
-                <button
-                  type="button"
-                  disabled={isGeneratingSingleImage}
-                  onClick={() => handleSendSingleVoterSlipImage(activeActionVoter)}
-                  style={{
-                    background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "10px",
-                    padding: "13px 8px",
-                    fontSize: "14px",
-                    fontWeight: 800,
-                    cursor: isGeneratingSingleImage ? "wait" : "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "4px",
-                    boxShadow: "0 3px 10px rgba(2, 132, 199, 0.35)",
-                    opacity: isGeneratingSingleImage ? 0.8 : 1,
-                    transition: "transform 0.1s ease",
-                  }}
-                  title="उम्मीदवार के पोस्टर सहित सिंगल वोटर स्लिप फोटो इमेज बनाकर भेजें"
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <ImageIcon size={17} />
-                    <span>{isGeneratingSingleImage ? "⏳ बन रही है..." : "🖼️ इमेज पर्ची"}</span>
-                  </div>
-                  <small style={{ fontSize: "11px", fontWeight: 500, opacity: 0.9 }}>
-                    (पोस्टर + पर्ची फोटो)
-                  </small>
-                </button>
-              </div>
-
-              {/* Helper explanation note */}
-              <p style={{ margin: "2px 0 0", textAlign: "center", fontSize: "11.5px", color: "#64748b" }}>
-                💡 <b>टेक्स्ट पर्ची:</b> केवल टेक्स्ट जाएगा | <b>इमेज पर्ची:</b> डायरेक्ट व्हाट्सएप पर फोटो लिंक व विवरण जाएगा
-              </p>
-
-              {/* Extra Share Option */}
-              <div style={{ textAlign: "center", marginTop: "4px" }}>
-                <button
-                  type="button"
-                  onClick={() => handleShareSingleVoterSlipFile(activeActionVoter)}
+                  onClick={() => handleSendSingleVoterSlipText(activeActionVoter, activeVoterPhone)}
                   style={{
                     background: "none",
                     border: "none",
                     color: "#0284c7",
                     fontSize: "12px",
                     fontWeight: 600,
-                    textDecoration: "underline",
                     cursor: "pointer",
-                    padding: "4px 8px",
+                    textDecoration: "underline",
+                    padding: "4px 2px",
+                  }}
+                  title="केवल टेक्स्ट के रूप में संदेश भेजें"
+                >
+                  💬 केवल टेक्स्ट पर्ची
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleShareSingleVoterSlipFile(activeActionVoter)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#64748b",
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    padding: "4px 2px",
                   }}
                   title="Android सिस्टम शेयर मेन्यू से फ़ोटो फाइल भेजें"
                 >
-                  📤 अन्य ऐप / शेयर मेन्यू से फ़ोटो भेजें (Android Share)
+                  📤 अन्य ऐप्स पर शेयर
                 </button>
               </div>
+
+              {/* Helper explanation note */}
+              <p style={{ margin: "2px 0 0", textAlign: "center", fontSize: "11px", color: "#64748b" }}>
+                💡 <b>Send:</b> सीधे WhatsApp पर जनरेटेड फोटो पर्ची जाएगी
+              </p>
             </div>
           </div>
         </div>
@@ -9329,6 +9427,31 @@ ${slipLink}
               </button>
             </div>
 
+            {/* WhatsApp Recipient Phone Input for Family */}
+            <div style={{ padding: "6px 12px", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+              <span style={{ fontSize: "12px", color: "#334155", fontWeight: 700 }}>
+                📱 WhatsApp प्राप्तकर्ता नंबर:
+              </span>
+              <input
+                type="tel"
+                value={familySlipRecipientPhone}
+                onChange={(e) => setFamilySlipRecipientPhone(e.target.value)}
+                placeholder="उदा. 9664074969"
+                style={{
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  fontFamily: "monospace",
+                  border: "1.5px solid #94a3b8",
+                  borderRadius: "5px",
+                  padding: "4px 8px",
+                  width: "150px",
+                  textAlign: "right",
+                  outline: "none",
+                  background: "#ffffff",
+                }}
+              />
+            </div>
+
             <div className="a4ModalActions">
               <button
                 type="button"
@@ -9379,36 +9502,28 @@ ${slipLink}
 
               <button
                 type="button"
-                onClick={() => {
-                  const slipSummary = selectedFamilyVoters
-                    .map((v, i) => `${i + 1}. ${v.name} (क्र. ${v.serialNo !== undefined ? v.serialNo : i + 1}, EPIC: ${v.epic})`)
-                    .join("\n");
-                  const text = `*परिवार मतदाता पर्ची / Family Voter Slip*\n\n` +
-                    `*प्रत्याशी:* ${candidate?.name || "सम्मानित प्रत्याशी"}\n` +
-                    `*वार्ड संख्या:* ${familyFilter?.booth || "—"} | *मकान नं:* ${familyFilter?.house || "—"}\n\n` +
-                    `*परिवार के मतदाता:*\n${slipSummary}\n\n` +
-                    `*मतदान केंद्र:* ${selectedFamilyVoters[0]?.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}\n\n` +
-                    `कृपया अपना मतदान अवश्य करें! 🗳️`;
-                  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-                }}
+                disabled={isGeneratingFamilyImage}
+                onClick={handleSendFamilySlipWhatsApp}
                 style={{
-                  background: "#25d366",
+                  background: isGeneratingFamilyImage ? "#15803d" : "#22c55e",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "7px",
                   padding: "7px 12px",
                   fontSize: "12px",
-                  fontWeight: 700,
-                  cursor: "pointer",
+                  fontWeight: 800,
+                  cursor: isGeneratingFamilyImage ? "wait" : "pointer",
                   display: "inline-flex",
                   alignItems: "center",
+                  justifyContent: "center",
                   gap: "6px",
-                  boxShadow: "0 2px 6px rgba(37, 211, 102, 0.35)",
+                  boxShadow: "0 2px 6px rgba(34, 197, 94, 0.35)",
                   flex: 1,
                 }}
+                title="परिवार की A4 फोटो पर्ची सीधे WhatsApp पर भेजें"
               >
-                <Share2 size={14} />
-                <span>WhatsApp</span>
+                <Send size={14} />
+                <span>{isGeneratingFamilyImage ? (lang === "hi" ? "बन रही है..." : "Generating...") : (lang === "hi" ? "WhatsApp फोटो पर्ची" : "WhatsApp Slip")}</span>
               </button>
 
               {/* Mobile View Mode: 1-Column vs 2-Column A4 */}
