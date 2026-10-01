@@ -4389,21 +4389,39 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
     setIsGeneratingFamilyImage(true);
     setLocalToast("⏳ A4 फैमिली वोटर स्लिप तैयार हो रही है...");
+    setTimeout(() => setLocalToast(""), 1000);
 
     try {
       const res = await generateFamilySlipImageBlob();
       if (!res) throw new Error("इमेज जनरेट करने में असमर्थ");
 
+      const fileName = `Family_Voter_Slip_House_${familyFilter?.house || "Family"}_Part_${familyFilter?.booth || "1"}.png`;
+
+      // 1. Android APK native bridge: save to Gallery & copy to clipboard
+      if (typeof window !== "undefined" && (window as any).VoterDeskNative?.saveToGallery) {
+        (window as any).VoterDeskNative.saveToGallery(res.dataUrl, fileName);
+        setLocalToast("✅ A4 फैमिली स्लिप फोन गैलरी में सेव हो गई!");
+        setTimeout(() => setLocalToast(""), 1000);
+        return;
+      }
+
+      // 2. Clipboard copy in browser
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard && window.ClipboardItem && res.blob) {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": res.blob })]);
+        }
+      } catch (_) {}
+
+      // 3. Web download (saves to Downloads / Gallery)
       const a = document.createElement("a");
       a.href = res.dataUrl;
-      const fileName = `Family_Voter_Slip_House_${familyFilter?.house || "Family"}_Part_${familyFilter?.booth || "1"}.png`;
       a.download = fileName;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
 
-      setLocalToast(`✅ A4 फैमिली वोटर स्लिप डाउनलोड हो गई! (${fileName})`);
-      setTimeout(() => setLocalToast(""), 3500);
+      setLocalToast(`✅ A4 फैमिली वोटर स्लिप डाउनलोड हो गई!`);
+      setTimeout(() => setLocalToast(""), 1000);
     } catch (err) {
       alert("इमेज जनरेट करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
     } finally {
@@ -4681,19 +4699,28 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     const formattedPh = cleanPh.length === 10 ? `91${cleanPh}` : cleanPh;
 
     // 1. Native Android APK Bridge:
-    // Fires direct WhatsApp ACTION_SEND intent with content:// URI and recipient jid!
+    // Saves to phone Gallery (Pictures/VoterDesk), copies to Clipboard, and opens WhatsApp!
     if (typeof window !== "undefined" && (window as any).VoterDeskNative?.shareSlipToWhatsApp) {
       try {
         (window as any).VoterDeskNative.shareSlipToWhatsApp(dataUrl, formattedPh, caption);
         setLocalToast("✅ व्हाट्सएप खुल रहा है, सीधे फोटो पर्ची भेजी जा रही है...");
-        setTimeout(() => setLocalToast(""), 3500);
+        setTimeout(() => setLocalToast(""), 1000);
         return true;
       } catch (nativeErr) {
         console.error("VoterDeskNative share error:", nativeErr);
       }
     }
 
-    // 2. Mobile Browser Web Share API (Level 2 with files)
+    // 2. Always copy image to clipboard in browser if supported!
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard && window.ClipboardItem && blob) {
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      }
+    } catch (clipErr) {
+      console.warn("Clipboard copy skipped:", clipErr);
+    }
+
+    // 3. Mobile Browser Web Share API (Level 2 with files)
     const file = new File([blob], fileName, { type: "image/png" });
     if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
       try {
@@ -4703,7 +4730,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           text: caption,
         });
         setLocalToast("✅ पर्ची सफलतापूर्वक शेयर की गई!");
-        setTimeout(() => setLocalToast(""), 3000);
+        setTimeout(() => setLocalToast(""), 1000);
         return true;
       } catch (shareErr: any) {
         if (shareErr.name === "AbortError") return false;
@@ -4711,17 +4738,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       }
     }
 
-    // 3. Desktop / Web Fallback:
-    // Copy image to clipboard so user can press Ctrl+V directly into WhatsApp Web chat
-    try {
-      if (typeof navigator !== "undefined" && navigator.clipboard && window.ClipboardItem && blob) {
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        setLocalToast("📋 फोटो पर्ची कॉपी हो गई है! व्हाट्सएप खुलते ही Ctrl+V दबाएं।");
-      }
-    } catch (clipErr) {
-      console.warn("Clipboard copy skipped:", clipErr);
-    }
-
+    // 4. Desktop / Web Fallback:
     try {
       const a = document.createElement("a");
       a.href = dataUrl;
@@ -4749,6 +4766,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
     setIsGeneratingFamilyImage(true);
     setLocalToast("⏳ फैमिली वोटर स्लिप इमेज तैयार हो रही है...");
+    setTimeout(() => setLocalToast(""), 1000);
 
     try {
       const res = await generateFamilySlipImageBlob();
@@ -4802,6 +4820,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   const handleSendSingleVoterSlipImage = async (v: VoterRecord, targetPhone?: string) => {
     setIsGeneratingSingleImage(true);
     setLocalToast("⏳ वोटर स्लिप इमेज तैयार हो रही है...");
+    setTimeout(() => setLocalToast(""), 1000);
     try {
       const res = await generateSingleVoterSlipImage(v);
       if (!res) {
@@ -4848,6 +4867,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
   const handleShareSingleVoterSlipFile = async (v: VoterRecord) => {
     setIsGeneratingSingleImage(true);
     setLocalToast("⏳ इमेज तैयार हो रही है...");
+    setTimeout(() => setLocalToast(""), 1000);
     try {
       const res = await generateSingleVoterSlipImage(v);
       if (!res) return;
@@ -4855,6 +4875,20 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       const file = new File([res.blob], fileName, { type: "image/png" });
       const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*वार्ड सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
 
+      // 1. Android Native Share Bridge:
+      if (typeof window !== "undefined" && (window as any).VoterDeskNative?.shareSlip) {
+        (window as any).VoterDeskNative.shareSlip(res.dataUrl, caption);
+        return;
+      }
+
+      // 2. Clipboard copy:
+      try {
+        if (typeof navigator !== "undefined" && navigator.clipboard && window.ClipboardItem && res.blob) {
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": res.blob })]);
+        }
+      } catch (_) {}
+
+      // 3. Web Share API Level 2:
       if (typeof navigator !== "undefined" && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
@@ -4869,7 +4903,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         a.click();
         document.body.removeChild(a);
         setLocalToast("✅ इमेज डाउनलोड हो गई!");
-        setTimeout(() => setLocalToast(""), 3000);
+        setTimeout(() => setLocalToast(""), 1000);
       }
     } catch (err) {
       console.error(err);
@@ -8216,8 +8250,59 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 </button>
               </div>
 
-              {/* Secondary Option: Other Apps Share */}
-              <div style={{ textAlign: "center", marginTop: "4px" }}>
+              {/* Secondary Options: Gallery Save & Other Apps Share */}
+              <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", marginTop: "6px" }}>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!activeActionVoter) return;
+                    setIsGeneratingSingleImage(true);
+                    setLocalToast("⏳ इमेज तैयार हो रही है...");
+                    setTimeout(() => setLocalToast(""), 1000);
+                    try {
+                      const res = await generateSingleVoterSlipImage(activeActionVoter);
+                      if (!res) return;
+                      const fileName = `VoterSlip_${activeActionVoter.name.replace(/\s+/g, "_")}_Ward${activeActionVoter.booth || "1"}.png`;
+                      if (typeof window !== "undefined" && (window as any).VoterDeskNative?.saveToGallery) {
+                        (window as any).VoterDeskNative.saveToGallery(res.dataUrl, fileName);
+                        setLocalToast("✅ पर्ची फोन गैलरी में सेव हो गई!");
+                        setTimeout(() => setLocalToast(""), 1000);
+                        return;
+                      }
+                      try {
+                        if (typeof navigator !== "undefined" && navigator.clipboard && window.ClipboardItem && res.blob) {
+                          await navigator.clipboard.write([new ClipboardItem({ "image/png": res.blob })]);
+                        }
+                      } catch (_) {}
+                      const a = document.createElement("a");
+                      a.href = res.dataUrl;
+                      a.download = fileName;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      setLocalToast("✅ गैलरी / डाउनलोड में सेव हो गई!");
+                      setTimeout(() => setLocalToast(""), 1000);
+                    } catch (e) {
+                      console.error(e);
+                    } finally {
+                      setIsGeneratingSingleImage(false);
+                    }
+                  }}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#0284c7",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    textDecoration: "underline",
+                    padding: "4px 6px",
+                  }}
+                  title="सीधे फोन की गैलरी में सुरक्षित करें"
+                >
+                  📥 गैलरी में सेव करें
+                </button>
+                <span style={{ color: "#cbd5e1" }}>|</span>
                 <button
                   type="button"
                   onClick={() => handleShareSingleVoterSlipFile(activeActionVoter)}
@@ -8229,7 +8314,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                     fontWeight: 600,
                     cursor: "pointer",
                     textDecoration: "underline",
-                    padding: "4px 8px",
+                    padding: "4px 6px",
                   }}
                   title="Android सिस्टम शेयर मेन्यू से फ़ोटो फाइल भेजें"
                 >
