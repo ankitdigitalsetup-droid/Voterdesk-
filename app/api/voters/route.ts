@@ -65,6 +65,8 @@ export async function POST(req: Request) {
       notes,
       candidateId,
       slipMessage,
+      zilaParishad,
+      panchayatSamiti,
     } = body;
 
     if (!name) {
@@ -91,6 +93,8 @@ export async function POST(req: Request) {
       worker: worker || (session ? session.name : "Unassigned"),
       notes,
       slipMessage,
+      zilaParishad,
+      panchayatSamiti,
       candidateId: targetCandidateId,
     });
 

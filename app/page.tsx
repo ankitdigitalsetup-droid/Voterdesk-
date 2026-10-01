@@ -48,6 +48,84 @@ import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, Parsed
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
 
+export function isZpKey(key: string): boolean {
+  if (!key) return false;
+  const clean = key.toLowerCase().replace(/[\s\.\-_]/g, "");
+  return (
+    clean.includes("जिप") ||
+    clean.includes("जिलापरिषद") ||
+    clean.includes("zilaparishad") ||
+    clean.includes("zpsankhya") ||
+    clean.includes("zpno") ||
+    clean === "zp" ||
+    clean.startsWith("zp")
+  );
+}
+
+export function isPsKey(key: string): boolean {
+  if (!key) return false;
+  const clean = key.toLowerCase().replace(/[\s\.\-_]/g, "");
+  return (
+    clean.includes("पंस") ||
+    clean.includes("पंचायतसमिति") ||
+    clean.includes("panchayatsamiti") ||
+    clean.includes("panchayatsamity") ||
+    clean.includes("pssankhya") ||
+    clean.includes("psno") ||
+    clean === "ps" ||
+    clean.startsWith("ps")
+  );
+}
+
+export function isZpOrPsKey(key: string): boolean {
+  if (!key) return false;
+  const clean = key.toLowerCase().replace(/[\s\.\-_]/g, "");
+  return isZpKey(key) || isPsKey(key);
+}
+
+export function extractZpAndPs(r: Record<string, any> | undefined, mapping?: Record<string, string>) {
+  let zpVal = "";
+  let psVal = "";
+  if (!r || typeof r !== "object") return { zpVal, psVal };
+
+  // 1. Check mapping
+  if (mapping?.zilaParishad && r[mapping.zilaParishad] !== undefined && r[mapping.zilaParishad] !== null) {
+    const s = String(r[mapping.zilaParishad]).trim();
+    if (s && s !== "—" && s !== "-") zpVal = s;
+  }
+  if (mapping?.panchayatSamiti && r[mapping.panchayatSamiti] !== undefined && r[mapping.panchayatSamiti] !== null) {
+    const s = String(r[mapping.panchayatSamiti]).trim();
+    if (s && s !== "—" && s !== "-") psVal = s;
+  }
+
+  // 2. Direct property check on r
+  if (!zpVal && (r as any).zilaParishad) {
+    const s = String((r as any).zilaParishad).trim();
+    if (s && s !== "—" && s !== "-") zpVal = s;
+  }
+  if (!psVal && (r as any).panchayatSamiti) {
+    const s = String((r as any).panchayatSamiti).trim();
+    if (s && s !== "—" && s !== "-") psVal = s;
+  }
+
+  // 3. Scan all keys in r if still empty
+  if (!zpVal || !psVal) {
+    for (const [k, v] of Object.entries(r)) {
+      if (v === undefined || v === null) continue;
+      const s = String(v).trim();
+      if (!s || s === "—" || s === "-") continue;
+      if (!zpVal && isZpKey(k)) {
+        zpVal = s;
+      }
+      if (!psVal && isPsKey(k)) {
+        psVal = s;
+      }
+    }
+  }
+
+  return { zpVal, psVal };
+}
+
 /**
  * ============================================================================
  * 🗳️ VOTERDESK ELECTION MANAGEMENT PLATFORM - MASTER SOURCE CODE (app/page.tsx)
@@ -448,8 +526,8 @@ export default function Page() {
                 return;
               }
               const exportRows = voters.map((v, idx) => ({
-                "जि. प.": v.zilaParishad || "—",
-                "पं. स.": v.panchayatSamiti || "—",
+                "जि. प.": v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—",
+                "पं. स.": v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—",
                 "वार्ड संख्या (Ward No)": v.booth || "—",
                 "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
                 "मतदाता का नाम (Name)": v.name || "",
@@ -1050,9 +1128,9 @@ function SuperAdminView({
       setSaSelectedSheet(activeSheet);
 
       const mapping = detectFieldMapping(parsed.columns);
+      const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx) => {
-        const zpVal = mapping.zilaParishad && r[mapping.zilaParishad] ? String(r[mapping.zilaParishad]).trim() : (r["जि. प."] || r["जि.प."] || r["जिला परिषद"] ? String(r["जि. प."] || r["जि.प."] || r["जिला परिषद"]).trim() : "");
-        const psVal = mapping.panchayatSamiti && r[mapping.panchayatSamiti] ? String(r[mapping.panchayatSamiti]).trim() : (r["पं. स."] || r["पं.स."] || r["पंचायत समिति"] ? String(r["पं. स."] || r["पं.स."] || r["पंचायत समिति"]).trim() : "");
+        const { zpVal, psVal } = extractZpAndPs(r, mapping);
         const boothVal = mapping.booth && r[mapping.booth] ? String(r[mapping.booth]).trim() : "1";
         const serialVal = mapping.serialNo && r[mapping.serialNo] ? Number(String(r[mapping.serialNo]).replace(/\D/g, "")) || (idx + 1) : idx + 1;
         const nameVal = mapping.name && r[mapping.name] ? String(r[mapping.name]).trim() : `मतदाता ${idx + 1}`;
@@ -1071,7 +1149,16 @@ function SuperAdminView({
           epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
         }
         const voterStatusVal = mapping.voterStatus && r[mapping.voterStatus] ? String(r[mapping.voterStatus]).trim() : "";
-        const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData: r } as VoterRecord);
+
+        // Build clean extraData excluding mapped columns and ZP/PS variants
+        const extraData: Record<string, any> = {};
+        for (const [k, val] of Object.entries(r)) {
+          if (!mappedColNames.has(k) && !isZpOrPsKey(k)) {
+            extraData[k] = val;
+          }
+        }
+
+        const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData } as VoterRecord);
         return {
           candidateId: saUploadCand ? saUploadCand.id : "cand_1",
           zilaParishad: zpVal,
@@ -1093,7 +1180,7 @@ function SuperAdminView({
           voterStatus: isDel ? "Deleted" : (voterStatusVal || "Active"),
           status: "Pending",
           worker: "Super Admin",
-          extraData: r,
+          extraData,
         };
       });
       setSaParsedVoters(rows);
@@ -1290,8 +1377,7 @@ function SuperAdminView({
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
         .map((row, idx) => {
-          const zpVal = mapping.zilaParishad && row[mapping.zilaParishad] !== undefined ? String(row[mapping.zilaParishad]).trim() : (row["जि. प."] || row["जि.प."] || row["जिला परिषद"] ? String(row["जि. प."] || row["जि.प."] || row["जिला परिषद"]).trim() : "");
-          const psVal = mapping.panchayatSamiti && row[mapping.panchayatSamiti] !== undefined ? String(row[mapping.panchayatSamiti]).trim() : (row["पं. स."] || row["पं.स."] || row["पंचायत समिति"] ? String(row["पं. स."] || row["पं.स."] || row["पंचायत समिति"]).trim() : "");
+          const { zpVal, psVal } = extractZpAndPs(row, mapping);
           const boothVal = String(row[mapping.booth] || "1").trim();
           const serialVal = row[mapping.serialNo] ? Number(row[mapping.serialNo]) || (idx + 1) : (idx + 1);
           const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
@@ -1304,10 +1390,10 @@ function SuperAdminView({
             epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
           }
 
-          // Preserve all extra columns from Excel sheet
+          // Preserve all extra columns from Excel sheet excluding ZP/PS
           const extraData: Record<string, any> = {};
           for (const [key, val] of Object.entries(row)) {
-            if (!mappedColNames.has(key)) {
+            if (!mappedColNames.has(key) && !isZpOrPsKey(key)) {
               extraData[key] = val;
             }
           }
@@ -3703,21 +3789,21 @@ function BoothManagerView({
       "id", "candidateId", "booth", "serialNo", "name", "guardian", "age", "gender",
       "house", "address", "boothAddress", "phone", "epic", "voted", "isSupporter",
       "isOutside", "status", "voterStatus", "worker", "notes", "slipMessage", "survey", "extraData",
-      "voterCount", "createdAt", "updatedAt"
+      "voterCount", "createdAt", "updatedAt", "zilaParishad", "panchayatSamiti"
     ]);
 
     const colsSet = new Set<string>();
     for (const v of voters) {
       if (v.extraData && typeof v.extraData === "object") {
         for (const k of Object.keys(v.extraData)) {
-          if (!standardKeys.has(k)) {
+          if (!standardKeys.has(k) && !isZpOrPsKey(k)) {
             colsSet.add(k);
           }
         }
       }
       for (const k of Object.keys(v)) {
         const val = (v as Record<string, any>)[k];
-        if (!standardKeys.has(k) && typeof val !== "object" && typeof val !== "function") {
+        if (!standardKeys.has(k) && !isZpOrPsKey(k) && typeof val !== "object" && typeof val !== "function") {
           colsSet.add(k);
         }
       }
@@ -4085,7 +4171,9 @@ function BoothManagerView({
   // 4. वोटर स्लिप (Formatted Slip Copy & Share)
   const handleShareVoterSlip = async () => {
     if (!activeActionVoter) return;
-    const slipText = `जि. प. : ${activeActionVoter.zilaParishad || "—"}     पं. स. : ${activeActionVoter.panchayatSamiti || "—"}
+    const activeZp = activeActionVoter.zilaParishad || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).zpVal) || "—";
+    const activePs = activeActionVoter.panchayatSamiti || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).psVal) || "—";
+    const slipText = `जि. प. : ${activeZp}     पं. स. : ${activePs}
 क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth}
 नाम : ${activeActionVoter.name}
 पिता/पति : ${activeActionVoter.guardian || "—"}
@@ -4270,7 +4358,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
       ctx.fillStyle = "#64748b";
       ctx.font = "bold 17px sans-serif";
-      const rightHeaderText = `जि.प.: ${selectedFamilyVoters[0]?.zilaParishad || "—"} | पं.स.: ${selectedFamilyVoters[0]?.panchayatSamiti || "—"} | वार्ड: ${familyFilter?.booth || "1"}`;
+      const famZp = selectedFamilyVoters[0]?.zilaParishad || (selectedFamilyVoters[0]?.extraData && extractZpAndPs(selectedFamilyVoters[0]?.extraData).zpVal) || "—";
+      const famPs = selectedFamilyVoters[0]?.panchayatSamiti || (selectedFamilyVoters[0]?.extraData && extractZpAndPs(selectedFamilyVoters[0]?.extraData).psVal) || "—";
+      const rightHeaderText = `जि.प.: ${famZp} | पं.स.: ${famPs} | वार्ड: ${familyFilter?.booth || "1"}`;
       const rHeaderW = ctx.measureText(rightHeaderText).width;
       const rHeaderX = Math.max(w / 2 + 10, (w - 40) - rHeaderW);
       ctx.textAlign = "left";
@@ -4318,12 +4408,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.fillRect(x + 4, y + 4, cardW - 8, 46);
 
           // Row 1: जि. प. & पं. स.
+          const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
+          const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
           ctx.fillStyle = "#0369a1";
           ctx.font = "bold 15px sans-serif";
           ctx.textAlign = "left";
-          ctx.fillText(`जि. प. : ${v.zilaParishad || "—"}`, x + 16, y + 22);
+          ctx.fillText(`जि. प. : ${vZp}`, x + 16, y + 22);
 
-          const psMiniText = `पं. स. : ${v.panchayatSamiti || "—"}`;
+          const psMiniText = `पं. स. : ${vPs}`;
           const psMiniW = ctx.measureText(psMiniText).width;
           const psMiniX = Math.max(x + 320, (x + cardW - 18) - psMiniW);
           ctx.textAlign = "left";
@@ -4574,12 +4666,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.fillRect(cardX + 4, cardY + 4, cardW - 8, 72);
 
       // Row 1: जि. प. (Left) & पं. स. (Right)
+      const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
+      const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
       ctx.fillStyle = "#0369a1";
       ctx.font = "bold 22px sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(`जि. प. : ${v.zilaParishad || "—"}`, cardX + 24, cardY + 30);
+      ctx.fillText(`जि. प. : ${vZp}`, cardX + 24, cardY + 30);
 
-      const psText = `पं. स. : ${v.panchayatSamiti || "—"}`;
+      const psText = `पं. स. : ${vPs}`;
       const psW = ctx.measureText(psText).width;
       const psX = Math.max(cardX + 450, (cardX + cardW - 24) - psW);
       ctx.textAlign = "left";
@@ -4680,11 +4774,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     const candParty = candidate ? candidate.party : "निर्दलीय";
     const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
 
+    const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
+    const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
+
     const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
 *उम्मीदवार:* ${candName} (${candParty})
 🗳️ *${campaignMsg}*
 ----------------------------------------
-*जि. प. (Zila Parishad) :* ${v.zilaParishad || "—"}     *पं. स. (Panchayat Samiti) :* ${v.panchayatSamiti || "—"}
+*जि. प. (Zila Parishad) :* ${vZp}     *पं. स. (Panchayat Samiti) :* ${vPs}
 *क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}
 *नाम (Name) :* ${v.name}
 *पिता/पति (Guardian) :* ${v.guardian || "—"}
@@ -4830,9 +4927,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         .map((v, i) => `${i + 1}. ${v.name} (क्र. ${v.serialNo !== undefined ? v.serialNo : i + 1}, EPIC: ${v.epic})`)
         .join("\n");
 
-      const zpPsFamily = (selectedFamilyVoters[0]?.zilaParishad || selectedFamilyVoters[0]?.panchayatSamiti)
-        ? `*जि. प.:* ${selectedFamilyVoters[0]?.zilaParishad || "—"} | *पं. स.:* ${selectedFamilyVoters[0]?.panchayatSamiti || "—"}\n`
-        : `*जि. प.:* ${selectedFamilyVoters[0]?.zilaParishad || "—"} | *पं. स.:* ${selectedFamilyVoters[0]?.panchayatSamiti || "—"}\n`;
+      const famZp = selectedFamilyVoters[0]?.zilaParishad || (selectedFamilyVoters[0]?.extraData && extractZpAndPs(selectedFamilyVoters[0]?.extraData).zpVal) || "—";
+      const famPs = selectedFamilyVoters[0]?.panchayatSamiti || (selectedFamilyVoters[0]?.extraData && extractZpAndPs(selectedFamilyVoters[0]?.extraData).psVal) || "—";
+      const zpPsFamily = `*जि. प.:* ${famZp} | *पं. स.:* ${famPs}\n`;
 
       const caption = `*🇮🇳 परिवार मतदाता पर्ची (FAMILY VOTER SLIP) 🇮🇳*\n\n` +
         `*प्रत्याशी:* ${candidate?.name || "सम्मानित प्रत्याशी"} (${candidate?.party || "निर्दलीय"})\n` +
@@ -4882,11 +4979,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       const candParty = candidate ? candidate.party : "निर्दलीय";
       const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
 
+      const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
+      const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
+
       const caption = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*\n` +
         `*उम्मीदवार:* ${candName} (${candParty})\n` +
         `🗳️ *${campaignMsg}*\n` +
         `----------------------------------------\n` +
-        `*जि. प. (Zila Parishad) :* ${v.zilaParishad || "—"}     *पं. स. (Panchayat Samiti) :* ${v.panchayatSamiti || "—"}\n` +
+        `*जि. प. (Zila Parishad) :* ${vZp}     *पं. स. (Panchayat Samiti) :* ${vPs}\n` +
         `*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}\n` +
         `*नाम (Name) :* ${v.name}\n` +
         `*पिता/पति (Guardian) :* ${v.guardian || "—"}\n` +
@@ -4921,7 +5021,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       if (!res) return;
       const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Ward${v.booth || "1"}.png`;
       const file = new File([res.blob], fileName, { type: "image/png" });
-      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*जि. प.:* ${v.zilaParishad || "—"} | *पं. स.:* ${v.panchayatSamiti || "—"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*वार्ड सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
+      const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
+      const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
+      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*जि. प.:* ${vZp} | *पं. स.:* ${vPs}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*वार्ड सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
 
       // 1. Android Native Share Bridge:
       if (typeof window !== "undefined" && (window as any).VoterDeskNative?.shareSlip) {
@@ -5190,8 +5292,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const exportRows = paginatedVoters.map((v, idx) => {
         const row: Record<string, any> = {
-          "जि. प.": v.zilaParishad || "—",
-          "पं. स.": v.panchayatSamiti || "—",
+          "जि. प.": v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—",
+          "पं. स.": v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—",
           "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
@@ -5273,8 +5375,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const exportRows = voters.map((v, idx) => {
         const row: Record<string, any> = {
-          "जि. प.": v.zilaParishad || "—",
-          "पं. स.": v.panchayatSamiti || "—",
+          "जि. प.": v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—",
+          "पं. स.": v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—",
           "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
@@ -5469,8 +5571,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       const mapping = detectFieldMapping(parsed.columns);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const toImport = parsed.rows.map((row, idx) => {
-        const zpVal = mapping.zilaParishad && row[mapping.zilaParishad] !== undefined ? String(row[mapping.zilaParishad]).trim() : (row["जि. प."] || row["जि.प."] || row["जिला परिषद"] ? String(row["जि. प."] || row["जि.प."] || row["जिला परिषद"]).trim() : "");
-        const psVal = mapping.panchayatSamiti && row[mapping.panchayatSamiti] !== undefined ? String(row[mapping.panchayatSamiti]).trim() : (row["पं. स."] || row["पं.स."] || row["पंचायत समिति"] ? String(row["पं. स."] || row["पं.स."] || row["पंचायत समिति"]).trim() : "");
+        const { zpVal, psVal } = extractZpAndPs(row, mapping);
         const boothVal = String(row[mapping.booth] || "1").trim();
         const serialVal = mapping.serialNo && row[mapping.serialNo] ? Number(row[mapping.serialNo]) : (idx + 1);
         const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
@@ -5487,10 +5588,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         const votedVal = String(row[mapping.voted] || "").trim();
         const outsideVal = String(row[mapping.isOutside] || "").trim();
 
-        // Preserve all extra columns from Excel sheet
+        // Preserve all extra columns from Excel sheet excluding ZP/PS
         const extraData: Record<string, any> = {};
         for (const [key, val] of Object.entries(row)) {
-          if (!mappedColNames.has(key)) {
+          if (!mappedColNames.has(key) && !isZpOrPsKey(key)) {
             extraData[key] = val;
           }
         }
@@ -7150,12 +7251,12 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
                     {/* 0a. जि. प. */}
                     <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>
-                      {v.zilaParishad || "—"}
+                      {v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—"}
                     </td>
 
                     {/* 0b. पं. स. */}
                     <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>
-                      {v.panchayatSamiti || "—"}
+                      {v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—"}
                     </td>
 
                     {/* 1. भाग संख्या / वार्ड संख्या */}
@@ -8138,8 +8239,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               }`}
             >
               <div className="bmSlipRow">
-                <span><b>जि. प. : {activeActionVoter.zilaParishad || "—"}</b></span>
-                <span><b>पं. स. : {activeActionVoter.panchayatSamiti || "—"}</b></span>
+                <span><b>जि. प. : {activeActionVoter.zilaParishad || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).zpVal) || "—"}</b></span>
+                <span><b>पं. स. : {activeActionVoter.panchayatSamiti || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).psVal) || "—"}</b></span>
               </div>
               <div className="bmSlipRow">
                 <span><b>क्रम सं : {activeActionVoter.serialNo || "—"}</b></span>
@@ -8207,8 +8308,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
             {/* Dotted Voter Slip Card */}
             <div className="bmDottedSlipCard">
               <div className="bmSlipRow">
-                <span><b>जि. प. :</b> {activeActionVoter.zilaParishad || "—"}</span>
-                <span><b>पं. स. :</b> {activeActionVoter.panchayatSamiti || "—"}</span>
+                <span><b>जि. प. :</b> {activeActionVoter.zilaParishad || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).zpVal) || "—"}</span>
+                <span><b>पं. स. :</b> {activeActionVoter.panchayatSamiti || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).psVal) || "—"}</span>
               </div>
               <div className="bmSlipRow">
                 <span><b>क्रम सं :</b> {activeActionVoter.serialNo || "—"}</span>
@@ -10016,8 +10117,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   </div>
                   <div>
                     <span className="a4BottomSub">
-                      {selectedFamilyVoters[0]?.zilaParishad ? `जि.प.: ${selectedFamilyVoters[0].zilaParishad} • ` : ""}
-                      {selectedFamilyVoters[0]?.panchayatSamiti ? `पं.स.: ${selectedFamilyVoters[0].panchayatSamiti} • ` : ""}
+                      {(selectedFamilyVoters[0]?.zilaParishad || (selectedFamilyVoters[0]?.extraData && extractZpAndPs(selectedFamilyVoters[0]?.extraData).zpVal)) ? `जि.प.: ${selectedFamilyVoters[0]?.zilaParishad || extractZpAndPs(selectedFamilyVoters[0]?.extraData).zpVal} • ` : ""}
+                      {(selectedFamilyVoters[0]?.panchayatSamiti || (selectedFamilyVoters[0]?.extraData && extractZpAndPs(selectedFamilyVoters[0]?.extraData).psVal)) ? `पं.स.: ${selectedFamilyVoters[0]?.panchayatSamiti || extractZpAndPs(selectedFamilyVoters[0]?.extraData).psVal} • ` : ""}
                       वार्ड सं: {familyFilter?.booth || "—"} • {selectedFamilyVoters.length} सदस्य ({6 - selectedFamilyVoters.length} रिक्त स्थान)
                     </span>
                   </div>
@@ -10032,8 +10133,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                         <div key={v.id} className="a4MiniSlipCard">
                           <div>
                             <div className="a4SlipTopRow" style={{ color: "#0369a1", fontWeight: 700, fontSize: "11px", marginBottom: "2px" }}>
-                              <span>जि. प. : {v.zilaParishad || "—"}</span>
-                              <span>पं. स. : {v.panchayatSamiti || "—"}</span>
+                              <span>जि. प. : {v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—"}</span>
+                              <span>पं. स. : {v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—"}</span>
                             </div>
                             <div className="a4SlipTopRow">
                               <span>क्रम सं : {v.serialNo !== undefined ? v.serialNo : slotIdx + 1}</span>
@@ -10299,21 +10400,21 @@ function VotersTable({
       "id", "candidateId", "booth", "serialNo", "name", "guardian", "age", "gender",
       "house", "address", "boothAddress", "phone", "epic", "voted", "isSupporter",
       "isOutside", "status", "voterStatus", "worker", "notes", "slipMessage", "survey", "extraData",
-      "voterCount", "createdAt", "updatedAt"
+      "voterCount", "createdAt", "updatedAt", "zilaParishad", "panchayatSamiti"
     ]);
 
     const colsSet = new Set<string>();
     for (const v of voters) {
       if (v.extraData && typeof v.extraData === "object") {
         for (const k of Object.keys(v.extraData)) {
-          if (!standardKeys.has(k)) {
+          if (!standardKeys.has(k) && !isZpOrPsKey(k)) {
             colsSet.add(k);
           }
         }
       }
       for (const k of Object.keys(v)) {
         const val = (v as Record<string, any>)[k];
-        if (!standardKeys.has(k) && typeof val !== "object" && typeof val !== "function") {
+        if (!standardKeys.has(k) && !isZpOrPsKey(k) && typeof val !== "object" && typeof val !== "function") {
           colsSet.add(k);
         }
       }
@@ -10476,8 +10577,8 @@ function VotersTable({
       "Status (Active/Deleted)"
     ];
     const rows = filtered.map((v, idx) => [
-      `"${(v.zilaParishad || "").replace(/"/g, '""')}"`,
-      `"${(v.panchayatSamiti || "").replace(/"/g, '""')}"`,
+      `"${((v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal)) || "").replace(/"/g, '""')}"`,
+      `"${((v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal)) || "").replace(/"/g, '""')}"`,
       v.booth,
       v.serialNo !== undefined ? v.serialNo : (idx + 1),
       `"${(v.name || "").replace(/"/g, '""')}"`,
@@ -10513,8 +10614,8 @@ function VotersTable({
     try {
       const exportRows = filtered.map((v, idx) => {
         const row: Record<string, any> = {
-          "जि. प.": v.zilaParishad || "—",
-          "पं. स.": v.panchayatSamiti || "—",
+          "जि. प.": v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—",
+          "पं. स.": v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—",
           "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
@@ -11208,10 +11309,10 @@ function VotersTable({
                 return (
                   <tr key={v.id} className={isDeleted ? "deletedRow" : ""}>
                     {/* 0a. जि. प. */}
-                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>{v.zilaParishad || "—"}</td>
+                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>{v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—"}</td>
 
                     {/* 0b. पं. स. */}
-                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>{v.panchayatSamiti || "—"}</td>
+                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>{v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—"}</td>
 
                     {/* 1. भाग संख्या */}
                     <td style={{ textAlign: "center", fontWeight: 600 }}>{v.booth}</td>
@@ -11723,8 +11824,7 @@ function RealExcelImporter({
 
     const mappedColNames = new Set(Object.values(fieldMap).filter(Boolean));
     const votersToImport = parsedData.rows.map((row, idx) => {
-      const zpVal = fieldMap.zilaParishad && row[fieldMap.zilaParishad] !== undefined ? String(row[fieldMap.zilaParishad]).trim() : (row["जि. प."] || row["जि.प."] || row["जिला परिषद"] ? String(row["जि. प."] || row["जि.प."] || row["जिला परिषद"]).trim() : "");
-      const psVal = fieldMap.panchayatSamiti && row[fieldMap.panchayatSamiti] !== undefined ? String(row[fieldMap.panchayatSamiti]).trim() : (row["पं. स."] || row["पं.स."] || row["पंचायत समिति"] ? String(row["पं. स."] || row["पं.स."] || row["पंचायत समिति"]).trim() : "");
+      const { zpVal, psVal } = extractZpAndPs(row, fieldMap);
       const name = String(row[fieldMap.name] || "").trim();
       const booth = String(row[fieldMap.booth] || "1").trim();
       const serialRaw = row[fieldMap.serialNo];
@@ -11740,10 +11840,10 @@ function RealExcelImporter({
         ? String(row[fieldMap.age]).trim()
         : "35";
 
-      // Preserve all extra columns from Excel sheet
+      // Preserve all extra columns from Excel sheet excluding ZP/PS
       const extraData: Record<string, any> = {};
       for (const [key, val] of Object.entries(row)) {
-        if (!mappedColNames.has(key)) {
+        if (!mappedColNames.has(key) && !isZpOrPsKey(key)) {
           extraData[key] = val;
         }
       }

@@ -51,7 +51,7 @@ export function parseExcelFile(file: File, sheetName?: string): Promise<ParsedSh
         }
 
         const keywords = [
-          "जि. प.", "जि.प.", "पं. स.", "पं.स.", "जिला परिषद", "पंचायत समिति", "zp", "ps",
+          "जि. प.", "जि.प.", "जिप", "पं. स.", "पं.स.", "पंस", "जिला परिषद", "पंचायत समिति", "zp", "ps", "संख्या", "sankhya",
           "नाम", "name", "क्रम", "sr", "serial", "booth", "भाग", "बूथ",
           "epic", "पहचान", "आयु", "age", "पिता", "पति", "father", "husband",
           "मकान", "house", "पता", "address", "मोबाइल", "phone", "mobile", "gender", "लिंग"
@@ -148,9 +148,17 @@ export function detectFieldMapping(columns: string[]) {
 
   for (const col of columns) {
     const c = col.trim().toLowerCase();
+    const clean = c.replace(/[\s\.\-_]/g, "");
 
     // 0a. जि. प. (जिला परिषद / Zila Parishad / ZP)
     if (!mapping.zilaParishad && (
+      clean.includes("जिप") ||
+      clean.includes("जिलापरिषद") ||
+      clean.includes("zilaparishad") ||
+      clean.includes("zpsankhya") ||
+      clean.includes("zpno") ||
+      clean === "zp" ||
+      clean.startsWith("zp") ||
       c.includes("जि. प.") ||
       c.includes("जि.प.") ||
       c.includes("जि प") ||
@@ -169,12 +177,21 @@ export function detectFieldMapping(columns: string[]) {
 
     // 0b. पं. स. (पंचायत समिति / Panchayat Samiti / PS)
     if (!mapping.panchayatSamiti && (
+      clean.includes("पंस") ||
+      clean.includes("पंचायतसमिति") ||
+      clean.includes("panchayatsamiti") ||
+      clean.includes("panchayatsamity") ||
+      clean.includes("pssankhya") ||
+      clean.includes("psno") ||
+      clean === "ps" ||
+      clean.startsWith("ps") ||
       c.includes("पं. स.") ||
       c.includes("पं.स.") ||
       c.includes("पं स") ||
       c.includes("पंचायत समिति") ||
       c.includes("पंचायतसमिति") ||
       c.includes("panchayat samiti") ||
+      c.includes("panchayat samity") ||
       c === "पं.स" ||
       c === "पं. स" ||
       c === "पंस" ||

@@ -6,6 +6,44 @@ import { VoterRecord } from "@/lib/types";
  * Maps a Prisma Voter record to the frontend VoterRecord interface.
  */
 function mapDbVoterToRecord(v: any): VoterRecord {
+  let zilaParishad = v.zilaParishad || "";
+  let panchayatSamiti = v.panchayatSamiti || "";
+  let userNotes = v.notes || "";
+
+  // Structured metadata stored in notes (e.g. { zp, ps, text })
+  if (v.notes && typeof v.notes === "string" && v.notes.startsWith("{")) {
+    try {
+      const parsedNotes = JSON.parse(v.notes);
+      if (parsedNotes && typeof parsedNotes === "object") {
+        if (parsedNotes.zp !== undefined && parsedNotes.zp !== null) zilaParishad = String(parsedNotes.zp).trim();
+        if (parsedNotes.ps !== undefined && parsedNotes.ps !== null) panchayatSamiti = String(parsedNotes.ps).trim();
+        if (parsedNotes.text !== undefined && parsedNotes.text !== null) userNotes = String(parsedNotes.text).trim();
+      }
+    } catch {}
+  }
+
+  // Fallbacks to extraData if present
+  if (!zilaParishad && v.extraData && typeof v.extraData === "object") {
+    zilaParishad =
+      v.extraData["जि. प."] ||
+      v.extraData["जि.प."] ||
+      v.extraData["जि. प. Sankhya"] ||
+      v.extraData["जि. प. संख्या"] ||
+      v.extraData["जिला परिषद"] ||
+      v.extraData["Zila Parishad"] ||
+      "";
+  }
+  if (!panchayatSamiti && v.extraData && typeof v.extraData === "object") {
+    panchayatSamiti =
+      v.extraData["पं. स."] ||
+      v.extraData["पं.स."] ||
+      v.extraData["पं. स. sankhya"] ||
+      v.extraData["पं. स. संख्या"] ||
+      v.extraData["पंचायत समिति"] ||
+      v.extraData["Panchayat Samiti"] ||
+      "";
+  }
+
   return {
     id: v.id,
     name: v.name,
@@ -16,8 +54,8 @@ function mapDbVoterToRecord(v: any): VoterRecord {
     house: v.house || "",
     booth: v.booth,
     serialNo: v.serialNo || "",
-    zilaParishad: v.zilaParishad || (v.extraData && (v.extraData["जि. प."] || v.extraData["जि.प."] || v.extraData["जिला परिषद"])) || "",
-    panchayatSamiti: v.panchayatSamiti || (v.extraData && (v.extraData["पं. स."] || v.extraData["पं.स."] || v.extraData["पंचायत समिति"])) || "",
+    zilaParishad: String(zilaParishad || "").trim(),
+    panchayatSamiti: String(panchayatSamiti || "").trim(),
     phone: v.phone || "",
     address: v.address || "",
     boothAddress: v.boothAddress || "",
@@ -26,7 +64,7 @@ function mapDbVoterToRecord(v: any): VoterRecord {
     isOutside: v.isOutside || "नहीं",
     status: (v.status as VoterRecord["status"]) || "Pending",
     worker: v.workerName || "Unassigned",
-    notes: v.notes || "",
+    notes: userNotes,
     slipMessage: v.slipMessage || "",
     candidateId: v.candidateId,
   };
@@ -186,6 +224,17 @@ export async function createVoter(
       ? String(data.epic).toUpperCase().trim()
       : `RJX${boothVal.padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
 
+  const zpVal = data.zilaParishad != null ? String(data.zilaParishad).trim() : "";
+  const psVal = data.panchayatSamiti != null ? String(data.panchayatSamiti).trim() : "";
+  const rawNote = data.notes != null ? String(data.notes).trim() : "";
+
+  let notesVal: string | null = null;
+  if (zpVal || psVal) {
+    notesVal = JSON.stringify({ zp: zpVal, ps: psVal, text: rawNote });
+  } else if (rawNote) {
+    notesVal = rawNote;
+  }
+
   let createdRecord: VoterRecord | null = null;
 
   try {
@@ -207,7 +256,7 @@ export async function createVoter(
         isOutside: data.isOutside != null ? String(data.isOutside) : "नहीं",
         status: data.status || (data.isSupporter === "हाँ" ? "In-Favor" : "Pending"),
         workerName: data.worker || "Unassigned",
-        notes: data.notes || null,
+        notes: notesVal,
         slipMessage: data.slipMessage || null,
         candidateId: data.candidateId,
       },
@@ -229,6 +278,8 @@ export async function createVoter(
     house: data.house || "",
     booth: boothVal,
     serialNo: data.serialNo,
+    zilaParishad: zpVal,
+    panchayatSamiti: psVal,
     phone: data.phone || "",
     address: data.address || "",
     boothAddress: data.boothAddress || "",
@@ -237,7 +288,7 @@ export async function createVoter(
     isOutside: data.isOutside || "नहीं",
     status: data.status || (data.isSupporter === "हाँ" ? "In-Favor" : "Pending"),
     worker: data.worker || "Unassigned",
-    notes: data.notes || "",
+    notes: rawNote,
     candidateId: data.candidateId,
     slipMessage: data.slipMessage || "",
   });
@@ -291,7 +342,35 @@ export async function updateVoter(
     if (updates.isOutside !== undefined) dataToUpdate.isOutside = String(updates.isOutside);
     if (updates.status !== undefined) dataToUpdate.status = updates.status;
     if (updates.worker !== undefined) dataToUpdate.workerName = updates.worker;
-    if (updates.notes !== undefined) dataToUpdate.notes = updates.notes;
+    // Handle notes / zp / ps updates
+    if (updates.notes !== undefined || updates.zilaParishad !== undefined || updates.panchayatSamiti !== undefined) {
+      let currentZp = "";
+      let currentPs = "";
+      let currentNote = "";
+      try {
+        const existing = await prisma.voter.findUnique({ where: { id }, select: { notes: true } });
+        if (existing?.notes && existing.notes.startsWith("{")) {
+          const parsed = JSON.parse(existing.notes);
+          if (parsed.zp) currentZp = parsed.zp;
+          if (parsed.ps) currentPs = parsed.ps;
+          if (parsed.text !== undefined) currentNote = parsed.text;
+        } else if (existing?.notes) {
+          currentNote = existing.notes;
+        }
+      } catch {}
+
+      const finalZp = updates.zilaParishad !== undefined ? String(updates.zilaParishad).trim() : currentZp;
+      const finalPs = updates.panchayatSamiti !== undefined ? String(updates.panchayatSamiti).trim() : currentPs;
+      const finalNote = updates.notes !== undefined ? String(updates.notes).trim() : currentNote;
+
+      if (finalZp || finalPs) {
+        dataToUpdate.notes = JSON.stringify({ zp: finalZp, ps: finalPs, text: finalNote });
+      } else {
+        dataToUpdate.notes = finalNote || null;
+      }
+    } else if (updates.notes !== undefined) {
+      dataToUpdate.notes = updates.notes;
+    }
     if (updates.slipMessage !== undefined) dataToUpdate.slipMessage = updates.slipMessage;
 
     const dbVoter = await prisma.voter.update({
@@ -382,6 +461,17 @@ export async function batchImportVoters(
     const parsedSerialNum = rawSerial !== "" ? parseInt(rawSerial.replace(/\D/g, ""), 10) : NaN;
     const serialVal = !isNaN(parsedSerialNum) && parsedSerialNum > 0 ? String(parsedSerialNum) : String(idx + 1);
 
+    const zpVal = raw.zilaParishad != null ? String(raw.zilaParishad).trim() : "";
+    const psVal = raw.panchayatSamiti != null ? String(raw.panchayatSamiti).trim() : "";
+    const rawNote = raw.notes != null ? String(raw.notes).trim() : "";
+
+    let notesVal: string | null = null;
+    if (zpVal || psVal) {
+      notesVal = JSON.stringify({ zp: zpVal, ps: psVal, text: rawNote });
+    } else if (rawNote) {
+      notesVal = rawNote;
+    }
+
     const dbRecord = {
       name,
       epic: epicVal,
@@ -399,7 +489,7 @@ export async function batchImportVoters(
       isOutside: raw.isOutside ? String(raw.isOutside).trim() : "नहीं",
       status: raw.status || (raw.isSupporter === "हाँ" ? "In-Favor" : "Pending"),
       workerName: raw.worker || raw.workerName || "Unassigned",
-      notes: raw.notes ? String(raw.notes).trim() : null,
+      notes: notesVal,
       slipMessage: raw.slipMessage ? String(raw.slipMessage).trim() : null,
       candidateId,
     };
@@ -407,6 +497,9 @@ export async function batchImportVoters(
     normalizedRecords.push(dbRecord);
     storeItems.push({
       ...dbRecord,
+      zilaParishad: zpVal,
+      panchayatSamiti: psVal,
+      notes: rawNote,
       worker: dbRecord.workerName,
     });
   }
