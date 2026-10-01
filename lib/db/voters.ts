@@ -16,6 +16,8 @@ function mapDbVoterToRecord(v: any): VoterRecord {
     house: v.house || "",
     booth: v.booth,
     serialNo: v.serialNo || "",
+    zilaParishad: v.zilaParishad || (v.extraData && (v.extraData["जि. प."] || v.extraData["जि.प."] || v.extraData["जिला परिषद"])) || "",
+    panchayatSamiti: v.panchayatSamiti || (v.extraData && (v.extraData["पं. स."] || v.extraData["पं.स."] || v.extraData["पंचायत समिति"])) || "",
     phone: v.phone || "",
     address: v.address || "",
     boothAddress: v.boothAddress || "",

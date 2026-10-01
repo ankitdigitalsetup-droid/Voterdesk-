@@ -51,6 +51,7 @@ export function parseExcelFile(file: File, sheetName?: string): Promise<ParsedSh
         }
 
         const keywords = [
+          "जि. प.", "जि.प.", "पं. स.", "पं.स.", "जिला परिषद", "पंचायत समिति", "zp", "ps",
           "नाम", "name", "क्रम", "sr", "serial", "booth", "भाग", "बूथ",
           "epic", "पहचान", "आयु", "age", "पिता", "पति", "father", "husband",
           "मकान", "house", "पता", "address", "मोबाइल", "phone", "mobile", "gender", "लिंग"
@@ -126,6 +127,8 @@ export function getExcelSheetNames(file: File): Promise<string[]> {
 // Auto-detect matching field based on common Hindi & English headers
 export function detectFieldMapping(columns: string[]) {
   const mapping: Record<string, string> = {
+    zilaParishad: "",
+    panchayatSamiti: "",
     booth: "",
     serialNo: "",
     name: "",
@@ -145,6 +148,42 @@ export function detectFieldMapping(columns: string[]) {
 
   for (const col of columns) {
     const c = col.trim().toLowerCase();
+
+    // 0a. जि. प. (जिला परिषद / Zila Parishad / ZP)
+    if (!mapping.zilaParishad && (
+      c.includes("जि. प.") ||
+      c.includes("जि.प.") ||
+      c.includes("जि प") ||
+      c.includes("जिला परिषद") ||
+      c.includes("जिलापरिषद") ||
+      c.includes("zila parishad") ||
+      c === "जि.प" ||
+      c === "जि. प" ||
+      c === "जिप" ||
+      c === "zp" ||
+      c.startsWith("zp ") ||
+      c.includes("z.p")
+    )) {
+      mapping.zilaParishad = col;
+    }
+
+    // 0b. पं. स. (पंचायत समिति / Panchayat Samiti / PS)
+    if (!mapping.panchayatSamiti && (
+      c.includes("पं. स.") ||
+      c.includes("पं.स.") ||
+      c.includes("पं स") ||
+      c.includes("पंचायत समिति") ||
+      c.includes("पंचायतसमिति") ||
+      c.includes("panchayat samiti") ||
+      c === "पं.स" ||
+      c === "पं. स" ||
+      c === "पंस" ||
+      c === "ps" ||
+      c.startsWith("ps ") ||
+      c.includes("p.s")
+    )) {
+      mapping.panchayatSamiti = col;
+    }
 
     // 1. भाग / बूथ (Part / Booth No)
     if (!mapping.booth && (c.includes("भाग") || c.includes("part") || c.includes("booth") || c.includes("बूथ") || c.includes("ward") || c.includes("वार्ड") || c.includes("room"))) {
@@ -247,6 +286,8 @@ export function detectFieldMapping(columns: string[]) {
 export function downloadSampleExcelTemplate() {
   const sampleData = [
     {
+      "जि. प.": "12",
+      "पं. स.": "04",
       "वार्ड संख्या": "1",
       "क्रम संख्या": 1,
       "नाम": "मंगल चन्द",
@@ -263,6 +304,8 @@ export function downloadSampleExcelTemplate() {
       "Status (Active/Deleted)": "Active",
     },
     {
+      "जि. प.": "12",
+      "पं. स.": "04",
       "वार्ड संख्या": "1",
       "क्रम संख्या": 2,
       "नाम": "ज़रीना",
@@ -279,6 +322,8 @@ export function downloadSampleExcelTemplate() {
       "Status (Active/Deleted)": "Active",
     },
     {
+      "जि. प.": "12",
+      "पं. स.": "04",
       "वार्ड संख्या": "1",
       "क्रम संख्या": 3,
       "नाम": "गौरव शर्मा",
@@ -295,6 +340,8 @@ export function downloadSampleExcelTemplate() {
       "Status (Active/Deleted)": "Deleted",
     },
     {
+      "जि. प.": "12",
+      "पं. स.": "04",
       "वार्ड संख्या": "1",
       "क्रम संख्या": 4,
       "नाम": "राकेश कुमार शर्मा",

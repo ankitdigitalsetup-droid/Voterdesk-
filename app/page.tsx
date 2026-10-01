@@ -448,6 +448,8 @@ export default function Page() {
                 return;
               }
               const exportRows = voters.map((v, idx) => ({
+                "जि. प.": v.zilaParishad || "—",
+                "पं. स.": v.panchayatSamiti || "—",
                 "वार्ड संख्या (Ward No)": v.booth || "—",
                 "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
                 "मतदाता का नाम (Name)": v.name || "",
@@ -1049,6 +1051,8 @@ function SuperAdminView({
 
       const mapping = detectFieldMapping(parsed.columns);
       const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx) => {
+        const zpVal = mapping.zilaParishad && r[mapping.zilaParishad] ? String(r[mapping.zilaParishad]).trim() : (r["जि. प."] || r["जि.प."] || r["जिला परिषद"] ? String(r["जि. प."] || r["जि.प."] || r["जिला परिषद"]).trim() : "");
+        const psVal = mapping.panchayatSamiti && r[mapping.panchayatSamiti] ? String(r[mapping.panchayatSamiti]).trim() : (r["पं. स."] || r["पं.स."] || r["पंचायत समिति"] ? String(r["पं. स."] || r["पं.स."] || r["पंचायत समिति"]).trim() : "");
         const boothVal = mapping.booth && r[mapping.booth] ? String(r[mapping.booth]).trim() : "1";
         const serialVal = mapping.serialNo && r[mapping.serialNo] ? Number(String(r[mapping.serialNo]).replace(/\D/g, "")) || (idx + 1) : idx + 1;
         const nameVal = mapping.name && r[mapping.name] ? String(r[mapping.name]).trim() : `मतदाता ${idx + 1}`;
@@ -1070,6 +1074,8 @@ function SuperAdminView({
         const isDel = isVoterDeleted({ voterStatus: voterStatusVal, extraData: r } as VoterRecord);
         return {
           candidateId: saUploadCand ? saUploadCand.id : "cand_1",
+          zilaParishad: zpVal,
+          panchayatSamiti: psVal,
           booth: boothVal,
           serialNo: serialVal,
           name: nameVal,
@@ -1284,6 +1290,8 @@ function SuperAdminView({
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
         .map((row, idx) => {
+          const zpVal = mapping.zilaParishad && row[mapping.zilaParishad] !== undefined ? String(row[mapping.zilaParishad]).trim() : (row["जि. प."] || row["जि.प."] || row["जिला परिषद"] ? String(row["जि. प."] || row["जि.प."] || row["जिला परिषद"]).trim() : "");
+          const psVal = mapping.panchayatSamiti && row[mapping.panchayatSamiti] !== undefined ? String(row[mapping.panchayatSamiti]).trim() : (row["पं. स."] || row["पं.स."] || row["पंचायत समिति"] ? String(row["पं. स."] || row["पं.स."] || row["पंचायत समिति"]).trim() : "");
           const boothVal = String(row[mapping.booth] || "1").trim();
           const serialVal = row[mapping.serialNo] ? Number(row[mapping.serialNo]) || (idx + 1) : (idx + 1);
           const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
@@ -1311,6 +1319,8 @@ function SuperAdminView({
             name: String(row[mapping.name] || "").trim(),
             guardian: String(row[mapping.guardian] || "").trim(),
             epic: epicVal,
+            zilaParishad: zpVal,
+            panchayatSamiti: psVal,
             booth: boothVal,
             serialNo: serialVal,
             age: ageVal,
@@ -3767,6 +3777,8 @@ function BoothManagerView({
 
   // New Voter Form state
   const [voterForm, setVoterForm] = useState({
+    zilaParishad: "",
+    panchayatSamiti: "",
     name: "",
     guardian: "",
     booth: "1",
@@ -4073,7 +4085,8 @@ function BoothManagerView({
   // 4. वोटर स्लिप (Formatted Slip Copy & Share)
   const handleShareVoterSlip = async () => {
     if (!activeActionVoter) return;
-    const slipText = `क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth}
+    const slipText = `जि. प. : ${activeActionVoter.zilaParishad || "—"}     पं. स. : ${activeActionVoter.panchayatSamiti || "—"}
+क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth}
 नाम : ${activeActionVoter.name}
 पिता/पति : ${activeActionVoter.guardian || "—"}
 उम्र : ${activeActionVoter.age || "—"}     मकान नंबर : ${activeActionVoter.house || "—"}
@@ -4256,10 +4269,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.fillText(`👨‍👩‍👧‍👦 परिवार मतदाता पर्ची / FAMILY VOTER SLIP (मकान नं: ${familyFilter?.house || "—"})`, 40, 808);
 
       ctx.fillStyle = "#64748b";
-      ctx.font = "bold 18px sans-serif";
-      const rightHeaderText = `वार्ड संख्या: ${familyFilter?.booth || "1"} | कुल सदस्य: ${selectedFamilyVoters.length}`;
+      ctx.font = "bold 17px sans-serif";
+      const rightHeaderText = `जि.प.: ${selectedFamilyVoters[0]?.zilaParishad || "—"} | पं.स.: ${selectedFamilyVoters[0]?.panchayatSamiti || "—"} | वार्ड: ${familyFilter?.booth || "1"}`;
       const rHeaderW = ctx.measureText(rightHeaderText).width;
-      const rHeaderX = Math.max(w / 2 + 20, (w - 40) - rHeaderW);
+      const rHeaderX = Math.max(w / 2 + 10, (w - 40) - rHeaderW);
       ctx.textAlign = "left";
       ctx.fillText(rightHeaderText, rHeaderX, 808);
 
@@ -4300,57 +4313,70 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.strokeRect(x, y, cardW, cardH);
           ctx.setLineDash([]); // reset
 
-          // Top blue banner inside card
+          // Top blue banner inside card (Two rows: जि.प./पं.स. & क्रम/वार्ड)
           ctx.fillStyle = "#eff6ff";
-          ctx.fillRect(x + 4, y + 4, cardW - 8, 38);
+          ctx.fillRect(x + 4, y + 4, cardW - 8, 46);
 
-          ctx.fillStyle = "#1e40af";
-          ctx.font = "bold 18px sans-serif";
+          // Row 1: जि. प. & पं. स.
+          ctx.fillStyle = "#0369a1";
+          ctx.font = "bold 15px sans-serif";
           ctx.textAlign = "left";
-          ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : slotIndex + 1}`, x + 16, y + 29);
+          ctx.fillText(`जि. प. : ${v.zilaParishad || "—"}`, x + 16, y + 22);
+
+          const psMiniText = `पं. स. : ${v.panchayatSamiti || "—"}`;
+          const psMiniW = ctx.measureText(psMiniText).width;
+          const psMiniX = Math.max(x + 320, (x + cardW - 18) - psMiniW);
+          ctx.textAlign = "left";
+          ctx.fillText(psMiniText, psMiniX, y + 22);
+
+          // Row 2: क्रम सं & वार्ड सं
+          ctx.fillStyle = "#1e40af";
+          ctx.font = "bold 16px sans-serif";
+          ctx.textAlign = "left";
+          ctx.fillText(`क्रम सं : ${v.serialNo !== undefined ? v.serialNo : slotIndex + 1}`, x + 16, y + 42);
 
           const wardText = `वार्ड सं : ${v.booth || "—"}`;
           const wardW = ctx.measureText(wardText).width;
           const wardX = Math.max(x + 320, (x + cardW - 18) - wardW);
           ctx.textAlign = "left";
-          ctx.fillText(wardText, wardX, y + 29);
+          ctx.fillText(wardText, wardX, y + 42);
 
           // Name
           ctx.fillStyle = "#0f172a";
-          ctx.font = "bold 21px sans-serif";
+          ctx.font = "bold 20px sans-serif";
           ctx.textAlign = "left";
-          ctx.fillText(`नाम : ${v.name}`, x + 16, y + 74);
+          ctx.fillText(`नाम : ${v.name}`, x + 16, y + 76);
 
           // Guardian
           ctx.fillStyle = "#334155";
-          ctx.font = "17px sans-serif";
+          ctx.font = "16px sans-serif";
           ctx.textAlign = "left";
-          ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 106);
+          ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 104);
 
           // Age & House
           ctx.fillStyle = "#334155";
-          ctx.font = "bold 17px sans-serif";
+          ctx.font = "bold 16px sans-serif";
           ctx.textAlign = "left";
-          ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 138);
+          ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 134);
 
           const houseText = `मकान नं : ${v.house || "—"}`;
           const houseW = ctx.measureText(houseText).width;
           const houseX = Math.max(x + 320, (x + cardW - 18) - houseW);
           ctx.textAlign = "left";
-          ctx.fillText(houseText, houseX, y + 138);
+          ctx.fillText(houseText, houseX, y + 134);
 
           // Voter ID (EPIC)
           ctx.textAlign = "left";
           ctx.fillStyle = "#0369a1";
-          ctx.font = "bold 18px monospace";
-          ctx.fillText(`वोटर ID : ${v.epic}`, x + 16, y + 172);
+          ctx.font = "bold 17px monospace";
+          ctx.fillText(`वोटर ID : ${v.epic}`, x + 16, y + 166);
 
           // Divider
           ctx.strokeStyle = "#e2e8f0";
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(x + 12, y + 188);
-          ctx.lineTo(x + cardW - 12, y + 188);
+          ctx.moveTo(x + 12, y + 182);
+          ctx.lineTo(x + cardW - 12, y + 182);
           ctx.stroke();
 
           // Polling Station / Booth Address
@@ -4358,7 +4384,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.font = "14px sans-serif";
           ctx.textAlign = "left";
           const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
-          ctx.fillText(addrText.length > 44 ? addrText.substring(0, 44) + "..." : addrText, x + 16, y + 218);
+          ctx.fillText(addrText.length > 44 ? addrText.substring(0, 44) + "..." : addrText, x + 16, y + 212);
         } else {
           // Draw empty / blank card placeholder (preserving the 6-slot geometry, leaving slot blank)
           ctx.fillStyle = "#ffffff";
@@ -4524,11 +4550,11 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // 5. Voter Slip Header Card (745 to 1215px)
+      // 5. Voter Slip Header Card (740 to 1225px)
       const cardX = 35;
-      const cardY = 745;
+      const cardY = 740;
       const cardW = w - 70;
-      const cardH = 475;
+      const cardH = 485;
 
       // Card background
       ctx.fillStyle = "#ffffff";
@@ -4541,20 +4567,35 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.strokeRect(cardX, cardY, cardW, cardH);
       ctx.setLineDash([]);
 
-      // Card Top Ribbon: Serial No (Left) & Part/Booth No (Right)
+      // Card Top Ribbon: Two clean rows:
+      // Row 1: जि. प. (Zila Parishad) & पं. स. (Panchayat Samiti)
+      // Row 2: Serial No (क्रम सं) & Part/Ward No (वार्ड सं)
       ctx.fillStyle = "#eff6ff";
-      ctx.fillRect(cardX + 4, cardY + 4, cardW - 8, 55);
+      ctx.fillRect(cardX + 4, cardY + 4, cardW - 8, 72);
 
-      ctx.fillStyle = "#1e40af";
-      ctx.font = "bold 26px sans-serif";
+      // Row 1: जि. प. (Left) & पं. स. (Right)
+      ctx.fillStyle = "#0369a1";
+      ctx.font = "bold 22px sans-serif";
       ctx.textAlign = "left";
-      ctx.fillText(`क्रम सं : ${v.serialNo || "—"}`, cardX + 24, cardY + 40);
+      ctx.fillText(`जि. प. : ${v.zilaParishad || "—"}`, cardX + 24, cardY + 30);
+
+      const psText = `पं. स. : ${v.panchayatSamiti || "—"}`;
+      const psW = ctx.measureText(psText).width;
+      const psX = Math.max(cardX + 450, (cardX + cardW - 24) - psW);
+      ctx.textAlign = "left";
+      ctx.fillText(psText, psX, cardY + 30);
+
+      // Row 2: क्रम सं : ${v.serialNo || "—"} & वार्ड सं : ${v.booth || "—"}
+      ctx.fillStyle = "#1e40af";
+      ctx.font = "bold 24px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(`क्रम सं : ${v.serialNo || "—"}`, cardX + 24, cardY + 64);
 
       const wardText = `वार्ड सं : ${v.booth || "—"}`;
       const wardW = ctx.measureText(wardText).width;
       const wardX = Math.max(cardX + 450, (cardX + cardW - 24) - wardW);
       ctx.textAlign = "left";
-      ctx.fillText(wardText, wardX, cardY + 40);
+      ctx.fillText(wardText, wardX, cardY + 64);
 
       // Name (Large Bold)
       ctx.fillStyle = "#0f172a";
@@ -4643,6 +4684,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 *उम्मीदवार:* ${candName} (${candParty})
 🗳️ *${campaignMsg}*
 ----------------------------------------
+*जि. प. (Zila Parishad) :* ${v.zilaParishad || "—"}     *पं. स. (Panchayat Samiti) :* ${v.panchayatSamiti || "—"}
 *क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}
 *नाम (Name) :* ${v.name}
 *पिता/पति (Guardian) :* ${v.guardian || "—"}
@@ -4788,8 +4830,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         .map((v, i) => `${i + 1}. ${v.name} (क्र. ${v.serialNo !== undefined ? v.serialNo : i + 1}, EPIC: ${v.epic})`)
         .join("\n");
 
+      const zpPsFamily = (selectedFamilyVoters[0]?.zilaParishad || selectedFamilyVoters[0]?.panchayatSamiti)
+        ? `*जि. प.:* ${selectedFamilyVoters[0]?.zilaParishad || "—"} | *पं. स.:* ${selectedFamilyVoters[0]?.panchayatSamiti || "—"}\n`
+        : `*जि. प.:* ${selectedFamilyVoters[0]?.zilaParishad || "—"} | *पं. स.:* ${selectedFamilyVoters[0]?.panchayatSamiti || "—"}\n`;
+
       const caption = `*🇮🇳 परिवार मतदाता पर्ची (FAMILY VOTER SLIP) 🇮🇳*\n\n` +
         `*प्रत्याशी:* ${candidate?.name || "सम्मानित प्रत्याशी"} (${candidate?.party || "निर्दलीय"})\n` +
+        zpPsFamily +
         `*वार्ड संख्या:* ${familyFilter?.booth || "—"} | *मकान नं:* ${familyFilter?.house || "—"}\n\n` +
         `*परिवार के कुल मतदाता:* ${selectedFamilyVoters.length}\n` +
         `${slipSummary}\n\n` +
@@ -4839,6 +4886,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         `*उम्मीदवार:* ${candName} (${candParty})\n` +
         `🗳️ *${campaignMsg}*\n` +
         `----------------------------------------\n` +
+        `*जि. प. (Zila Parishad) :* ${v.zilaParishad || "—"}     *पं. स. (Panchayat Samiti) :* ${v.panchayatSamiti || "—"}\n` +
         `*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}\n` +
         `*नाम (Name) :* ${v.name}\n` +
         `*पिता/पति (Guardian) :* ${v.guardian || "—"}\n` +
@@ -4873,7 +4921,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       if (!res) return;
       const fileName = `VoterSlip_${v.name.replace(/\s+/g, "_")}_Ward${v.booth || "1"}.png`;
       const file = new File([res.blob], fileName, { type: "image/png" });
-      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*वार्ड सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
+      const caption = `*🇮🇳 मतदाता पर्ची (VOTER SLIP) 🇮🇳*\n*उम्मीदवार:* ${candidate?.name || "प्रत्याशी"}\n*जि. प.:* ${v.zilaParishad || "—"} | *पं. स.:* ${v.panchayatSamiti || "—"}\n*मतदाता:* ${v.name}\n*वोटर ID:* ${v.epic}\n*वार्ड सं:* ${v.booth} | *क्रम सं:* ${v.serialNo || "—"}`;
 
       // 1. Android Native Share Bridge:
       if (typeof window !== "undefined" && (window as any).VoterDeskNative?.shareSlip) {
@@ -5142,6 +5190,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const exportRows = paginatedVoters.map((v, idx) => {
         const row: Record<string, any> = {
+          "जि. प.": v.zilaParishad || "—",
+          "पं. स.": v.panchayatSamiti || "—",
           "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
@@ -5223,6 +5273,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     try {
       const exportRows = voters.map((v, idx) => {
         const row: Record<string, any> = {
+          "जि. प.": v.zilaParishad || "—",
+          "पं. स.": v.panchayatSamiti || "—",
           "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
@@ -5333,6 +5385,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     }
     const epicVal = voterForm.epic.trim().toUpperCase() || "RJX" + Math.floor(1000000 + Math.random() * 9000000);
     const added = store.addVoter({
+      zilaParishad: voterForm.zilaParishad.trim(),
+      panchayatSamiti: voterForm.panchayatSamiti.trim(),
       name: voterForm.name.trim(),
       guardian: voterForm.guardian.trim(),
       booth: voterForm.booth.trim() || "1",
@@ -5359,6 +5413,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       body: JSON.stringify({
         candidateId: candidateId || "cand_1",
         newVoter: {
+          zilaParishad: voterForm.zilaParishad.trim(),
+          panchayatSamiti: voterForm.panchayatSamiti.trim(),
           name: voterForm.name.trim(),
           guardian: voterForm.guardian.trim(),
           booth: voterForm.booth.trim() || "1",
@@ -5385,6 +5441,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     setShowUpdateModal(false);
     setSelectedVoter(added);
     setVoterForm({
+      zilaParishad: "",
+      panchayatSamiti: "",
       name: "",
       guardian: "",
       booth: "1",
@@ -5411,6 +5469,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       const mapping = detectFieldMapping(parsed.columns);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const toImport = parsed.rows.map((row, idx) => {
+        const zpVal = mapping.zilaParishad && row[mapping.zilaParishad] !== undefined ? String(row[mapping.zilaParishad]).trim() : (row["जि. प."] || row["जि.प."] || row["जिला परिषद"] ? String(row["जि. प."] || row["जि.प."] || row["जिला परिषद"]).trim() : "");
+        const psVal = mapping.panchayatSamiti && row[mapping.panchayatSamiti] !== undefined ? String(row[mapping.panchayatSamiti]).trim() : (row["पं. स."] || row["पं.स."] || row["पंचायत समिति"] ? String(row["पं. स."] || row["पं.स."] || row["पंचायत समिति"]).trim() : "");
         const boothVal = String(row[mapping.booth] || "1").trim();
         const serialVal = mapping.serialNo && row[mapping.serialNo] ? Number(row[mapping.serialNo]) : (idx + 1);
         const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
@@ -5442,6 +5502,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           name: String(row[mapping.name] || "").trim(),
           epic: epicVal,
           guardian: String(row[mapping.guardian] || "").trim(),
+          zilaParishad: zpVal,
+          panchayatSamiti: psVal,
           age: ageVal,
           gender: String(row[mapping.gender] || "Male"),
           house: String(row[mapping.house] || "").trim(),
@@ -6607,6 +6669,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   />
                 </th>
               )}
+              <th style={{ width: "65px", textAlign: "center" }}>{t.colZilaParishad}</th>
+              <th style={{ width: "65px", textAlign: "center" }}>{t.colPanchayatSamiti}</th>
               <th style={{ width: "55px" }}>{t.colPart}</th>
               <th
                 style={{ width: "80px", position: "relative", cursor: "pointer", userSelect: "none" }}
@@ -7029,7 +7093,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           <tbody>
             {filteredVoters.length === 0 ? (
               <tr>
-                <td colSpan={(familyFilter ? 15 : 14) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                <td colSpan={(familyFilter ? 17 : 16) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
                   {t.noVotersMatch}
                 </td>
               </tr>
@@ -7084,7 +7148,17 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       </td>
                     )}
 
-                    {/* 1. भाग संख्या */}
+                    {/* 0a. जि. प. */}
+                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>
+                      {v.zilaParishad || "—"}
+                    </td>
+
+                    {/* 0b. पं. स. */}
+                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>
+                      {v.panchayatSamiti || "—"}
+                    </td>
+
+                    {/* 1. भाग संख्या / वार्ड संख्या */}
                     <td className="colPart">{v.booth}</td>
 
                     {/* 2. क्रम संख्या */}
@@ -7602,6 +7676,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               }}
               onClick={() => {
                 setVoterForm({
+                  zilaParishad: selectedVoter.zilaParishad || "",
+                  panchayatSamiti: selectedVoter.panchayatSamiti || "",
                   name: selectedVoter.name,
                   guardian: selectedVoter.guardian || "",
                   booth: selectedVoter.booth,
@@ -8062,6 +8138,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
               }`}
             >
               <div className="bmSlipRow">
+                <span><b>जि. प. : {activeActionVoter.zilaParishad || "—"}</b></span>
+                <span><b>पं. स. : {activeActionVoter.panchayatSamiti || "—"}</b></span>
+              </div>
+              <div className="bmSlipRow">
                 <span><b>क्रम सं : {activeActionVoter.serialNo || "—"}</b></span>
                 <span><b>वार्ड सं : {activeActionVoter.booth || "—"}</b></span>
               </div>
@@ -8126,6 +8206,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
             {/* Dotted Voter Slip Card */}
             <div className="bmDottedSlipCard">
+              <div className="bmSlipRow">
+                <span><b>जि. प. :</b> {activeActionVoter.zilaParishad || "—"}</span>
+                <span><b>पं. स. :</b> {activeActionVoter.panchayatSamiti || "—"}</span>
+              </div>
               <div className="bmSlipRow">
                 <span><b>क्रम सं :</b> {activeActionVoter.serialNo || "—"}</span>
                 <span><b>वार्ड सं :</b> {activeActionVoter.booth || "—"}</span>
@@ -8927,6 +9011,25 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                         value={voterForm.guardian}
                         onChange={(e) => setVoterForm({ ...voterForm, guardian: e.target.value })}
                         placeholder="जैसे: पांचू राम"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="inputGrid">
+                    <div className="formGroup">
+                      <label>{t.colZilaParishad}</label>
+                      <input
+                        value={voterForm.zilaParishad}
+                        onChange={(e) => setVoterForm({ ...voterForm, zilaParishad: e.target.value })}
+                        placeholder="जैसे: 12"
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>{t.colPanchayatSamiti}</label>
+                      <input
+                        value={voterForm.panchayatSamiti}
+                        onChange={(e) => setVoterForm({ ...voterForm, panchayatSamiti: e.target.value })}
+                        placeholder="जैसे: 04"
                       />
                     </div>
                   </div>
@@ -9913,6 +10016,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   </div>
                   <div>
                     <span className="a4BottomSub">
+                      {selectedFamilyVoters[0]?.zilaParishad ? `जि.प.: ${selectedFamilyVoters[0].zilaParishad} • ` : ""}
+                      {selectedFamilyVoters[0]?.panchayatSamiti ? `पं.स.: ${selectedFamilyVoters[0].panchayatSamiti} • ` : ""}
                       वार्ड सं: {familyFilter?.booth || "—"} • {selectedFamilyVoters.length} सदस्य ({6 - selectedFamilyVoters.length} रिक्त स्थान)
                     </span>
                   </div>
@@ -9926,6 +10031,10 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                       return (
                         <div key={v.id} className="a4MiniSlipCard">
                           <div>
+                            <div className="a4SlipTopRow" style={{ color: "#0369a1", fontWeight: 700, fontSize: "11px", marginBottom: "2px" }}>
+                              <span>जि. प. : {v.zilaParishad || "—"}</span>
+                              <span>पं. स. : {v.panchayatSamiti || "—"}</span>
+                            </div>
                             <div className="a4SlipTopRow">
                               <span>क्रम सं : {v.serialNo !== undefined ? v.serialNo : slotIdx + 1}</span>
                               <span>वार्ड सं : {v.booth || "—"}</span>
@@ -10142,6 +10251,8 @@ function VotersTable({
   const [showAddModal, setShowAddModal] = useState(false);
 
   const [newVoter, setNewVoter] = useState({
+    zilaParishad: "",
+    panchayatSamiti: "",
     name: "",
     epic: "",
     guardian: "",
@@ -10320,6 +10431,8 @@ function VotersTable({
 
     setShowAddModal(false);
     setNewVoter({
+      zilaParishad: "",
+      panchayatSamiti: "",
       name: "",
       epic: "",
       guardian: "",
@@ -10342,6 +10455,8 @@ function VotersTable({
   const handleExportCSV = () => {
     if (filtered.length === 0) return;
     const headers = [
+      "जि. प.",
+      "पं. स.",
       "वार्ड संख्या",
       "क्रम संख्या",
       "नाम",
@@ -10361,6 +10476,8 @@ function VotersTable({
       "Status (Active/Deleted)"
     ];
     const rows = filtered.map((v, idx) => [
+      `"${(v.zilaParishad || "").replace(/"/g, '""')}"`,
+      `"${(v.panchayatSamiti || "").replace(/"/g, '""')}"`,
       v.booth,
       v.serialNo !== undefined ? v.serialNo : (idx + 1),
       `"${(v.name || "").replace(/"/g, '""')}"`,
@@ -10396,6 +10513,8 @@ function VotersTable({
     try {
       const exportRows = filtered.map((v, idx) => {
         const row: Record<string, any> = {
+          "जि. प.": v.zilaParishad || "—",
+          "पं. स.": v.panchayatSamiti || "—",
           "वार्ड संख्या (Ward No)": v.booth || "—",
           "क्रम संख्या (Serial No)": v.serialNo !== undefined && v.serialNo !== "" ? v.serialNo : idx + 1,
           "मतदाता का नाम (Name)": v.name || "",
@@ -10674,6 +10793,8 @@ function VotersTable({
           <table style={{ minWidth: "1150px" }}>
             <thead>
               <tr>
+                <th style={{ width: "65px", textAlign: "center" }}>जि. प.</th>
+                <th style={{ width: "65px", textAlign: "center" }}>पं. स.</th>
                 <th style={{ width: "65px" }}>वार्ड संख्या</th>
                 <th
                   style={{ width: "85px", position: "relative", cursor: "pointer", userSelect: "none" }}
@@ -11086,6 +11207,12 @@ function VotersTable({
 
                 return (
                   <tr key={v.id} className={isDeleted ? "deletedRow" : ""}>
+                    {/* 0a. जि. प. */}
+                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>{v.zilaParishad || "—"}</td>
+
+                    {/* 0b. पं. स. */}
+                    <td style={{ textAlign: "center", fontWeight: 600, color: "#0369a1" }}>{v.panchayatSamiti || "—"}</td>
+
                     {/* 1. भाग संख्या */}
                     <td style={{ textAlign: "center", fontWeight: 600 }}>{v.booth}</td>
 
@@ -11311,7 +11438,7 @@ function VotersTable({
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={15 + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "var(--muted)" }}>
+                  <td colSpan={17 + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "var(--muted)" }}>
                     No voters match your search or filter criteria.
                   </td>
                 </tr>
@@ -11330,6 +11457,25 @@ function VotersTable({
               <button onClick={() => setShowAddModal(false)}><X /></button>
             </div>
             <form onSubmit={handleAddVoter} className="modalBody">
+              <div className="inputGrid">
+                <div className="formGroup">
+                  <label>जि. प. (Zila Parishad)</label>
+                  <input
+                    placeholder="e.g. 12"
+                    value={newVoter.zilaParishad}
+                    onChange={(e) => setNewVoter({ ...newVoter, zilaParishad: e.target.value })}
+                  />
+                </div>
+                <div className="formGroup">
+                  <label>पं. स. (Panchayat Samiti)</label>
+                  <input
+                    placeholder="e.g. 04"
+                    value={newVoter.panchayatSamiti}
+                    onChange={(e) => setNewVoter({ ...newVoter, panchayatSamiti: e.target.value })}
+                  />
+                </div>
+              </div>
+
               <div className="inputGrid">
                 <div className="formGroup">
                   <label>Voter Full Name *</label>
@@ -11577,6 +11723,8 @@ function RealExcelImporter({
 
     const mappedColNames = new Set(Object.values(fieldMap).filter(Boolean));
     const votersToImport = parsedData.rows.map((row, idx) => {
+      const zpVal = fieldMap.zilaParishad && row[fieldMap.zilaParishad] !== undefined ? String(row[fieldMap.zilaParishad]).trim() : (row["जि. प."] || row["जि.प."] || row["जिला परिषद"] ? String(row["जि. प."] || row["जि.प."] || row["जिला परिषद"]).trim() : "");
+      const psVal = fieldMap.panchayatSamiti && row[fieldMap.panchayatSamiti] !== undefined ? String(row[fieldMap.panchayatSamiti]).trim() : (row["पं. स."] || row["पं.स."] || row["पंचायत समिति"] ? String(row["पं. स."] || row["पं.स."] || row["पंचायत समिति"]).trim() : "");
       const name = String(row[fieldMap.name] || "").trim();
       const booth = String(row[fieldMap.booth] || "1").trim();
       const serialRaw = row[fieldMap.serialNo];
@@ -11607,6 +11755,8 @@ function RealExcelImporter({
         name,
         epic,
         guardian: String(row[fieldMap.guardian] || "").trim(),
+        zilaParishad: zpVal,
+        panchayatSamiti: psVal,
         age: ageVal,
         gender: String(row[fieldMap.gender] || "Male"),
         house: String(row[fieldMap.house] || "").trim(),

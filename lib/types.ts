@@ -60,6 +60,8 @@ export interface VoterRecord {
   house: string;
   booth: string;
   serialNo?: number | string; // Serial number in voter roll (क्र सं.)
+  zilaParishad?: string; // जि. प. (जिला परिषद)
+  panchayatSamiti?: string; // पं. स. (पंचायत समिति)
   status: "Pending" | "Contacted" | "In-Favor" | "Doubtful" | "Opposed" | "Slip-Given";
   worker: string;
   phone?: string; // मोबाइल नो
