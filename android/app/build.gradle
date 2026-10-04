@@ -1,0 +1,47 @@
+﻿plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.voterdesk.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.voterdesk.app"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Web Manifest and App metadata
+        manifestPlaceholders = [
+            hostName: "voterdeskproject.vercel.app",
+            defaultUrl: "https://voterdeskproject.vercel.app",
+            appName: "VoterDesk",
+            assetStatements: '[{ "include": "https://voterdeskproject.vercel.app/.well-known/assetlinks.json" }]'
+        ]
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.browser:browser:1.8.0'
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.5.0'
+}
