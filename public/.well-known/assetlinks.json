@@ -3,6 +3,16 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
+      "package_name": "app.vercel.voterdeskproject.twa",
+      "sha256_cert_fingerprints": [
+        "CA:29:AF:47:26:54:98:02:95:F1:11:86:FD:EC:AD:2B:AC:D8:39:D0:FB:CD:5D:B7:4B:92:A5:E1:99:03:35:DC"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
       "package_name": "com.voterdesk.app",
       "sha256_cert_fingerprints": [
         "14:6D:E9:7D:0F:52:AB:E0:85:42:8A:2E:5E:9B:D4:3B:60:54:11:A8:14:4D:F2:49:67:71:99:A9:77:4B:91:FA"
