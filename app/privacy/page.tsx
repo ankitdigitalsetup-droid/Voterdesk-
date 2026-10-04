@@ -152,8 +152,23 @@ export default function PrivacyPolicyPage() {
             <div className="mt-3 p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1 text-xs sm:text-sm">
               <p><b>App Name:</b> VoterDesk - Campaign & Voter Management</p>
               <p><b>Support Hotline:</b> +91 9664074969</p>
-              <p><b>Website / Portal:</b> <a href="https://voterdesk-six.vercel.app" target="_blank" rel="noreferrer" className="text-blue-400 underline">https://voterdesk-six.vercel.app</a></p>
-              <p><b>Privacy URL:</b> <a href="https://voterdesk-six.vercel.app/privacy" target="_blank" rel="noreferrer" className="text-blue-400 underline">https://voterdesk-six.vercel.app/privacy</a></p>
+              <p><b>Website / Portal:</b> <a href="https://voterdeskproject.vercel.app" target="_blank" rel="noreferrer" className="text-blue-400 underline">https://voterdeskproject.vercel.app</a></p>
+              <p><b>Privacy URL:</b> <a href="https://voterdeskproject.vercel.app/privacy" target="_blank" rel="noreferrer" className="text-blue-400 underline">https://voterdeskproject.vercel.app/privacy</a></p>
+            </div>
+          </section>
+
+          {/* Section 9: Mandatory Google Play Government Disclaimer */}
+          <section className="bg-amber-950/40 p-5 rounded-xl border border-amber-600/50">
+            <h2 className="text-base sm:text-lg font-bold text-amber-300 mb-2 flex items-center gap-2">
+              <span>⚠️</span> 9. Non-Government Entity Disclaimer (सरकारी गैर-संबद्धता अस्वीकरण)
+            </h2>
+            <div className="space-y-2 text-xs sm:text-sm text-amber-100/90 leading-relaxed">
+              <p>
+                <b>English Disclaimer:</b> VoterDesk is a private, independent election campaign and booth management software developed solely for internal organizational use by electoral candidates, campaign managers, and authorized political field workers. <b>VoterDesk does NOT represent, and is NOT affiliated with, authorized by, endorsed by, or associated with the Election Commission of India (ECI), any State Election Commission, or any government body, entity, or agency.</b> All electoral data and voter rolls are uploaded independently by registered candidates for their own private campaign management.
+              </p>
+              <p className="border-t border-amber-800/60 pt-2 text-amber-200">
+                <b>हिंदी अस्वीकरण:</b> वोटर डेस्क (VoterDesk) एक निजी और स्वतंत्र चुनाव प्रबंधन सॉफ्टवेयर है जिसे केवल प्रत्याशियों, चुनाव प्रभारियों और उनके कार्यकर्ताओं के आंतरिक अभियान प्रबंधन के लिए विकसित किया गया है। <b>यह ऐप किसी भी सरकारी संस्था, भारत निर्वाचन आयोग (ECI) या किसी राज्य चुनाव आयोग का प्रतिनिधित्व नहीं करता है और न ही उनसे संबद्ध है।</b> ऐप में प्रदर्शित सभी डेटा संबंधित प्रत्याशी द्वारा अपने निजी अभियान संचालन हेतु प्रबंधित किया जाता है।
+              </p>
             </div>
           </section>
         </div>
