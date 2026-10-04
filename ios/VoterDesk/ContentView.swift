@@ -5,7 +5,7 @@ struct ContentView: View {
     @State private var isLoading: Bool = true
     @State private var estimatedProgress: Double = 0.0
     @State private var hasError: Bool = false
-    private let targetURL = URL(string: "https://voterdesk-six.vercel.app")!
+    private let targetURL = URL(string: "https://voterdeskproject.vercel.app")!
 
     var body: some View {
         ZStack(alignment: .top) {

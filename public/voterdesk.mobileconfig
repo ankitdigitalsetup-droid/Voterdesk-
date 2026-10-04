@@ -26,7 +26,7 @@
             <key>Precomposed</key>
             <true/>
             <key>URL</key>
-            <string>https://voterdesk-six.vercel.app</string>
+            <string>https://voterdeskproject.vercel.app</string>
         </dict>
     </array>
     <key>PayloadDisplayName</key>
