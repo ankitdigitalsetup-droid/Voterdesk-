@@ -24,14 +24,15 @@ import {
   UserRound,
   Users,
   Vote,
-  X
+  X,
+  Image as ImageIcon
 } from "lucide-react";
 import { BoothCredential, UserSession, VoterRecord, WardConfig } from "@/types";
 import {
   exportCredentialsCSV,
   formatCredentialsForWhatsApp
 } from "@/lib/credentialGenerator";
-import { saveStoredCredentials, saveStoredVoters, saveStoredWards } from "@/lib/storage";
+import { saveStoredCredentials, saveStoredVoters, saveStoredWards, PRESET_POSTERS } from "@/lib/storage";
 
 interface SuperAdminDashboardProps {
   wards: WardConfig[];
@@ -55,9 +56,37 @@ export function SuperAdminDashboard({
   onLogout
 }: SuperAdminDashboardProps) {
   const [selectedWardForCreds, setSelectedWardForCreds] = useState<WardConfig | null>(null);
+  const [selectedWardForPoster, setSelectedWardForPoster] = useState<WardConfig | null>(null);
+  const [newWardPosterUrl, setNewWardPosterUrl] = useState<string>("");
+  const [newWardPosterName, setNewWardPosterName] = useState<string>("");
   const [showPasswords, setShowPasswords] = useState<boolean>(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedWhatsApp, setCopiedWhatsApp] = useState<boolean>(false);
+
+  const handleWardPosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setNewWardPosterName(file.name);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      if (ev.target?.result) {
+        setNewWardPosterUrl(ev.target.result as string);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveWardPoster = () => {
+    if (!selectedWardForPoster || !newWardPosterUrl) return;
+    const updatedWards = wards.map((w) =>
+      w.id === selectedWardForPoster.id ? { ...w, posterUrl: newWardPosterUrl } : w
+    );
+    saveStoredWards(updatedWards);
+    onUpdateWards(updatedWards, credentials, voters);
+    setSelectedWardForPoster(null);
+    setNewWardPosterUrl("");
+    setNewWardPosterName("");
+  };
 
   // Overall metrics
   const totalBooths = wards.reduce((sum, w) => sum + w.totalBooths, 0);
@@ -221,7 +250,16 @@ export function SuperAdminDashboard({
               <article key={ward.id} className="wardCard">
                 {/* Poster & Header */}
                 <div className="wardCardTop">
-                  <div className="wardPosterThumb">
+                  <div
+                    className="wardPosterThumb"
+                    onClick={() => {
+                      setSelectedWardForPoster(ward);
+                      setNewWardPosterUrl(ward.posterUrl);
+                      setNewWardPosterName("");
+                    }}
+                    style={{ cursor: "pointer" }}
+                    title="पोस्टर बदलने के लिए क्लिक करें"
+                  >
                     <img src={ward.posterUrl} alt={ward.candidateName} />
                   </div>
                   <div className="wardMainDetails">
@@ -290,6 +328,19 @@ export function SuperAdminDashboard({
                   >
                     <Smartphone size={15} />
                     <span>Karyakarta App</span>
+                  </button>
+                  <button
+                    className="saActionBtn"
+                    style={{ background: "#f0fdfa", color: "#0f766e", borderColor: "#99f6e4" }}
+                    onClick={() => {
+                      setSelectedWardForPoster(ward);
+                      setNewWardPosterUrl(ward.posterUrl);
+                      setNewWardPosterName("");
+                    }}
+                    title="प्रत्याशी का पोस्टर बदलें"
+                  >
+                    <ImageIcon size={15} />
+                    <span>पोस्टर बदलें</span>
                   </button>
                   <button
                     className="saActionBtn creds"
@@ -447,6 +498,108 @@ export function SuperAdminDashboard({
             <div className="modalFooter">
               <button className="primary" onClick={() => setSelectedWardForCreds(null)}>
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Poster Modal */}
+      {selectedWardForPoster && (
+        <div className="modalBackdrop" onClick={() => setSelectedWardForPoster(null)}>
+          <div className="modalCard" style={{ maxWidth: "680px" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <div className="modalBadge">
+                  <ImageIcon size={14} />
+                  <span>POSTER MANAGER</span>
+                </div>
+                <h3>{selectedWardForPoster.candidateName} - प्रत्याशी पोस्टर बदलें</h3>
+                <p>{selectedWardForPoster.wardNumber} ({selectedWardForPoster.wardName}) • {selectedWardForPoster.partyName}</p>
+              </div>
+              <button className="modalCloseBtn" onClick={() => setSelectedWardForPoster(null)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="modalBody" style={{ padding: "16px 20px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+                <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", padding: "10px", textAlign: "center", background: "#f8fafc" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#991b1b", marginBottom: "6px" }}>
+                    🔴 वर्तमान पोस्टर
+                  </div>
+                  <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", borderRadius: "6px", overflow: "hidden" }}>
+                    <img src={selectedWardForPoster.posterUrl} alt="Old" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }} />
+                  </div>
+                </div>
+
+                <div style={{ border: "1px solid #bae6fd", borderRadius: "8px", padding: "10px", textAlign: "center", background: "#f0f9ff" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#0369a1", marginBottom: "6px" }}>
+                    🟢 नया पोस्टर प्रीव्यू
+                  </div>
+                  <div style={{ height: "180px", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff", borderRadius: "6px", overflow: "hidden" }}>
+                    {newWardPosterUrl ? (
+                      <img src={newWardPosterUrl} alt="New" style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }} />
+                    ) : (
+                      <div style={{ color: "#94a3b8", fontSize: "12px" }}>नया पोस्टर चुनें</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "6px" }}>
+                  📁 नया पोस्टर इमेज अपलोड करें:
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleWardPosterUpload}
+                  style={{ width: "100%", padding: "8px", border: "1px dashed #0284c7", borderRadius: "6px", background: "#f8fafc" }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, marginBottom: "6px" }}>
+                  🎨 या रेडीमेड पोस्टर थीम चुनें:
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px" }}>
+                  {PRESET_POSTERS.map((preset) => (
+                    <div
+                      key={preset.id}
+                      onClick={() => {
+                        setNewWardPosterUrl(preset.url);
+                        setNewWardPosterName(preset.title);
+                      }}
+                      style={{
+                        border: newWardPosterUrl === preset.url ? "2px solid #0284c7" : "1px solid #cbd5e1",
+                        borderRadius: "6px",
+                        padding: "6px",
+                        cursor: "pointer",
+                        textAlign: "center",
+                        background: newWardPosterUrl === preset.url ? "#e0f2fe" : "#fff",
+                      }}
+                    >
+                      <div style={{ height: "50px", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <img src={preset.url} alt={preset.title} style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }} />
+                      </div>
+                      <small style={{ fontSize: "10px", fontWeight: 700 }}>{preset.title}</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="modalFooter" style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button className="outline" onClick={() => setSelectedWardForPoster(null)}>
+                रद्द करें
+              </button>
+              <button
+                className="primary"
+                disabled={!newWardPosterUrl || newWardPosterUrl === selectedWardForPoster.posterUrl}
+                onClick={handleSaveWardPoster}
+              >
+                💾 नया पोस्टर रिप्लेस करें
               </button>
             </div>
           </div>

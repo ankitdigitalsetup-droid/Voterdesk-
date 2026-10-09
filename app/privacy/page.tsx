@@ -174,8 +174,16 @@ export default function PrivacyPolicyPage() {
         </div>
 
         {/* Footer */}
-        <div className="mt-8 pt-6 border-t border-slate-800 text-center text-xs text-slate-500">
-          © {new Date().getFullYear()} VoterDesk. All rights reserved. Complies with Google Play Developer Policies.
+        <div className="mt-8 pt-6 border-t border-slate-800 text-center text-xs text-slate-500 flex flex-col sm:flex-row justify-between items-center gap-2">
+          <span>© {new Date().getFullYear()} VoterDesk. All rights reserved. Complies with Google Play Developer Policies.</span>
+          <div className="flex gap-4">
+            <Link href="/terms" className="text-blue-400 hover:underline">
+              Terms of Service (नियम व शर्तें)
+            </Link>
+            <Link href="/" className="text-slate-400 hover:underline">
+              Home (होमपेज)
+            </Link>
+          </div>
         </div>
       </div>
     </div>

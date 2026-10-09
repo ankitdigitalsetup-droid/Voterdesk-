@@ -8,3 +8,5 @@ npm-debug.log*
 *.db-journal
 *.tsbuildinfo
 .vercel
+backups/
+scratch/

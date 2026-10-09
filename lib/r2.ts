@@ -1,17 +1,17 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const accountId = process.env.R2_ACCOUNT_ID || "48dd8f0ce260be7090d1522b68edbaa2";
-const accessKeyId = process.env.R2_ACCESS_KEY_ID || "e199f16e7bd18f12a7718718268bcab2";
-const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "1c95139bdcfa5f83f21b2135965a4011d39b96f5b0142e57a00f7964696eefa9";
+const accountId = process.env.R2_ACCOUNT_ID || "";
+const accessKeyId = process.env.R2_ACCESS_KEY_ID || "";
+const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "";
 const bucketName = process.env.R2_BUCKET_NAME || "voterdesk2026";
 const publicUrl = process.env.R2_PUBLIC_URL || "";
 
 export const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+  endpoint: accountId ? `https://${accountId}.r2.cloudflarestorage.com` : "https://r2.cloudflarestorage.com",
   credentials: {
-    accessKeyId,
-    secretAccessKey,
+    accessKeyId: accessKeyId || "placeholder",
+    secretAccessKey: secretAccessKey || "placeholder",
   },
 });
 
@@ -24,6 +24,10 @@ export async function uploadToR2(
   fileName: string,
   contentType: string
 ): Promise<string> {
+  if (!accountId || !accessKeyId || !secretAccessKey) {
+    throw new Error("Cloudflare R2 storage credentials are not configured in environment variables.");
+  }
+
   const command = new PutObjectCommand({
     Bucket: bucketName,
     Key: fileName,

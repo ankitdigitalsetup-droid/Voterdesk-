@@ -22,7 +22,13 @@ export async function GET(req: Request) {
     // If caller specifically requested passwords for a candidate
     let candidatePasswords: any[] = [];
     if (wantPasswords && targetCandidateId) {
-      candidatePasswords = await getCandidatePasswords(targetCandidateId);
+      const isAuthorized =
+        session &&
+        (session.role === "SUPER_ADMIN" ||
+          (session.role === "CANDIDATE_ADMIN" && session.candidateId === targetCandidateId));
+      if (isAuthorized) {
+        candidatePasswords = await getCandidatePasswords(targetCandidateId);
+      }
     }
 
     return NextResponse.json({
@@ -43,7 +49,7 @@ export async function POST(req: Request) {
     const session = getSessionFromRequest(req);
 
     // RBAC: Only SUPER_ADMIN can create candidates in production
-    if (session && session.role !== "SUPER_ADMIN") {
+    if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json(
         {
           error: "Forbidden",
@@ -119,19 +125,23 @@ export async function PATCH(req: Request) {
     }
 
     // RBAC: Only SUPER_ADMIN or the CANDIDATE_ADMIN themselves can edit their campaign
-    if (session) {
-      if (session.role === "KARYAKARTA") {
-        return NextResponse.json(
-          { error: "Forbidden", message: "Karyakartas cannot edit campaign details." },
-          { status: 403 }
-        );
-      }
-      if (session.role === "CANDIDATE_ADMIN" && session.candidateId !== id) {
-        return NextResponse.json(
-          { error: "Forbidden", message: "Cannot edit another candidate's campaign." },
-          { status: 403 }
-        );
-      }
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to edit campaign details." },
+        { status: 401 }
+      );
+    }
+    if (session.role === "KARYAKARTA") {
+      return NextResponse.json(
+        { error: "Forbidden", message: "Karyakartas cannot edit campaign details." },
+        { status: 403 }
+      );
+    }
+    if (session.role === "CANDIDATE_ADMIN" && session.candidateId !== id) {
+      return NextResponse.json(
+        { error: "Forbidden", message: "Cannot edit another candidate's campaign." },
+        { status: 403 }
+      );
     }
 
     const updated = await updateCandidate(id, updates);
@@ -153,7 +163,7 @@ export async function DELETE(req: Request) {
     const session = getSessionFromRequest(req);
 
     // RBAC: Only SUPER_ADMIN can delete candidate campaigns
-    if (session && session.role !== "SUPER_ADMIN") {
+    if (!session || session.role !== "SUPER_ADMIN") {
       return NextResponse.json(
         { error: "Forbidden", message: "Only Super Admin can delete candidate campaigns." },
         { status: 403 }

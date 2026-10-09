@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "prisma generate && next build",
     "start": "next start",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1142.0",

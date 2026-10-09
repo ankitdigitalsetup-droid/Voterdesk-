@@ -2,13 +2,18 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
 import { getVoters, updateVoter, createVoter } from "@/lib/db/voters";
+import { getSessionFromRequest } from "@/lib/auth/session";
 
 export async function GET(req: Request) {
   try {
+    const session = getSessionFromRequest(req);
     const { searchParams } = new URL(req.url);
-    const candidateId = searchParams.get("candidateId") || "cand_1";
+    const candidateId =
+      session && session.role !== "SUPER_ADMIN" && session.candidateId
+        ? session.candidateId
+        : searchParams.get("candidateId") || "cand_1";
     const clientVersion = searchParams.get("version");
-    const worker = searchParams.get("worker") || "";
+    const worker = searchParams.get("worker") || (session ? session.name : "");
     const booth = searchParams.get("booth") || "";
     const force = searchParams.get("force") === "true";
 
@@ -108,13 +113,19 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
+    const session = getSessionFromRequest(req);
     const body = await req.json();
     const { candidateId, voterId, updates, newVoter, worker, booth, location } = body;
 
-    const cId = candidateId || "cand_1";
+    const cId =
+      session && session.role !== "SUPER_ADMIN" && session.candidateId
+        ? session.candidateId
+        : candidateId || "cand_1";
 
-    if (worker) {
-      store.recordHeartbeat(worker, booth);
+    const workerName = worker || (session ? session.name : "");
+
+    if (workerName) {
+      store.recordHeartbeat(workerName, booth);
       if (location && location.lat && location.lng) {
         store.recordWorkerLocation({
           workerName: worker,

@@ -206,10 +206,7 @@ export function getStoredCredentials(): BoothCredential[] {
   try {
     const raw = localStorage.getItem(CREDS_STORAGE_KEY);
     if (!raw) {
-      // 3 booths = 12 passwords (1 Cand + 3 Karyakarta per booth)
       const initial = generateBoothCredentials(DEFAULT_WARD_ID, DEFAULT_WARD.wardNumber, DEFAULT_WARD.totalBooths);
-      // Give them friendly preset passwords for quick demoing
-      initial[0].password = "voterdesk"; // Candidate B1
       localStorage.setItem(CREDS_STORAGE_KEY, JSON.stringify(initial));
       return initial;
     }

@@ -7,8 +7,6 @@ import { hashPassword } from "./password";
  */
 export async function ensureDefaultUsers() {
   try {
-    const superAdminPassword = await hashPassword("96640749699664074969");
-
     const admin = await prisma.user.findFirst({
       where: {
         OR: [
@@ -21,6 +19,9 @@ export async function ensureDefaultUsers() {
     });
 
     if (!admin) {
+      const initialPassword = process.env.SUPER_ADMIN_PASSWORD || "96640749699664074969";
+      const superAdminPassword = await hashPassword(initialPassword);
+
       await prisma.user.create({
         data: {
           id: "usr_super_1",
@@ -30,17 +31,7 @@ export async function ensureDefaultUsers() {
           role: "SUPER_ADMIN",
         },
       });
-      console.log("✅ Super Admin created with phone 9664074969 and 20-digit password.");
-    } else {
-      await prisma.user.update({
-        where: { id: admin.id },
-        data: {
-          phone: "9664074969",
-          password: superAdminPassword,
-          role: "SUPER_ADMIN",
-        },
-      });
-      console.log("✅ Super Admin updated with phone 9664074969 and 20-digit password.");
+      console.log("✅ Super Admin initialized successfully.");
     }
   } catch (error) {
     console.error("Error ensuring Super Admin exists:", error);

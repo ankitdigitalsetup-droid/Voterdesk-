@@ -44,9 +44,26 @@ import * as XLSX from "xlsx";
 import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword, isSuperAdminEntity } from "@/lib/types";
 import { generateCandidateBoothPasswords, generateBoothPassword } from "@/lib/password-helper";
-import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData } from "@/lib/excel-helper";
+import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData, formatGenderDisplay, normalizeGender } from "@/lib/excel-helper";
+import { PRESET_POSTERS } from "@/lib/storage";
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
+
+export function getAuthHeaders(extra?: Record<string, string>): Record<string, string> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+  const headers: Record<string, string> = { ...extra };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  return headers;
+}
+
+export function authFetch(url: string, init?: RequestInit): Promise<Response> {
+  const headers = getAuthHeaders(init?.headers as Record<string, string> | undefined);
+  return fetch(url, {
+    ...init,
+    headers,
+    credentials: "include",
+  });
+}
 
 export function isZpKey(key: string): boolean {
   if (!key) return false;
@@ -286,8 +303,13 @@ export default function Page() {
         }
         const curVer = force ? 0 : serverVersionRef.current;
         const workerName = user ? user.name : "Karyakarta";
+        const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+        const syncHeaders: Record<string, string> = {};
+        if (token) syncHeaders["Authorization"] = `Bearer ${token}`;
+
         const res = await fetch(
-          `/api/voters/sync?candidateId=${encodeURIComponent(activeCandidateId)}&version=${curVer}&force=${force ? "true" : "false"}&worker=${encodeURIComponent(workerName)}`
+          `/api/voters/sync?candidateId=${encodeURIComponent(activeCandidateId)}&version=${curVer}&force=${force ? "true" : "false"}&worker=${encodeURIComponent(workerName)}`,
+          { headers: syncHeaders, credentials: "include" }
         );
 
         // If candidate campaign is paused or deleted, immediately alert and logout non-Super Admin users
@@ -326,7 +348,10 @@ export default function Page() {
         // Live team sync on manual force or periodic check
         if (force) {
           try {
-            const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`);
+            const tRes = await fetch(`/api/team?candidateId=${encodeURIComponent(activeCandidateId)}`, {
+              headers: syncHeaders,
+              credentials: "include",
+            });
             if (tRes.ok) {
               const tData = await tRes.json();
               if (Array.isArray(tData.team)) {
@@ -896,10 +921,20 @@ function Login({
           </button>
         </form>
 
-        <p className="demo" style={{ justifyContent: "center", textAlign: "center", gap: "6px" }}>
+        <p className="demo" style={{ justifyContent: "center", textAlign: "center", gap: "6px", marginBottom: "8px" }}>
           <ShieldCheck size={16} />{" "}
           <span>{lang === "hi" ? "256-बिट सुरक्षित एन्क्रिप्टेड पोर्टल" : "256-bit secure encrypted portal"}</span>
         </p>
+
+        <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "12px", marginTop: "10px", fontSize: "12px", color: "#64748b" }}>
+          <a href="/privacy" target="_blank" rel="noreferrer" style={{ color: "#0284c7", textDecoration: "none" }}>
+            {lang === "hi" ? "गोपनीयता नीति (Privacy)" : "Privacy Policy"}
+          </a>
+          <span>•</span>
+          <a href="/terms" target="_blank" rel="noreferrer" style={{ color: "#0284c7", textDecoration: "none" }}>
+            {lang === "hi" ? "नियम व शर्तें (Terms)" : "Terms of Service"}
+          </a>
+        </div>
       </section>
     </main>
   );
@@ -1031,6 +1066,14 @@ function SuperAdminView({
     isOutside: "नहीं",
   });
 
+  // Dedicated Change Poster Modal for Existing Candidate (Super Admin exclusive)
+  const [changePosterCand, setChangePosterCand] = useState<CandidateAccount | null>(null);
+  const [newPosterPreview, setNewPosterPreview] = useState<string>("");
+  const [newPosterFileName, setNewPosterFileName] = useState<string>("");
+  const [newPosterFile, setNewPosterFile] = useState<File | null>(null);
+  const [isUpdatingPoster, setIsUpdatingPoster] = useState<boolean>(false);
+  const changePosterInputRef = useRef<HTMLInputElement>(null);
+
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const handleToggleCampaignStatus = async (cand: CandidateAccount) => {
@@ -1110,6 +1153,142 @@ function SuperAdminView({
     }
   };
 
+  // Handler for selecting & compressing replacement poster for existing candidate
+  const handleSelectReplacementPoster = (file: File) => {
+    if (!file || !file.type.startsWith("image/")) {
+      alert("कृपया एक मान्य इमेज फ़ाइल (.jpg, .png, .webp) चुनें।");
+      return;
+    }
+    setNewPosterFileName(file.name);
+    setNewPosterFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const rawDataUrl = e.target?.result as string;
+      if (!rawDataUrl) return;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1200;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressed = canvas.toDataURL("image/jpeg", 0.85);
+          setNewPosterPreview(compressed);
+        } else {
+          setNewPosterPreview(rawDataUrl);
+        }
+      };
+      img.onerror = () => {
+        setNewPosterPreview(rawDataUrl);
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Save & Replace Candidate Poster
+  const handleSaveNewPoster = async () => {
+    if (!changePosterCand) return;
+    if (!newPosterPreview) {
+      alert("कृपया कोई नया पोस्टर चुनें या अपलोड करें!");
+      return;
+    }
+
+    try {
+      setIsUpdatingPoster(true);
+      let finalPosterUrl = newPosterPreview;
+
+      // Try uploading to Cloudflare R2 via /api/upload if a physical file was provided
+      if (newPosterFile) {
+        try {
+          const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+          const formData = new FormData();
+          formData.append("file", newPosterFile);
+          const ext = newPosterFile.name.split(".").pop() || "jpg";
+          formData.append("fileName", `poster_${changePosterCand.id}_${Date.now()}.${ext}`);
+
+          const uploadHeaders: Record<string, string> = {};
+          if (token) uploadHeaders["Authorization"] = `Bearer ${token}`;
+
+          const upRes = await fetch("/api/upload", {
+            method: "POST",
+            headers: uploadHeaders,
+            body: formData,
+          });
+
+          if (upRes.ok) {
+            const upData = await upRes.json();
+            if (upData.url) {
+              finalPosterUrl = upData.url;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("R2 upload notice, fallback to compressed image data URL:", uploadErr);
+        }
+      }
+
+      // Update in database via API
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch("/api/candidates", {
+        method: "PATCH",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
+          id: changePosterCand.id,
+          posterUrl: finalPosterUrl,
+        }),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || errData.message || "पोस्टर अपडेट नहीं हो सका");
+      }
+
+      // Update in local data store & state
+      store.updateCandidate(changePosterCand.id, { posterUrl: finalPosterUrl });
+
+      const updatedCand: CandidateAccount = {
+        ...changePosterCand,
+        posterUrl: finalPosterUrl,
+      };
+
+      if (onCandidateUpdated) {
+        onCandidateUpdated(updatedCand);
+      }
+
+      alert(
+        `✅ प्रत्याशी '${changePosterCand.name}' का चुनावी पोस्टर सफलतापूर्वक बदल दिया गया है!\n\n` +
+        `• नया पोस्टर पुराने पोस्टर की जगह सेट हो गया है।\n` +
+        `• मोबाइल ऐप, वोटर पर्ची और A4 फैमिली स्लिप्स पर नया पोस्टर तुरंत दिखाई देगा।`
+      );
+
+      setChangePosterCand(null);
+      setNewPosterPreview("");
+      setNewPosterFileName("");
+      setNewPosterFile(null);
+    } catch (err: any) {
+      alert(`पोस्टर बदलने में त्रुटि: ${err.message || String(err)}`);
+    } finally {
+      setIsUpdatingPoster(false);
+    }
+  };
+
   const handleSaExcelSelect = async (
     e?: React.ChangeEvent<HTMLInputElement>,
     sheetNameToLoad?: string,
@@ -1139,7 +1318,7 @@ function SuperAdminView({
         const suppVal = mapping.isSupporter && r[mapping.isSupporter] ? String(r[mapping.isSupporter]).trim() : "हाँ";
         const outsideVal = mapping.isOutside && r[mapping.isOutside] ? String(r[mapping.isOutside]).trim() : "नहीं";
         const ageVal = mapping.age && r[mapping.age] ? String(r[mapping.age]).trim() : "35";
-        const genderVal = mapping.gender && r[mapping.gender] ? String(r[mapping.gender]).trim() : "Male";
+        const genderVal = mapping.gender && r[mapping.gender] ? normalizeGender(r[mapping.gender]) : "Male";
         const phoneVal = mapping.phone && r[mapping.phone] ? String(r[mapping.phone]).trim() : "";
         const houseVal = mapping.house && r[mapping.house] ? String(r[mapping.house]).trim() : "";
         const addressVal = mapping.address && r[mapping.address] ? String(r[mapping.address]).trim() : "";
@@ -1410,7 +1589,7 @@ function SuperAdminView({
             booth: boothVal,
             serialNo: serialVal,
             age: ageVal,
-            gender: String(row[mapping.gender] || "Male").trim(),
+            gender: normalizeGender(row[mapping.gender]),
             house: String(row[mapping.house] || "").trim(),
             address: String(row[mapping.address] || "").trim(),
             boothAddress: String(row[mapping.boothAddress] || "").trim(),
@@ -2708,10 +2887,10 @@ function SuperAdminView({
             <table>
               <thead>
                 <tr>
-                  <th>Candidate Name</th>
+                  <th>Candidate &amp; Poster</th>
                   <th>Contact Phone</th>
                   <th>Party / Affiliation</th>
-                  <th>Election & Ward</th>
+                  <th>Election &amp; Ward</th>
                   <th>Booths</th>
                   <th>Voters Managed</th>
                   <th>Status</th>
@@ -2722,8 +2901,61 @@ function SuperAdminView({
                 {candidates.map((cand) => (
                   <tr key={cand.id}>
                     <td>
-                      <b>{cand.name}</b>
-                      <small>ID: {cand.id}</small>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div
+                          onClick={() => {
+                            setChangePosterCand(cand);
+                            setNewPosterPreview(cand.posterUrl || "");
+                            setNewPosterFileName("");
+                            setNewPosterFile(null);
+                          }}
+                          title="पोस्टर बदलने के लिए क्लिक करें (Click to Change Poster)"
+                          style={{
+                            position: "relative",
+                            width: "42px",
+                            height: "54px",
+                            borderRadius: "6px",
+                            overflow: "hidden",
+                            border: "1.5px solid #cbd5e1",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                            cursor: "pointer",
+                            flexShrink: 0,
+                            background: "#f1f5f9",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          <img
+                            src={cand.posterUrl || "/images/campaign-poster.jpg"}
+                            alt={cand.name}
+                            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              background: "rgba(0,0,0,0.45)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              opacity: 0,
+                              transition: "opacity 0.2s",
+                            }}
+                            onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                            onMouseLeave={(e) => (e.currentTarget.style.opacity = "0")}
+                          >
+                            <ImageIcon size={16} color="#ffffff" />
+                          </div>
+                        </div>
+                        <div>
+                          <b>{cand.name}</b>
+                          <small>ID: {cand.id}</small>
+                        </div>
+                      </div>
                     </td>
                     <td>{cand.phone}</td>
                     <td>{cand.party}</td>
@@ -2780,6 +3012,30 @@ function SuperAdminView({
                           title="इस पूरे चुनाव अभियान को हमेशा के लिए हटाएं"
                         >
                           <Trash2 size={13} /> 🗑️ हटाएं
+                        </button>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{
+                            padding: "6px 10px",
+                            fontSize: "12px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            background: "#f0fdfa",
+                            color: "#0f766e",
+                            borderColor: "#99f6e4",
+                            fontWeight: 700,
+                          }}
+                          onClick={() => {
+                            setChangePosterCand(cand);
+                            setNewPosterPreview(cand.posterUrl || "");
+                            setNewPosterFileName("");
+                            setNewPosterFile(null);
+                          }}
+                          title="इस प्रत्याशी का चुनावी पोस्टर बदलें (Replace Campaign Poster)"
+                        >
+                          <ImageIcon size={13} /> 🖼️ पोस्टर बदलें
                         </button>
                         <button
                           type="button"
@@ -3447,6 +3703,211 @@ function SuperAdminView({
         </div>
       )}
 
+      {/* Super Admin - Dedicated Change Poster Modal for Existing Candidate */}
+      {changePosterCand && (
+        <div className="modalOverlay" onClick={() => setChangePosterCand(null)}>
+          <div className="modalBox" style={{ maxWidth: "720px", width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHead" style={{ background: "#0b224e", color: "#ffffff", padding: "14px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <ImageIcon size={22} color="#38bdf8" />
+                <div>
+                  <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px", fontWeight: 800 }}>
+                    🖼️ प्रत्याशी पोस्टर बदलें (Change Campaign Poster)
+                  </h3>
+                  <small style={{ color: "#94a3b8", fontSize: "12px" }}>
+                    प्रत्याशी: <b>{changePosterCand.name}</b> • {changePosterCand.party} • {changePosterCand.wardConstituency}
+                  </small>
+                </div>
+              </div>
+              <button onClick={() => setChangePosterCand(null)} style={{ color: "#ffffff" }}><X /></button>
+            </div>
+
+            <div className="modalBody" style={{ padding: "20px" }}>
+              {/* Notice Banner */}
+              <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: "8px", padding: "10px 14px", marginBottom: "16px", fontSize: "12.5px", color: "#0369a1", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Sparkles size={18} color="#0284c7" style={{ flexShrink: 0 }} />
+                <span>
+                  यहाँ नया पोस्टर अपलोड करने पर पुराना पोस्टर पूरी तरह बदल जाएगा और यह नया पोस्टर <b>कैंडिडेट ऐप, कार्यकर्ता स्क्रीन, सिंगल वोटर पर्ची और A4 फैमिली स्लिप</b> पर तुरंत लाइव हो जाएगा।
+                </span>
+              </div>
+
+              {/* Poster Comparison Section (Old vs New) */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+                {/* Left: Current / Old Poster */}
+                <div style={{ border: "1.5px solid #e2e8f0", borderRadius: "10px", padding: "12px", background: "#f8fafc", textAlign: "center" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: "#fee2e2", color: "#991b1b", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 800, marginBottom: "8px" }}>
+                    <span>🔴</span> <span>मौजूदा (पुराना) पोस्टर</span>
+                  </div>
+                  <div style={{ width: "100%", height: "220px", display: "flex", alignItems: "center", justifyContent: "center", background: "#ffffff", borderRadius: "8px", border: "1px solid #cbd5e1", overflow: "hidden" }}>
+                    <img
+                      src={changePosterCand.posterUrl || "/images/campaign-poster.jpg"}
+                      alt="Current Poster"
+                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                    />
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "6px" }}>
+                    वर्तमान सक्रिय पोस्टर
+                  </div>
+                </div>
+
+                {/* Right: New Replacement Poster */}
+                <div style={{ border: "1.5px solid #bae6fd", borderRadius: "10px", padding: "12px", background: "#f0f9ff", textAlign: "center" }}>
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: "4px", background: "#dcfce7", color: "#166534", padding: "3px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 800, marginBottom: "8px" }}>
+                    <span>🟢</span> <span>नया पोस्टर (प्रीव्यू)</span>
+                  </div>
+                  <div style={{ width: "100%", height: "220px", display: "flex", alignItems: "center", justifyContent: "center", background: "#ffffff", borderRadius: "8px", border: "1px solid #93c5fd", overflow: "hidden", position: "relative" }}>
+                    {newPosterPreview && newPosterPreview !== changePosterCand.posterUrl ? (
+                      <img
+                        src={newPosterPreview}
+                        alt="New Poster Preview"
+                        style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                      />
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", color: "#94a3b8", padding: "16px" }}>
+                        <ImageIcon size={38} color="#cbd5e1" />
+                        <span style={{ fontSize: "12px", fontWeight: 600 }}>नीचे से नई फ़ोटो या थीम चुनें</span>
+                        <span style={{ fontSize: "10.5px" }}>चुनने के बाद यहाँ प्रीव्यू दिखेगा</span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#0284c7", marginTop: "6px", fontWeight: 700 }}>
+                    {newPosterFileName ? `फ़ाइल: ${newPosterFileName}` : (newPosterPreview && newPosterPreview !== changePosterCand.posterUrl ? "नया पोस्टर चुना गया है" : "कोई नया पोस्टर अभी नहीं चुना")}
+                  </div>
+                </div>
+              </div>
+
+              {/* Upload Dropzone */}
+              <input
+                ref={changePosterInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleSelectReplacementPoster(file);
+                }}
+              />
+
+              <div
+                onClick={() => changePosterInputRef.current?.click()}
+                style={{
+                  border: "2px dashed #0284c7",
+                  borderRadius: "10px",
+                  padding: "18px 16px",
+                  textAlign: "center",
+                  background: "#f8fafc",
+                  cursor: "pointer",
+                  marginBottom: "16px",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                <Upload size={28} color="#0284c7" style={{ margin: "0 auto 6px" }} />
+                <b style={{ fontSize: "13.5px", color: "#0f172a", display: "block" }}>
+                  📁 नया पोस्टर इमेज चुनें या यहाँ ड्रैग करें
+                </b>
+                <span style={{ fontSize: "11.5px", color: "#64748b" }}>
+                  समर्थित: JPG, PNG, WebP | अनुशंसित अनुपात: 3:4 (जैसे 800×1060 px या 600×800 px)
+                </span>
+                <div style={{ marginTop: "6px" }}>
+                  <button
+                    type="button"
+                    className="outline"
+                    style={{ padding: "4px 14px", fontSize: "12px", pointerEvents: "none", fontWeight: 700 }}
+                  >
+                    फ़ाइल ब्राउज़ करें (Browse Image)
+                  </button>
+                </div>
+              </div>
+
+              {/* Preset Poster Themes */}
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 800, color: "#334155", display: "flex", alignItems: "center", gap: "5px", marginBottom: "8px" }}>
+                  <span>🎨 या तैयार चुनाव पोस्टर थीम चुनें (Preset Themes):</span>
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "10px" }}>
+                  {PRESET_POSTERS.map((preset) => {
+                    const isSelected = newPosterPreview === preset.url;
+                    return (
+                      <div
+                        key={preset.id}
+                        onClick={() => {
+                          setNewPosterPreview(preset.url);
+                          setNewPosterFileName(preset.title);
+                          setNewPosterFile(null);
+                        }}
+                        style={{
+                          border: isSelected ? "2px solid #0284c7" : "1px solid #cbd5e1",
+                          borderRadius: "8px",
+                          padding: "8px",
+                          background: isSelected ? "#e0f2fe" : "#ffffff",
+                          cursor: "pointer",
+                          textAlign: "center",
+                          transition: "all 0.15s ease",
+                        }}
+                      >
+                        <div style={{ height: "60px", overflow: "hidden", borderRadius: "4px", marginBottom: "6px", background: "#f8fafc", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <img src={preset.url} alt={preset.title} style={{ maxHeight: "100%", maxWidth: "100%", objectFit: "contain" }} />
+                        </div>
+                        <div style={{ fontSize: "11px", fontWeight: 700, color: isSelected ? "#0369a1" : "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {preset.title}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", borderTop: "1px solid #e2e8f0", paddingTop: "14px" }}>
+                <button
+                  type="button"
+                  className="outline"
+                  disabled={isUpdatingPoster}
+                  onClick={() => {
+                    setChangePosterCand(null);
+                    setNewPosterPreview("");
+                    setNewPosterFileName("");
+                    setNewPosterFile(null);
+                  }}
+                >
+                  ✕ रद्द करें (Cancel)
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={isUpdatingPoster || !newPosterPreview || newPosterPreview === changePosterCand.posterUrl}
+                  onClick={handleSaveNewPoster}
+                  style={{
+                    background: "#0284c7",
+                    color: "#ffffff",
+                    fontWeight: 800,
+                    padding: "8px 20px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 4px 12px rgba(2, 132, 199, 0.3)",
+                    cursor: (isUpdatingPoster || !newPosterPreview || newPosterPreview === changePosterCand.posterUrl) ? "not-allowed" : "pointer",
+                    opacity: (!newPosterPreview || newPosterPreview === changePosterCand.posterUrl) ? 0.6 : 1,
+                  }}
+                >
+                  {isUpdatingPoster ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" />
+                      <span>नया पोस्टर सेव हो रहा है...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles size={15} />
+                      <span>💾 नया पोस्टर सेव व रिप्लेस करें</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add Candidate Modal */}
       {showAddModal && (
         <div className="modalOverlay" onClick={() => setShowAddModal(false)}>
@@ -4055,7 +4516,7 @@ function BoothManagerView({
         }
 
         // 2. Broadcast update to all 15 mobile devices via sync API
-        await fetch("/api/voters/sync", {
+        await authFetch("/api/voters/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -4068,7 +4529,7 @@ function BoothManagerView({
         }).catch(() => {});
 
         // 3. Update single voter endpoint
-        await fetch(`/api/voters/${activeActionVoter.id}`, {
+        await authFetch(`/api/voters/${activeActionVoter.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ phone: cleanPhone }),
@@ -4173,11 +4634,12 @@ function BoothManagerView({
     if (!activeActionVoter) return;
     const activeZp = activeActionVoter.zilaParishad || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).zpVal) || "—";
     const activePs = activeActionVoter.panchayatSamiti || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).psVal) || "—";
+    const genderStr = formatGenderDisplay(activeActionVoter.gender, "hi");
     const slipText = `जि. प. : ${activeZp}     पं. स. : ${activePs}
 क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth}
 नाम : ${activeActionVoter.name}
 पिता/पति : ${activeActionVoter.guardian || "—"}
-उम्र : ${activeActionVoter.age || "—"}     मकान नंबर : ${activeActionVoter.house || "—"}
+उम्र : ${activeActionVoter.age ? `${activeActionVoter.age} वर्ष` : "—"}     लिंग : ${genderStr}     मकान नं : ${activeActionVoter.house || "—"}
 वोटर ID : ${activeActionVoter.epic}
 बुथ पता : ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
 ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
@@ -4445,15 +4907,18 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.textAlign = "left";
           ctx.fillText(`पिता/पति : ${v.guardian || "—"}`, x + 16, y + 104);
 
-          // Age & House
+          // Age (Left), Gender (Center), House (Right)
           ctx.fillStyle = "#334155";
-          ctx.font = "bold 16px sans-serif";
+          ctx.font = "bold 15.5px sans-serif";
           ctx.textAlign = "left";
           ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, x + 16, y + 134);
 
+          const genderText = `लिंग : ${formatGenderDisplay(v.gender, "hi")}`;
+          ctx.fillText(genderText, x + 195, y + 134);
+
           const houseText = `मकान नं : ${v.house || "—"}`;
           const houseW = ctx.measureText(houseText).width;
-          const houseX = Math.max(x + 320, (x + cardW - 18) - houseW);
+          const houseX = Math.max(x + 360, (x + cardW - 18) - houseW);
           ctx.textAlign = "left";
           ctx.fillText(houseText, houseX, y + 134);
 
@@ -4707,15 +5172,18 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.font = "bold 26px monospace";
       ctx.fillText(`वोटर ID : ${v.epic}`, cardX + 20, cardY + 205);
 
-      // Age (Left) & House No (Right)
+      // Age (Left), Gender (Center), House No (Right)
       ctx.fillStyle = "#334155";
-      ctx.font = "bold 24px sans-serif";
+      ctx.font = "bold 23px sans-serif";
       ctx.textAlign = "left";
       ctx.fillText(`उम्र : ${v.age ? `${v.age} वर्ष` : "—"}`, cardX + 24, cardY + 250);
 
+      const genderText = `लिंग : ${formatGenderDisplay(v.gender, "hi")}`;
+      ctx.fillText(genderText, cardX + 265, cardY + 250);
+
       const houseText = `मकान नंबर : ${v.house || "—"}`;
       const houseW = ctx.measureText(houseText).width;
-      const houseX = Math.max(cardX + 450, (cardX + cardW - 24) - houseW);
+      const houseX = Math.max(cardX + 490, (cardX + cardW - 24) - houseW);
       ctx.textAlign = "left";
       ctx.fillText(houseText, houseX, cardY + 250);
 
@@ -4777,6 +5245,8 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
     const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
 
+    const genderLabel = formatGenderDisplay(v.gender, "hi");
+
     const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
 *उम्मीदवार:* ${candName} (${candParty})
 🗳️ *${campaignMsg}*
@@ -4786,7 +5256,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 *नाम (Name) :* ${v.name}
 *पिता/पति (Guardian) :* ${v.guardian || "—"}
 *वोटर ID (EPIC) :* ${v.epic}
-*उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *मकान नं :* ${v.house || "—"}
+*उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *लिंग (Gender) :* ${genderLabel}     *मकान नं :* ${v.house || "—"}
 *बुथ पता :* ${v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
 ----------------------------------------
 🙏 कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏`;
@@ -5105,7 +5575,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       if (selectedVoter && selectedVoter.id === activeActionVoter.id) {
         setSelectedVoter((prev) => (prev ? { ...prev, ...updates } : null));
       }
-      fetch("/api/voters/sync", {
+      authFetch("/api/voters/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -5307,7 +5777,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           "मकान नंबर (House No)": v.house || "—",
           "पता (Address)": v.address || "—",
           "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
-          "लिंग (Gender)": v.gender || "—",
+          "लिंग (Gender)": formatGenderDisplay(v.gender, "hi"),
           "स्थिति (Status)": v.status || "Pending",
           "कार्यकर्ता (Worker)": v.worker || "—",
         };
@@ -5390,7 +5860,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           "मकान नंबर (House No)": v.house || "—",
           "पता (Address)": v.address || "—",
           "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
-          "लिंग (Gender)": v.gender || "—",
+          "लिंग (Gender)": formatGenderDisplay(v.gender, "hi"),
           "स्थिति (Status)": v.status || "Pending",
           "कार्यकर्ता (Worker)": v.worker || "—",
         };
@@ -5438,7 +5908,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       setSelectedVoter((prev) => (prev ? { ...prev, status: newStatus } : null));
     }
     // Push update to server for 15 mobiles real-time sync
-    fetch("/api/voters/sync", {
+    authFetch("/api/voters/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -5465,7 +5935,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     store.updateVoter(voter.id, updatePayload);
     setSelectedVoter((prev) => (prev && prev.id === voter.id ? { ...prev, ...updatePayload } : prev));
     // Push toggle to server for 15 mobiles real-time sync
-    fetch("/api/voters/sync", {
+    authFetch("/api/voters/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -5509,7 +5979,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     });
 
     // Push new voter to server for 15 mobiles real-time sync
-    fetch("/api/voters/sync", {
+    authFetch("/api/voters/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -5606,7 +6076,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           zilaParishad: zpVal,
           panchayatSamiti: psVal,
           age: ageVal,
-          gender: String(row[mapping.gender] || "Male"),
+          gender: normalizeGender(row[mapping.gender]),
           house: String(row[mapping.house] || "").trim(),
           booth: boothVal,
           serialNo: serialVal,
@@ -5658,11 +6128,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     const candName = candidate ? candidate.name : "अभय कुमार";
     const candParty = candidate ? candidate.party : "निर्दलीय";
     const campaignMsg = customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
+    const genderStr = formatGenderDisplay(v.gender, "hi");
     return `🇮🇳 *मतदाता पर्ची (OFFICIAL VOTER SLIP)* 🇮🇳%0A` +
       `*उम्मीदवार:* ${candName} (${candParty})%0A` +
       `----------------------------------------%0A` +
       `👤 *मतदाता:* ${v.name}%0A` +
       `👨‍👧 *पिता/पति:* ${v.guardian || "—"}%0A` +
+      `🎂 *उम्र:* ${v.age ? `${v.age} वर्ष` : "—"} | ⚧️ *लिंग:* ${genderStr}%0A` +
       `🔢 *वार्ड सं. (Ward No):* ${v.booth} | *क्र सं. (Sr No):* ${v.serialNo || "—"}%0A` +
       `🆔 *पहचान पत्र (EPIC):* ${v.epic}%0A` +
       `🏠 *मकान नं.:* ${v.house || "—"}${v.address ? ` (${v.address})` : ""}%0A` +
@@ -7581,7 +8053,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 </span>
               </div>
               <p style={{ margin: "3px 0 0", fontSize: "12px", color: "#475467", lineHeight: "1.5" }}>
-                {t.fatherHusband}: <b>{selectedVoter.guardian || "—"}</b> • {t.houseNo}: <b>{selectedVoter.house || "—"}</b> • EPIC: <b>{selectedVoter.epic}</b>
+                {t.fatherHusband}: <b>{selectedVoter.guardian || "—"}</b> • {lang === "hi" ? "उम्र" : "Age"}: <b>{selectedVoter.age ? `${selectedVoter.age} वर्ष` : "—"}</b> • {lang === "hi" ? "लिंग" : "Gender"}: <b>{formatGenderDisplay(selectedVoter.gender, lang)}</b> • {t.houseNo}: <b>{selectedVoter.house || "—"}</b> • EPIC: <b>{selectedVoter.epic}</b>
                 {selectedVoter.address ? <> • {lang === "hi" ? "पता" : "Address"}: <b>{selectedVoter.address}</b></> : null}
                 {selectedVoter.boothAddress ? <> • 📍 {lang === "hi" ? "बूथ पता" : "Booth Address"}: <b style={{ color: "#0284c7" }}>{selectedVoter.boothAddress}</b></> : null}
               </p>
@@ -8253,8 +8725,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 <b>पिता/पति : {activeActionVoter.guardian || "—"}</b>
               </div>
               <div className="bmSlipRow">
-                <span><b>उम्र : {activeActionVoter.age || "—"}</b></span>
-                <span><b>मकान नंबर : {activeActionVoter.house || "—"}</b></span>
+                <span><b>उम्र : {activeActionVoter.age ? `${activeActionVoter.age} वर्ष` : "—"}</b></span>
+                <span><b>लिंग : {formatGenderDisplay(activeActionVoter.gender, "hi")}</b></span>
+                <span><b>मकान नं. : {activeActionVoter.house || "—"}</b></span>
               </div>
               <div className="bmSlipField">
                 <b>वोटर ID : {activeActionVoter.epic}</b>
@@ -8325,8 +8798,9 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 <span><b>वोटर ID :</b> {activeActionVoter.epic}</span>
               </div>
               <div className="bmSlipRow">
-                <span><b>उम्र :</b> {activeActionVoter.age || "—"}</span>
-                <span><b>मकान नंबर :</b> {activeActionVoter.house || "—"}</span>
+                <span><b>उम्र :</b> {activeActionVoter.age ? `${activeActionVoter.age} वर्ष` : "—"}</span>
+                <span><b>लिंग :</b> {formatGenderDisplay(activeActionVoter.gender, "hi")}</span>
+                <span><b>मकान नं. :</b> {activeActionVoter.house || "—"}</span>
               </div>
               <div className="bmSlipField" style={{ marginTop: "4px" }}>
                 <span><b>बुथ पता :</b> {activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}</span>
@@ -8535,7 +9009,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           <div className="bmScreenContent">
             {/* Voter Header Badge */}
             <div style={{ background: "#e0f2fe", padding: "10px 14px", borderRadius: "8px", marginBottom: "16px", color: "#0369a1", fontSize: "14px", fontWeight: 600 }}>
-              👤 <b>{activeActionVoter.name}</b> (वार्ड सं: {activeActionVoter.booth}, क्र सं: {activeActionVoter.serialNo || "—"}, मकान: {activeActionVoter.house || "—"})
+              👤 <b>{activeActionVoter.name}</b> (वार्ड सं: {activeActionVoter.booth}, क्र सं: {activeActionVoter.serialNo || "—"}, मकान: {activeActionVoter.house || "—"}, लिंग: {formatGenderDisplay(activeActionVoter.gender, "hi")})
             </div>
 
             {/* 1. समर्थक */}
@@ -8824,6 +9298,14 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                   <div>
                     <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{t.houseNo}</span>
                     <b>{activeVoterForSlip.house || "—"}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{lang === "hi" ? "आयु (Age)" : "Age"}</span>
+                    <b>{activeVoterForSlip.age ? `${activeVoterForSlip.age} वर्ष` : "—"}</b>
+                  </div>
+                  <div>
+                    <span style={{ color: "#64748b", fontSize: "11px", display: "block" }}>{lang === "hi" ? "लिंग (Gender)" : "Gender"}</span>
+                    <b>{formatGenderDisplay(activeVoterForSlip.gender, lang)}</b>
                   </div>
                   {activeVoterForSlip.address && (
                     <div style={{ gridColumn: "span 2" }}>
@@ -10148,6 +10630,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                             </div>
                             <div className="a4SlipMidRow">
                               <span>उम्र : {v.age ? `${v.age} वर्ष` : "—"}</span>
+                              <span>लिंग : {formatGenderDisplay(v.gender, "hi")}</span>
                               <span>मकान नं : {v.house || "—"}</span>
                             </div>
                             <div className="a4SlipEpicRow">
@@ -10524,7 +11007,7 @@ function VotersTable({
     };
     store.addVoter(payload);
 
-    fetch("/api/voters/sync", {
+    authFetch("/api/voters/sync", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ candidateId, newVoter: payload }),
@@ -10629,7 +11112,7 @@ function VotersTable({
           "मकान नंबर (House No)": v.house || "—",
           "पता (Address)": v.address || "—",
           "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
-          "लिंग (Gender)": v.gender || "—",
+          "लिंग (Gender)": formatGenderDisplay(v.gender, "hi"),
           "स्थिति (Status)": v.status || "Pending",
           "कार्यकर्ता (Worker)": v.worker || "—",
         };
@@ -11335,7 +11818,7 @@ function VotersTable({
                         onClick={() => {
                           const newVal = isVoted ? "नहीं" : "हाँ";
                           store.updateVoter(v.id, { voted: newVal });
-                          fetch("/api/voters/sync", {
+                          authFetch("/api/voters/sync", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ candidateId, voterId: v.id, updates: { voted: newVal } }),
@@ -11370,7 +11853,7 @@ function VotersTable({
                             status: newVal === "हाँ" ? "In-Favor" : ("Pending" as VoterRecord["status"]),
                           };
                           store.updateVoter(v.id, updates);
-                          fetch("/api/voters/sync", {
+                          authFetch("/api/voters/sync", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ candidateId, voterId: v.id, updates }),
@@ -11401,7 +11884,7 @@ function VotersTable({
                         onClick={() => {
                           const newVal = isOut ? "नहीं" : "हाँ";
                           store.updateVoter(v.id, { isOutside: newVal });
-                          fetch("/api/voters/sync", {
+                          authFetch("/api/voters/sync", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({ candidateId, voterId: v.id, updates: { isOutside: newVal } }),
@@ -11525,7 +12008,7 @@ function VotersTable({
                         onClick={() => {
                           if (confirm(`Are you sure you want to delete voter ${v.name}?`)) {
                             store.deleteVoter(v.id);
-                            fetch(`/api/voters/${v.id}?candidateId=${candidateId}`, { method: "DELETE" }).catch(() => {});
+                            authFetch(`/api/voters/${v.id}?candidateId=${candidateId}`, { method: "DELETE" }).catch(() => {});
                             onUpdate();
                           }
                         }}
@@ -11858,7 +12341,7 @@ function RealExcelImporter({
         zilaParishad: zpVal,
         panchayatSamiti: psVal,
         age: ageVal,
-        gender: String(row[fieldMap.gender] || "Male"),
+        gender: normalizeGender(row[fieldMap.gender]),
         house: String(row[fieldMap.house] || "").trim(),
         booth,
         serialNo,
@@ -11877,7 +12360,7 @@ function RealExcelImporter({
     }).filter((v) => v.name && v.epic);
 
     store.importVoters(candidateId, votersToImport);
-    fetch("/api/voters/import", {
+    authFetch("/api/voters/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ candidateId, voters: votersToImport }),

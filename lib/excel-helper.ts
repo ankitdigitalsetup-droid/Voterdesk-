@@ -273,8 +273,22 @@ export function detectFieldMapping(columns: string[]) {
       mapping.epic = col;
     }
 
-    // 14. Gender (लिंग)
-    if (!mapping.gender && (c.includes("gender") || c.includes("sex") || c.includes("लिंग") || c.includes("स्त्री/पुरुष") || c.includes("m/f"))) {
+    // 14. Gender (लिंग / स्त्री / पुरुष / Gender)
+    if (!mapping.gender && (
+      c.includes("gender") ||
+      c.includes("sex") ||
+      c.includes("लिंग") ||
+      c.includes("स्त्री/पुरुष") ||
+      c.includes("पुरुष/महिला") ||
+      c.includes("महिला/पुरुष") ||
+      c.includes("जेंडर") ||
+      c.includes("m/f") ||
+      clean === "gender" ||
+      clean === "sex" ||
+      clean === "ling" ||
+      clean === "m" ||
+      clean === "f"
+    )) {
       mapping.gender = col;
     }
 
@@ -299,6 +313,40 @@ export function detectFieldMapping(columns: string[]) {
   return mapping;
 }
 
+// Normalizes raw gender input into standard values ("Male" | "Female" | "Other")
+export function normalizeGender(val?: any): string {
+  if (!val) return "Male";
+  const s = String(val).trim();
+  const lower = s.toLowerCase();
+  if (lower === "f" || lower === "female" || s === "महिला" || s === "स्त्री" || s === "म" || s === "म.") {
+    return "Female";
+  }
+  if (lower === "m" || lower === "male" || s === "पुरुष" || s === "पुरूष" || s === "पु" || s === "पु.") {
+    return "Male";
+  }
+  if (lower === "o" || lower === "other" || lower === "t" || lower === "transgender" || s === "अन्य" || s.includes("तृतीय")) {
+    return "Other";
+  }
+  return s || "Male";
+}
+
+// Formats gender for display across slips, cards and messages
+export function formatGenderDisplay(gender?: string, lang: "hi" | "en" = "hi"): string {
+  if (!gender) return "—";
+  const s = String(gender).trim();
+  const lower = s.toLowerCase();
+  if (lower === "female" || lower === "f" || s === "महिला" || s === "स्त्री" || s === "म") {
+    return lang === "hi" ? "महिला" : "Female";
+  }
+  if (lower === "male" || lower === "m" || s === "पुरुष" || s === "पुरूष" || s === "पु") {
+    return lang === "hi" ? "पुरुष" : "Male";
+  }
+  if (lower === "other" || lower === "o" || lower === "t" || lower === "transgender" || s === "अन्य") {
+    return lang === "hi" ? "अन्य" : "Other";
+  }
+  return s;
+}
+
 // Generate sample Excel template with the exact requested fields order and trigger download in browser
 export function downloadSampleExcelTemplate() {
   const sampleData = [
@@ -313,6 +361,7 @@ export function downloadSampleExcelTemplate() {
       "सपोर्टर है": "हाँ",
       "बाहर है": "नहीं",
       "आयु": "45",
+      "लिंग": "पुरुष",
       "मोबाइल नो": "9829011111",
       "पहचान पत्र (EPIC)": "RJX1001001",
       "हाउस No": "12",
@@ -331,6 +380,7 @@ export function downloadSampleExcelTemplate() {
       "सपोर्टर है": "हाँ",
       "बाहर है": "नहीं",
       "आयु": "32",
+      "लिंग": "महिला",
       "मोबाइल नो": "9829022222",
       "पहचान पत्र (EPIC)": "RJX1001002",
       "हाउस No": "14",
@@ -349,6 +399,7 @@ export function downloadSampleExcelTemplate() {
       "सपोर्टर है": "हाँ",
       "बाहर है": "हाँ",
       "आयु": "28",
+      "लिंग": "पुरुष",
       "मोबाइल नो": "9829088888",
       "पहचान पत्र (EPIC)": "RJX1001025",
       "हाउस No": "64",
@@ -367,6 +418,7 @@ export function downloadSampleExcelTemplate() {
       "सपोर्टर है": "हाँ",
       "बाहर है": "नहीं",
       "आयु": "54",
+      "लिंग": "पुरुष",
       "मोबाइल नो": "9829066666",
       "पहचान पत्र (EPIC)": "RJX1001019",
       "हाउस No": "52",

@@ -4,9 +4,16 @@ import { store } from "@/lib/data-store";
 import { verifyPassword, hashPassword } from "@/lib/auth/password";
 import { createSessionToken, setSessionCookie, clearSessionCookie } from "@/lib/auth/session";
 import { ensureDefaultUsers } from "@/lib/auth/seed";
+import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
+    const ip = getClientIp(req);
+    const rateCheck = checkRateLimit(`auth_${ip}`, { limit: 10, windowMs: 60000 });
+    if (!rateCheck.success) {
+      return rateLimitResponse(rateCheck.retryAfterSeconds, "Too many login attempts. (बहुत अधिक लॉगिन प्रयास।)");
+    }
+
     const body = await req.json();
     const { name, phone, password } = body;
 
@@ -167,12 +174,7 @@ export async function POST(req: Request) {
       });
 
       if (dbUser) {
-        let isMatch = await verifyPassword(trimmedPassword, dbUser.password);
-        if (!isMatch && (dbUser.role === "SUPER_ADMIN" || cleanPhone === "9664074969" || cleanPhone === "9999999999")) {
-          if (trimmedPassword === "96640749699664074969" || trimmedPassword === "SuperAdmin@2026") {
-            isMatch = true;
-          }
-        }
+        const isMatch = await verifyPassword(trimmedPassword, dbUser.password);
         if (isMatch) {
           // If super admin logged in with 9664074969, ensure phone is updated in DB
           if (dbUser.role === "SUPER_ADMIN" && cleanPhone === "9664074969" && dbUser.phone !== "9664074969") {

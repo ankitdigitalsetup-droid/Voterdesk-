@@ -5,9 +5,15 @@ import { getSessionFromRequest } from "@/lib/auth/session";
 export async function POST(req: Request) {
   try {
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to import voter lists." },
+        { status: 401 }
+      );
+    }
 
     // RBAC: Karyakarta is strictly forbidden from bulk importing voters
-    if (session && session.role === "KARYAKARTA") {
+    if (session.role === "KARYAKARTA") {
       return NextResponse.json(
         {
           error: "Forbidden",

@@ -109,6 +109,8 @@ model Voter {
   @@index([candidateId, epic])
   @@index([candidateId, status])
   @@index([candidateId, phone])
+  @@index([candidateId, serialNo])
+  @@index([candidateId, name])
 }
 
 // Karyakarta / Volunteer Profile (With GPS Tracking fields)

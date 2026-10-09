@@ -6,8 +6,18 @@ import { isSuperAdminEntity } from "@/lib/types";
 export async function GET(req: Request) {
   try {
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to view team members." },
+        { status: 401 }
+      );
+    }
+
     const { searchParams } = new URL(req.url);
-    const candidateId = session?.candidateId || searchParams.get("candidateId") || "cand_1";
+    const candidateId =
+      session.role === "SUPER_ADMIN"
+        ? searchParams.get("candidateId") || session.candidateId || "cand_1"
+        : session.candidateId || "cand_1";
 
     const rawTeam = await getTeamMembers(candidateId);
     // 🛡️ SUPER ADMIN PRIVACY GUARD: Super Admin never appears in candidate team members
@@ -25,9 +35,15 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to add team members." },
+        { status: 401 }
+      );
+    }
 
     // RBAC: Karyakartas cannot create other team members
-    if (session && session.role === "KARYAKARTA") {
+    if (session.role === "KARYAKARTA") {
       return NextResponse.json(
         {
           error: "Forbidden",

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { store, compareVotersBySerial } from "@/lib/data-store";
 import { VoterRecord } from "@/lib/types";
+import { normalizeGender } from "@/lib/excel-helper";
 
 /**
  * Maps a Prisma Voter record to the frontend VoterRecord interface.
@@ -133,7 +134,7 @@ export async function seedInitialVotersIfEmpty(candidateId = "cand_1"): Promise<
 }
 
 /**
- * Retrieves voters with rich filtering, searching, and role-based booth scoping.
+ * Retrieves voters with rich filtering, searching, server-side pagination, and role-based booth scoping.
  */
 export async function getVoters(params: {
   candidateId: string;
@@ -141,8 +142,17 @@ export async function getVoters(params: {
   status?: string;
   query?: string;
   assignedBooths?: string[];
-}): Promise<{ voters: VoterRecord[]; total: number; source: "database" | "memory_store" }> {
-  const { candidateId, booth, status, query, assignedBooths } = params;
+  page?: number;
+  pageSize?: number;
+}): Promise<{
+  voters: VoterRecord[];
+  total: number;
+  page?: number;
+  pageSize?: number;
+  totalPages?: number;
+  source: "database" | "memory_store";
+}> {
+  const { candidateId, booth, status, query, assignedBooths, page, pageSize } = params;
 
   try {
     // 1. Try querying Neon PostgreSQL via Prisma
@@ -156,7 +166,7 @@ export async function getVoters(params: {
         if (assignedBooths.includes(booth)) {
           whereClause.booth = booth;
         } else {
-          return { voters: [], total: 0, source: "database" };
+          return { voters: [], total: 0, page, pageSize, totalPages: 0, source: "database" };
         }
       } else {
         whereClause.booth = { in: assignedBooths };
@@ -170,7 +180,7 @@ export async function getVoters(params: {
       whereClause.status = status;
     }
 
-    // Search query (case-insensitive across name, epic, phone, house, guardian, address)
+    // Search query (case-insensitive across name, epic, phone, house, guardian, address, serialNo)
     if (query && query.trim()) {
       const q = query.trim();
       whereClause.OR = [
@@ -180,19 +190,31 @@ export async function getVoters(params: {
         { house: { contains: q } },
         { guardian: { contains: q, mode: "insensitive" } },
         { address: { contains: q, mode: "insensitive" } },
+        { serialNo: { contains: q } },
       ];
     }
+
+    const hasPagination = page && page > 0 && pageSize && pageSize > 0;
+    const total = await prisma.voter.count({ where: whereClause });
 
     const dbVoters = await prisma.voter.findMany({
       where: whereClause,
       orderBy: [{ booth: "asc" }, { createdAt: "asc" }],
+      ...(hasPagination ? { skip: (page - 1) * pageSize, take: pageSize } : {}),
     });
 
-    // If database has records, return them sorted strictly by natural numerical serial number
-    if (dbVoters.length > 0) {
+    // If database has records or total > 0, return formatted records
+    if (dbVoters.length > 0 || total > 0) {
       const voters = dbVoters.map(mapDbVoterToRecord);
       voters.sort((a, b) => compareVotersBySerial(a, b));
-      return { voters, total: voters.length, source: "database" };
+      return {
+        voters,
+        total,
+        page: hasPagination ? page : 1,
+        pageSize: hasPagination ? pageSize : voters.length,
+        totalPages: hasPagination ? Math.ceil(total / pageSize) : 1,
+        source: "database",
+      };
     }
 
     // If DB is empty, trigger seed and check store
@@ -209,7 +231,19 @@ export async function getVoters(params: {
     query,
   });
 
-  return { voters: storeVoters, total: storeVoters.length, source: "memory_store" };
+  const hasPagination = page && page > 0 && pageSize && pageSize > 0;
+  const paginatedVoters = hasPagination
+    ? storeVoters.slice((page - 1) * pageSize, page * pageSize)
+    : storeVoters;
+
+  return {
+    voters: paginatedVoters,
+    total: storeVoters.length,
+    page: hasPagination ? page : 1,
+    pageSize: hasPagination ? pageSize : storeVoters.length,
+    totalPages: hasPagination ? Math.ceil(storeVoters.length / pageSize) : 1,
+    source: "memory_store",
+  };
 }
 
 /**
@@ -244,7 +278,7 @@ export async function createVoter(
         epic: epicVal,
         guardian: data.guardian || null,
         age: String(data.age || "35"),
-        gender: data.gender || "Male",
+        gender: normalizeGender(data.gender),
         house: data.house || null,
         booth: boothVal,
         serialNo: data.serialNo != null ? String(data.serialNo) : null,
@@ -477,7 +511,7 @@ export async function batchImportVoters(
       epic: epicVal,
       guardian: raw.guardian ? String(raw.guardian).trim() : null,
       age: raw.age ? String(raw.age).trim() : "35",
-      gender: raw.gender ? String(raw.gender).trim() : "Male",
+      gender: normalizeGender(raw.gender),
       house: raw.house ? String(raw.house).trim() : null,
       booth: boothVal,
       serialNo: serialVal,

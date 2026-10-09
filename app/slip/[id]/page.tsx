@@ -2,6 +2,7 @@ import React from "react";
 import type { Metadata } from "next";
 import { getVoterById } from "@/lib/db/voters";
 import { getCandidateById } from "@/lib/db/candidates";
+import { formatGenderDisplay } from "@/lib/excel-helper";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -26,7 +27,7 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
 
   const title = `🇮🇳 मतदाता पर्ची (Voter Slip) - ${voterName}`;
   const description = `उम्मीदवार: ${candName} | वार्ड सं: ${partNo} | क्रम सं: ${serialNo} | पहचान पत्र: ${epicNo}`;
-  const posterUrl = cand?.posterUrl || "https://voterdesk-six.vercel.app/images/campaign-poster.jpg";
+  const posterUrl = cand?.posterUrl || "https://voterdeskproject.vercel.app/images/campaign-poster.jpg";
 
   return {
     title,
@@ -118,7 +119,8 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
             
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span><b>उम्र :</b> {voter.age ? `${voter.age} वर्ष` : "—"}</span>
-              <span><b>मकान नंबर :</b> {voter.house || "—"}</span>
+              <span><b>लिंग :</b> {formatGenderDisplay(voter.gender, "hi")}</span>
+              <span><b>मकान नं. :</b> {voter.house || "—"}</span>
             </div>
 
             <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "8px", marginTop: "4px" }}>
@@ -137,7 +139,7 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
         {/* Action Buttons */}
         <div style={{ padding: "0 16px 20px", display: "flex", gap: "10px" }}>
           <a
-            href={`https://wa.me/?text=${encodeURIComponent(`*🇮🇳 मतदाता पर्ची - ${voter.name}*\nउम्मीदवार: ${candName} (${candParty})\n🗳️ *${slipMsg}*\nवार्ड सं: ${voter.booth} | क्रम सं: ${voter.serialNo || "—"}\nपहचान पत्र: ${voter.epic}\nबुथ पता: ${voter.boothAddress || ""}`)}`}
+            href={`https://wa.me/?text=${encodeURIComponent(`*🇮🇳 मतदाता पर्ची - ${voter.name}*\nउम्मीदवार: ${candName} (${candParty})\n🗳️ *${slipMsg}*\nवार्ड सं: ${voter.booth} | क्रम सं: ${voter.serialNo || "—"}\nपहचान पत्र: ${voter.epic}\nउम्र: ${voter.age ? `${voter.age} वर्ष` : "—"} | लिंग: ${formatGenderDisplay(voter.gender, "hi")}\nबुथ पता: ${voter.boothAddress || ""}`)}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{

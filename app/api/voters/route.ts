@@ -5,17 +5,31 @@ import { store } from "@/lib/data-store";
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to view voter records." },
+        { status: 401 }
+      );
+    }
 
-    const candidateId = session?.candidateId || searchParams.get("candidateId") || "cand_1";
+    const { searchParams } = new URL(req.url);
+    const candidateId =
+      session.role === "SUPER_ADMIN"
+        ? searchParams.get("candidateId") || session.candidateId || "cand_1"
+        : session.candidateId || "cand_1";
+
     const booth = searchParams.get("booth") || "ALL";
     const status = searchParams.get("status") || "ALL";
     const query = searchParams.get("q") || "";
+    const pageParam = searchParams.get("page");
+    const pageSizeParam = searchParams.get("pageSize") || searchParams.get("limit");
+    const page = pageParam ? parseInt(pageParam, 10) : undefined;
+    const pageSize = pageSizeParam ? parseInt(pageSizeParam, 10) : undefined;
 
-    // If Karyakarta, restrict to assigned booths
+    // If Karyakarta, restrict strictly to assigned booths
     const assignedBooths =
-      session && session.role === "KARYAKARTA" && session.assignedBooths && session.assignedBooths.length > 0
+      session.role === "KARYAKARTA" && session.assignedBooths && session.assignedBooths.length > 0
         ? session.assignedBooths
         : undefined;
 
@@ -25,12 +39,18 @@ export async function GET(req: Request) {
       status,
       query,
       assignedBooths,
+      page,
+      pageSize,
     });
 
     return NextResponse.json({
       success: true,
       voters: result.voters,
-      count: result.total,
+      count: result.voters.length,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      totalPages: result.totalPages,
       source: result.source,
       version: store.getVersion(),
     });
@@ -45,6 +65,13 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to add voter records." },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const {
       name,
@@ -73,7 +100,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Voter name is required" }, { status: 400 });
     }
 
-    const targetCandidateId = session?.candidateId || candidateId || "cand_1";
+    const targetCandidateId =
+      session.role === "SUPER_ADMIN" ? candidateId || session.candidateId || "cand_1" : session.candidateId || "cand_1";
+
+    const boothVal = booth || "1";
+
+    // If Karyakarta, verify they are adding within their assigned booth
+    if (
+      session.role === "KARYAKARTA" &&
+      session.assignedBooths &&
+      session.assignedBooths.length > 0 &&
+      !session.assignedBooths.includes(String(boothVal).trim())
+    ) {
+      return NextResponse.json(
+        {
+          error: "Forbidden",
+          message: `You can only add voters to your assigned booth(s): [${session.assignedBooths.join(", ")}].`,
+        },
+        { status: 403 }
+      );
+    }
 
     const voter = await createVoter({
       name,

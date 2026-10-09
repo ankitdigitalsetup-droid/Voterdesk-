@@ -6,11 +6,18 @@ import { store } from "@/lib/data-store";
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const body = await req.json();
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to update voter records." },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
 
     // If Karyakarta, verify booth permission
-    if (session && session.role === "KARYAKARTA") {
+    if (session.role === "KARYAKARTA") {
       const existingVoter = store.getVoters({ candidateId: session.candidateId || undefined }).find((v) => v.id === id);
       if (existingVoter && session.assignedBooths && session.assignedBooths.length > 0) {
         if (!session.assignedBooths.includes(existingVoter.booth)) {
@@ -43,9 +50,15 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   try {
     const { id } = await params;
     const session = getSessionFromRequest(req);
+    if (!session) {
+      return NextResponse.json(
+        { error: "Unauthorized", message: "Authentication is required to delete voter records." },
+        { status: 401 }
+      );
+    }
 
     // RBAC: Karyakartas are strictly forbidden from deleting voter records
-    if (session && session.role === "KARYAKARTA") {
+    if (session.role === "KARYAKARTA") {
       return NextResponse.json(
         {
           error: "Forbidden",

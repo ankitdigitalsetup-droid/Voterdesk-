@@ -11,9 +11,32 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://voterdesk.in"),
   title: "VoterDesk - Campaign & Voter Management",
-  description: "Manage voter-list imports, booth teams and campaign field operations.",
+  description: "Manage voter-list imports, booth teams, digital voter slips and live campaign field operations.",
+  applicationName: "VoterDesk",
+  keywords: ["VoterDesk", "Election Campaign", "Booth Management", "Voter Slip", "मतदाता पर्ची", "Electoral Roll"],
   manifest: "/manifest.json",
+  openGraph: {
+    title: "VoterDesk - Campaign & Voter Management",
+    description: "Manage voter-list imports, booth teams, digital voter slips and live campaign field operations.",
+    type: "website",
+    siteName: "VoterDesk",
+    images: [
+      {
+        url: "/icon-512.png",
+        width: 512,
+        height: 512,
+        alt: "VoterDesk Logo",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary",
+    title: "VoterDesk - Campaign & Voter Management",
+    description: "Manage voter-list imports, booth teams, digital voter slips and live campaign field operations.",
+    images: ["/icon-512.png"],
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
