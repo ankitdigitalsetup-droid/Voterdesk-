@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
 import { CandidateAccount, BoothAccessPassword } from "@/lib/types";
+import { d1Query, d1Execute, isD1Configured } from "@/lib/d1";
 
 function mapDbCandidateToAccount(c: any): CandidateAccount {
   return {
@@ -24,9 +25,46 @@ function mapDbCandidateToAccount(c: any): CandidateAccount {
 }
 
 /**
- * Retrieves all candidates from Neon PostgreSQL with fallback to memory store.
+ * Retrieves all candidates from Cloudflare D1 or Neon PostgreSQL with fallback to memory store.
  */
 export async function getCandidates(candidateId?: string): Promise<CandidateAccount[]> {
+  // 1. Try Cloudflare D1 Database (Ultra-fast serverless SQLite)
+  if (isD1Configured()) {
+    try {
+      let d1Sql = `SELECT c.*, (SELECT count(*) FROM "Voter" v WHERE v.candidateId = c.id OR (c.id = 'cand_1' AND v.candidateId = 'cmuq2l4zx0002jz04vr6hy570')) as voterCount FROM "Candidate" c`;
+      const params: any[] = [];
+      if (candidateId) {
+        d1Sql += ` WHERE c.id = ? OR (c.id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`;
+        params.push(candidateId, candidateId);
+      }
+      d1Sql += ` ORDER BY c.createdAt DESC`;
+      const d1Candidates = await d1Query<any>(d1Sql, params);
+      if (d1Candidates.length > 0) {
+        return d1Candidates.map((c) => ({
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          party: c.party || "Independent",
+          electionName: c.electionName || "Municipal Election 2026",
+          wardConstituency: c.wardConstituency || "Ward 34",
+          status: (c.status as CandidateAccount["status"]) || "ACTIVE",
+          voterCount: Number(c.voterCount) || 1826,
+          boothCount: Number(c.boothCount) || 7,
+          createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : "2026-10-01",
+          posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
+          symbolName: c.symbolName || undefined,
+          nikay: c.nikay || undefined,
+          passwordsJson: c.passwordsJson || undefined,
+          electionType: "NIKAY",
+          slipMessage: c.name ? `वोट दें ${c.name} को` : undefined,
+        }));
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 getCandidates notice:", d1Err);
+    }
+  }
+
+  // 2. Try Neon PostgreSQL
   try {
     const whereClause: any = {};
     if (candidateId) {
@@ -51,7 +89,7 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
     console.warn("Neon DB getCandidates notice, falling back to store:", err);
   }
 
-  // Fallback to store
+  // 3. Fallback to store
   const storeCandidates = store.getCandidates();
   if (candidateId) {
     const isTarget = (cid: string) =>
@@ -233,6 +271,30 @@ export async function createCandidate(data: {
  * Retrieves access passwords for a candidate.
  */
 export async function getCandidatePasswords(candidateId: string): Promise<BoothAccessPassword[]> {
+  // 1. Try Cloudflare D1 Database
+  if (isD1Configured()) {
+    try {
+      const d1Pwds = await d1Query<BoothAccessPassword>(
+        `SELECT * FROM "AccessPassword" WHERE candidateId = ? OR (candidateId = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
+        [candidateId, candidateId]
+      );
+      if (d1Pwds.length > 0) {
+        return d1Pwds.map((p, idx) => ({
+          id: p.id,
+          serialNumber: idx + 1,
+          password: p.password,
+          role: p.role as "CANDIDATE_ADMIN" | "KARYAKARTA",
+          roleTitle: p.roleTitle as "ADMIN" | "MEMBER",
+          boothNumber: p.boothNumber,
+          candidateId: p.candidateId,
+        }));
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 getCandidatePasswords notice:", d1Err);
+    }
+  }
+
+  // 2. Try Neon PostgreSQL
   try {
     const dbList = await prisma.accessPassword.findMany({
       where: { candidateId },
@@ -319,6 +381,29 @@ export async function updateCandidate(
     console.warn(`Neon DB updateCandidate(${id}) notice:`, err);
   }
 
+  // Update in Cloudflare D1 Database
+  if (isD1Configured()) {
+    try {
+      const setClauses: string[] = [];
+      const params: any[] = [];
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined) {
+          setClauses.push(`"${key}" = ?`);
+          params.push(value);
+        }
+      }
+      if (setClauses.length > 0) {
+        params.push(id, id);
+        await d1Execute(
+          `UPDATE "Candidate" SET ${setClauses.join(", ")} WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
+          params
+        );
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 updateCandidate notice:", d1Err);
+    }
+  }
+
   // Update in memory store
   const storeCand = store.updateCandidate(id, updates);
   store.touchVersion();
@@ -338,6 +423,19 @@ export async function deleteCandidate(id: string): Promise<boolean> {
     deleted = true;
   } catch (err) {
     console.warn(`Neon DB deleteCandidate(${id}) notice:`, err);
+  }
+
+  // Delete from Cloudflare D1 Database
+  if (isD1Configured()) {
+    try {
+      await d1Execute(`DELETE FROM "Candidate" WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`, [id, id]);
+      await d1Execute(`DELETE FROM "Voter" WHERE candidateId = ? OR (candidateId = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`, [id, id]);
+      await d1Execute(`DELETE FROM "AccessPassword" WHERE candidateId = ? OR (candidateId = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`, [id, id]);
+      await d1Execute(`DELETE FROM "Booth" WHERE candidateId = ? OR (candidateId = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`, [id, id]);
+      deleted = true;
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 deleteCandidate notice:", d1Err);
+    }
   }
 
   const storeDeleted = store.deleteCandidate(id);

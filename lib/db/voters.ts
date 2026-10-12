@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { store, compareVotersBySerial } from "@/lib/data-store";
 import { VoterRecord } from "@/lib/types";
 import { normalizeGender } from "@/lib/excel-helper";
+import { d1Query, d1Execute, isD1Configured } from "@/lib/d1";
 
 /**
  * Maps a Prisma Voter record to the frontend VoterRecord interface.
@@ -154,8 +155,79 @@ export async function getVoters(params: {
 }> {
   const { candidateId, booth, status, query, assignedBooths, page, pageSize } = params;
 
+  // 1. Try querying Cloudflare D1 Database (Fast Serverless SQLite)
+  if (isD1Configured()) {
+    try {
+      const conditions: string[] = [];
+      const d1Params: any[] = [];
+
+      conditions.push(`("candidateId" = ? OR ("candidateId" = 'cmuq2l4zx0002jz04vr6hy570' AND ? = 'cand_1'))`);
+      d1Params.push(candidateId, candidateId);
+
+      if (assignedBooths && assignedBooths.length > 0) {
+        if (booth && booth !== "ALL") {
+          if (assignedBooths.includes(booth)) {
+            conditions.push(`"booth" = ?`);
+            d1Params.push(booth);
+          } else {
+            return { voters: [], total: 0, page, pageSize, totalPages: 0, source: "database" };
+          }
+        } else {
+          const placeholders = assignedBooths.map(() => "?").join(",");
+          conditions.push(`"booth" IN (${placeholders})`);
+          d1Params.push(...assignedBooths);
+        }
+      } else if (booth && booth !== "ALL") {
+        conditions.push(`"booth" = ?`);
+        d1Params.push(booth);
+      }
+
+      if (status && status !== "ALL") {
+        conditions.push(`LOWER("status") = LOWER(?)`);
+        d1Params.push(status);
+      }
+
+      if (query && query.trim()) {
+        const q = `%${query.trim()}%`;
+        conditions.push(`("name" LIKE ? OR "epic" LIKE ? OR "phone" LIKE ? OR "guardian" LIKE ? OR "house" LIKE ? OR "address" LIKE ? OR "serialNo" LIKE ?)`);
+        d1Params.push(q, q, q, q, q, q, q);
+      }
+
+      const whereClauseStr = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+      const countResult = await d1Query<{ count: number }>(`SELECT count(*) as count FROM "Voter" ${whereClauseStr}`, d1Params);
+      const total = countResult[0]?.count || 0;
+
+      let selectSql = `SELECT * FROM "Voter" ${whereClauseStr} ORDER BY CAST("booth" AS INTEGER) ASC, CAST("serialNo" AS INTEGER) ASC`;
+      const queryParams = [...d1Params];
+
+      const hasPagination = page && page > 0 && pageSize && pageSize > 0;
+      if (hasPagination) {
+        const offset = (page - 1) * pageSize;
+        selectSql += ` LIMIT ? OFFSET ?`;
+        queryParams.push(pageSize, offset);
+      }
+
+      const d1Voters = await d1Query<any>(selectSql, queryParams);
+      if (d1Voters.length > 0 || total > 0) {
+        const mapped = d1Voters.map(mapDbVoterToRecord);
+        mapped.sort((a, b) => compareVotersBySerial(a, b));
+        return {
+          voters: mapped,
+          total,
+          page: hasPagination ? page : 1,
+          pageSize: hasPagination ? pageSize : mapped.length,
+          totalPages: hasPagination ? Math.ceil(total / pageSize) : 1,
+          source: "database",
+        };
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 getVoters notice:", d1Err);
+    }
+  }
+
   try {
-    // 1. Try querying Neon PostgreSQL via Prisma
+    // 2. Try querying Neon PostgreSQL via Prisma
     const whereClause: any = {
       candidateId:
         candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570"
@@ -304,6 +376,34 @@ export async function createVoter(
     console.warn("Neon DB createVoter error, saving to local store:", err);
   }
 
+  // Sync into Cloudflare D1 Database
+  if (isD1Configured()) {
+    try {
+      const vId = createdRecord?.id || "v_" + Date.now();
+      await d1Execute(
+        `INSERT OR REPLACE INTO "Voter" (
+          "id", "name", "epic", "guardian", "age", "gender",
+          "house", "booth", "serialNo", "phone", "address",
+          "boothAddress", "voted", "isSupporter", "isOutside",
+          "status", "workerName", "notes", "slipMessage", "candidateId"
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          vId, data.name, epicVal, data.guardian || "", String(data.age || "35"),
+          normalizeGender(data.gender), data.house || "", boothVal,
+          data.serialNo != null ? String(data.serialNo) : "", data.phone || "",
+          data.address || "", data.boothAddress || "",
+          data.voted != null ? String(data.voted) : "नहीं",
+          data.isSupporter != null ? String(data.isSupporter) : "हाँ",
+          data.isOutside != null ? String(data.isOutside) : "नहीं",
+          data.status || (data.isSupporter === "हाँ" ? "In-Favor" : "Pending"),
+          data.worker || "Unassigned", notesVal || "", data.slipMessage || "", data.candidateId
+        ]
+      );
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 createVoter notice:", d1Err);
+    }
+  }
+
   // Sync into memory store for zero-latency multi-mobile sync
   const storeVoter = store.addVoter({
     id: createdRecord?.id,
@@ -360,9 +460,9 @@ export async function updateVoter(
   updates: Partial<VoterRecord>
 ): Promise<VoterRecord | null> {
   let updatedRecord: VoterRecord | null = null;
+  const dataToUpdate: any = {};
 
   try {
-    const dataToUpdate: any = {};
     if (updates.name !== undefined) dataToUpdate.name = updates.name;
     if (updates.epic !== undefined) dataToUpdate.epic = updates.epic;
     if (updates.guardian !== undefined) dataToUpdate.guardian = updates.guardian;
@@ -420,13 +520,33 @@ export async function updateVoter(
     console.warn(`Neon DB updateVoter(${id}) error, updating local store:`, err);
   }
 
+  // Update in Cloudflare D1 Database
+  if (isD1Configured()) {
+    try {
+      const setClauses: string[] = [];
+      const d1Params: any[] = [];
+      for (const [k, v] of Object.entries(dataToUpdate)) {
+        if (v !== undefined) {
+          setClauses.push(`"${k}" = ?`);
+          d1Params.push(v);
+        }
+      }
+      if (setClauses.length > 0) {
+        d1Params.push(id);
+        await d1Execute(`UPDATE "Voter" SET ${setClauses.join(", ")} WHERE id = ?`, d1Params);
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 updateVoter notice:", d1Err);
+    }
+  }
+
   // Always update memory store and bump version for live sync
   const localUpdated = store.updateVoter(id, updates);
   return updatedRecord || localUpdated || null;
 }
 
 /**
- * Deletes a voter from Neon PostgreSQL and memory store.
+ * Deletes a voter from Neon PostgreSQL, Cloudflare D1, and memory store.
  */
 export async function deleteVoter(id: string): Promise<boolean> {
   let success = false;
@@ -436,6 +556,16 @@ export async function deleteVoter(id: string): Promise<boolean> {
     success = true;
   } catch (err) {
     console.warn(`Neon DB deleteVoter(${id}) notice:`, err);
+  }
+
+  // Delete from Cloudflare D1 Database
+  if (isD1Configured()) {
+    try {
+      await d1Execute(`DELETE FROM "Voter" WHERE id = ?`, [id]);
+      success = true;
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 deleteVoter notice:", d1Err);
+    }
   }
 
   const localSuccess = store.deleteVoter(id);
