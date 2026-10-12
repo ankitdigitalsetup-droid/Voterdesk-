@@ -236,9 +236,24 @@ export default function Page() {
   const serverVersionRef = useRef<number>(0);
   serverVersionRef.current = serverVersion;
 
-  // Refresh data from local store and Neon PostgreSQL
+  // Refresh data from local store, localStorage cache, and backend API
   const refreshData = useCallback(async () => {
-    setCandidates([...store.getCandidates()]);
+    // 1. Instant hydration from store & browser localStorage cache
+    const initialCandidates = store.getCandidates();
+    let localCache: CandidateAccount[] = [];
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("voterdesk_candidates_cache");
+        if (raw) localCache = JSON.parse(raw);
+      } catch {}
+    }
+    const mergedMap = new Map<string, CandidateAccount>();
+    initialCandidates.forEach((c) => mergedMap.set(c.id, c));
+    if (Array.isArray(localCache)) {
+      localCache.forEach((c) => mergedMap.set(c.id, c));
+    }
+    const initialMerged = Array.from(mergedMap.values());
+    setCandidates(initialMerged);
     setVoters([...store.getVoters({ candidateId: activeCandidateId })]);
     setTeam([...store.getTeam(activeCandidateId)]);
 
@@ -259,7 +274,13 @@ export default function Page() {
             prev.forEach((c) => {
               if (!map.has(c.id)) map.set(c.id, c);
             });
-            return Array.from(map.values());
+            const merged = Array.from(map.values());
+            if (typeof window !== "undefined") {
+              try {
+                localStorage.setItem("voterdesk_candidates_cache", JSON.stringify(merged));
+              } catch {}
+            }
+            return merged;
           });
         }
       }
@@ -452,16 +473,34 @@ export default function Page() {
         }}
         onCandidateCreated={(createdCand?: CandidateAccount) => {
           if (createdCand) {
-            setCandidates((prev) => [createdCand, ...prev.filter((c) => c.id !== createdCand.id)]);
+            setCandidates((prev) => {
+              const updated = [createdCand, ...prev.filter((c) => c.id !== createdCand.id)];
+              if (typeof window !== "undefined") {
+                try { localStorage.setItem("voterdesk_candidates_cache", JSON.stringify(updated)); } catch {}
+              }
+              return updated;
+            });
           }
           refreshData();
         }}
         onCandidateUpdated={(updatedCand: CandidateAccount) => {
-          setCandidates((prev) => prev.map((c) => (c.id === updatedCand.id ? updatedCand : c)));
+          setCandidates((prev) => {
+            const updated = prev.map((c) => (c.id === updatedCand.id ? updatedCand : c));
+            if (typeof window !== "undefined") {
+              try { localStorage.setItem("voterdesk_candidates_cache", JSON.stringify(updated)); } catch {}
+            }
+            return updated;
+          });
           refreshData();
         }}
         onCandidateDeleted={(candId: string) => {
-          setCandidates((prev) => prev.filter((c) => c.id !== candId));
+          setCandidates((prev) => {
+            const updated = prev.filter((c) => c.id !== candId);
+            if (typeof window !== "undefined") {
+              try { localStorage.setItem("voterdesk_candidates_cache", JSON.stringify(updated)); } catch {}
+            }
+            return updated;
+          });
           refreshData();
         }}
         onLogout={handleLogout}

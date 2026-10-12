@@ -15,6 +15,7 @@
 
 import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword, isSuperAdminEntity } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
+import { DEFAULT_CANDIDATES, DEFAULT_PASSWORDS, DEFAULT_USERS, DEFAULT_TEAM, DEFAULT_SAMPLE_VOTERS } from "./default-campaigns";
 
 /**
  * 1. NATURAL NUMERICAL COMPARATOR (क्रम संख्या सॉर्टिंग)
@@ -139,12 +140,13 @@ class DataStore {
       if (fs.existsSync(filePath)) {
         const raw = fs.readFileSync(filePath, "utf-8");
         const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.voters) && parsed.voters.length > 0) {
-          this.voters = parsed.voters;
+        if (parsed) {
           if (parsed.version) this.version = parsed.version;
-          if (Array.isArray(parsed.candidates)) this.candidates = parsed.candidates;
-          if (Array.isArray(parsed.team)) this.team = parsed.team;
-          if (Array.isArray(parsed.users)) this.users = parsed.users;
+          if (Array.isArray(parsed.candidates) && parsed.candidates.length > 0) this.candidates = parsed.candidates;
+          if (Array.isArray(parsed.team) && parsed.team.length > 0) this.team = parsed.team;
+          if (Array.isArray(parsed.users) && parsed.users.length > 0) this.users = parsed.users;
+          if (Array.isArray(parsed.voters) && parsed.voters.length > 0) this.voters = parsed.voters;
+          if (Array.isArray(parsed.accessPasswords) && parsed.accessPasswords.length > 0) this.accessPasswords = parsed.accessPasswords;
         }
       }
     } catch {
@@ -167,6 +169,7 @@ class DataStore {
           candidates: this.candidates,
           users: this.users,
           team: this.team,
+          accessPasswords: this.accessPasswords,
         })
       );
     } catch {
@@ -174,15 +177,15 @@ class DataStore {
     }
   }
 
-  private users: (UserAccount & { password: string })[] = [];
+  private users: (UserAccount & { password: string })[] = [...DEFAULT_USERS];
 
-  private candidates: CandidateAccount[] = [];
+  private candidates: CandidateAccount[] = [...DEFAULT_CANDIDATES];
 
-  private team: TeamMember[] = [];
+  private team: TeamMember[] = [...DEFAULT_TEAM];
 
-  private voters: VoterRecord[] = [];
+  private voters: VoterRecord[] = [...DEFAULT_SAMPLE_VOTERS];
 
-  private accessPasswords: BoothAccessPassword[] = [];
+  private accessPasswords: BoothAccessPassword[] = [...DEFAULT_PASSWORDS];
 
   // Auth: Password determines whether the user is ADMIN or MEMBER
   authenticate(phone: string, password?: string, name?: string) {
@@ -303,19 +306,27 @@ class DataStore {
   }
 
   getCandidatePasswords(candidateId: string): BoothAccessPassword[] {
-    const fromList = this.accessPasswords.filter((p) => p.candidateId === candidateId);
+    const isTarget = (cid: string) =>
+      cid === candidateId ||
+      ((candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570") &&
+        (cid === "cand_1" || cid === "cmuq2l4zx0002jz04vr6hy570"));
+
+    const fromList = this.accessPasswords.filter((p) => isTarget(p.candidateId));
     if (fromList.length > 0) {
       return fromList.map((p, idx) => ({ ...p, serialNumber: idx + 1 }));
     }
     // Check candidate passwordsJson
-    const cand = this.candidates.find((c) => c.id === candidateId);
+    const cand = this.getCandidate(candidateId);
     if (cand?.passwordsJson) {
       try {
         const parsed = JSON.parse(cand.passwordsJson);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           return parsed.map((p, idx) => ({ ...p, serialNumber: idx + 1 }));
         }
       } catch {}
+    }
+    if (candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570" || !candidateId) {
+      return DEFAULT_PASSWORDS;
     }
     return [];
   }
@@ -326,11 +337,20 @@ class DataStore {
 
   // Candidates
   getCandidates() {
+    if (this.candidates.length === 0) {
+      this.candidates = [...DEFAULT_CANDIDATES];
+    }
     return this.candidates;
   }
 
   getCandidate(id: string) {
-    return this.candidates.find((c) => c.id === id);
+    return (
+      this.candidates.find((c) => c.id === id) ||
+      ((id === "cand_1" || id === "cmuq2l4zx0002jz04vr6hy570")
+        ? this.candidates.find((c) => c.id === "cand_1" || c.id === "cmuq2l4zx0002jz04vr6hy570")
+        : undefined) ||
+      this.candidates[0]
+    );
   }
 
   addCandidate(cand: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string }) {
@@ -503,7 +523,12 @@ class DataStore {
   }) {
     let list = this.voters;
     if (params.candidateId) {
-      list = list.filter((v) => v.candidateId === params.candidateId);
+      const cId = params.candidateId;
+      const isTarget = (vCid?: string) =>
+        vCid === cId ||
+        ((cId === "cand_1" || cId === "cmuq2l4zx0002jz04vr6hy570") &&
+          (vCid === "cand_1" || vCid === "cmuq2l4zx0002jz04vr6hy570"));
+      list = list.filter((v) => isTarget(v.candidateId));
     }
     if (params.booth && params.booth !== "ALL") {
       list = list.filter((v) => v.booth === params.booth);

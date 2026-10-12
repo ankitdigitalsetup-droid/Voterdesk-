@@ -157,7 +157,10 @@ export async function getVoters(params: {
   try {
     // 1. Try querying Neon PostgreSQL via Prisma
     const whereClause: any = {
-      candidateId,
+      candidateId:
+        candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570"
+          ? { in: ["cand_1", "cmuq2l4zx0002jz04vr6hy570"] }
+          : candidateId,
     };
 
     // Booth filtering & Karyakarta booth restriction
