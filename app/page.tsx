@@ -241,16 +241,28 @@ export default function Page() {
     // 1. Instant hydration from store & browser localStorage cache
     const initialCandidates = store.getCandidates();
     let localCache: CandidateAccount[] = [];
+    let deletedIds = new Set<string>();
     if (typeof window !== "undefined") {
+      try {
+        const rawDel = localStorage.getItem("voterdesk_deleted_campaigns");
+        if (rawDel) {
+          const arr = JSON.parse(rawDel);
+          if (Array.isArray(arr)) deletedIds = new Set(arr);
+        }
+      } catch {}
       try {
         const raw = localStorage.getItem("voterdesk_candidates_cache");
         if (raw) localCache = JSON.parse(raw);
       } catch {}
     }
     const mergedMap = new Map<string, CandidateAccount>();
-    initialCandidates.forEach((c) => mergedMap.set(c.id, c));
+    initialCandidates.forEach((c) => {
+      if (!deletedIds.has(c.id)) mergedMap.set(c.id, c);
+    });
     if (Array.isArray(localCache)) {
-      localCache.forEach((c) => mergedMap.set(c.id, c));
+      localCache.forEach((c) => {
+        if (!deletedIds.has(c.id)) mergedMap.set(c.id, c);
+      });
     }
     const initialMerged = Array.from(mergedMap.values());
     setCandidates(initialMerged);
@@ -265,23 +277,14 @@ export default function Page() {
       const cRes = await fetch("/api/candidates", { headers, credentials: "include" });
       if (cRes.ok) {
         const cData = await cRes.json();
-        if (Array.isArray(cData.candidates) && cData.candidates.length > 0) {
-          setCandidates((prev) => {
-            const map = new Map<string, CandidateAccount>();
-            // Add server candidates
-            cData.candidates.forEach((c: CandidateAccount) => map.set(c.id, c));
-            // Preserve any newly created local candidates not yet returned
-            prev.forEach((c) => {
-              if (!map.has(c.id)) map.set(c.id, c);
-            });
-            const merged = Array.from(map.values());
-            if (typeof window !== "undefined") {
-              try {
-                localStorage.setItem("voterdesk_candidates_cache", JSON.stringify(merged));
-              } catch {}
-            }
-            return merged;
-          });
+        if (Array.isArray(cData.candidates)) {
+          const serverCands = cData.candidates.filter((c: CandidateAccount) => !deletedIds.has(c.id));
+          setCandidates(serverCands);
+          if (typeof window !== "undefined") {
+            try {
+              localStorage.setItem("voterdesk_candidates_cache", JSON.stringify(serverCands));
+            } catch {}
+          }
         }
       }
     } catch {}
@@ -494,6 +497,17 @@ export default function Page() {
           refreshData();
         }}
         onCandidateDeleted={(candId: string) => {
+          if (typeof window !== "undefined") {
+            try {
+              const rawDel = localStorage.getItem("voterdesk_deleted_campaigns");
+              const delList = rawDel ? JSON.parse(rawDel) : [];
+              if (Array.isArray(delList) && !delList.includes(candId)) {
+                delList.push(candId);
+                localStorage.setItem("voterdesk_deleted_campaigns", JSON.stringify(delList));
+              }
+            } catch {}
+          }
+          store.deleteCandidate(candId);
           setCandidates((prev) => {
             const updated = prev.filter((c) => c.id !== candId);
             if (typeof window !== "undefined") {
@@ -2326,7 +2340,7 @@ function SuperAdminView({
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                       <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>वार्ड में कुल बूथ संख्या (Total Booths)</label>
                       <span style={{ fontSize: "11px", fontWeight: 800, color: "#0284c7" }}>
-                        {boothCount} बूथ = {boothPasswords.length} पासवर्ड (प्रति बूथ 1 ADMIN + 3 MEMBER)
+                        {boothCount} बूथ = {boothPasswords.length} पासवर्ड ({boothCount <= 10 ? "प्रति बूथ 1 ADMIN + 3 MEMBER" : `${Math.min(boothCount, 40)} ADMIN + ${Math.max(0, 40 - Math.min(boothCount, 40))} MEMBER, अधिकतम 40 सीमा`})
                       </span>
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -2476,7 +2490,7 @@ function SuperAdminView({
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
                       <label style={{ fontSize: "12px", fontWeight: 700, margin: 0 }}>पंचायत में कुल वार्ड संख्या (Total Wards)</label>
                       <span style={{ fontSize: "11px", fontWeight: 800, color: "#16a34a" }}>
-                        {boothCount} वार्ड = {boothPasswords.length} पासवर्ड (प्रति वार्ड 1 ADMIN + 3 MEMBER)
+                        {boothCount} वार्ड = {boothPasswords.length} पासवर्ड ({boothCount <= 10 ? "प्रति वार्ड 1 ADMIN + 3 MEMBER" : `${Math.min(boothCount, 40)} ADMIN + ${Math.max(0, 40 - Math.min(boothCount, 40))} MEMBER, अधिकतम 40 सीमा`})
                       </span>
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -2745,7 +2759,7 @@ function SuperAdminView({
                     🔑 4. {electionType === "PANCHAYAT" ? "पंचायत वार्ड" : "बूथ"} पासवर्ड कार्ड प्रीव्यू ({boothPasswords.length} पासवर्ड्स)
                   </h4>
                   <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
-                    {boothCount} {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} = {boothPasswords.length} पासवर्ड (प्रति {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} 1 ADMIN + 3 MEMBER)। कोई नाम व नंबर जनरेट नहीं होंगे।
+                    {boothCount} {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} = {boothPasswords.length} पासवर्ड ({boothCount <= 10 ? `प्रति ${electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} 1 ADMIN + 3 MEMBER` : `${Math.min(boothCount, 40)} ADMIN + ${Math.max(0, 40 - Math.min(boothCount, 40))} MEMBER, अधिकतम 40 सीमा`})। कोई नाम व नंबर जनरेट नहीं होंगे।
                   </p>
                 </div>
 
@@ -2758,7 +2772,7 @@ function SuperAdminView({
                     <option value="ALL">सभी {electionType === "PANCHAYAT" ? "वार्ड" : "बूथ"} देखें ({boothPasswords.length} पासवर्ड)</option>
                     {Array.from({ length: boothCount }, (_, i) => i + 1).map((b) => (
                       <option key={b} value={String(b)}>
-                        {electionType === "PANCHAYAT" ? `वार्ड ${b}` : `बूथ ${b}`} के 4 पासवर्ड्स
+                        {electionType === "PANCHAYAT" ? `वार्ड ${b}` : `बूथ ${b}`} के पासवर्ड्स
                       </option>
                     ))}
                   </select>

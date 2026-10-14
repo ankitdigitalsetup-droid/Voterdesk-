@@ -31,34 +31,38 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
   // 1. Try Cloudflare D1 Database (Ultra-fast serverless SQLite)
   if (isD1Configured()) {
     try {
-      let d1Sql = `SELECT c.*, (SELECT count(*) FROM "Voter" v WHERE v.candidateId = c.id OR (c.id = 'cand_1' AND v.candidateId = 'cmuq2l4zx0002jz04vr6hy570')) as voterCount FROM "Candidate" c`;
+      let d1Sql = `SELECT c.*, (SELECT count(*) FROM "Voter" v WHERE v.candidateId = c.id OR (c.id = 'cand_1' AND v.candidateId = 'cmuq2l4zx0002jz04vr6hy570')) as voterCount FROM "Candidate" c WHERE (c.status IS NULL OR c.status != 'DELETED')`;
       const params: any[] = [];
       if (candidateId) {
-        d1Sql += ` WHERE c.id = ? OR (c.id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`;
+        d1Sql += ` AND (c.id = ? OR (c.id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570'))`;
         params.push(candidateId, candidateId);
       }
       d1Sql += ` ORDER BY c.createdAt DESC`;
       const d1Candidates = await d1Query<any>(d1Sql, params);
-      if (d1Candidates.length > 0) {
-        return d1Candidates.map((c) => ({
-          id: c.id,
-          name: c.name,
-          phone: c.phone,
-          party: c.party || "Independent",
-          electionName: c.electionName || "Municipal Election 2026",
-          wardConstituency: c.wardConstituency || "Ward 34",
-          status: (c.status as CandidateAccount["status"]) || "ACTIVE",
-          voterCount: Number(c.voterCount) || 1826,
-          boothCount: Number(c.boothCount) || 7,
-          createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : "2026-10-01",
-          posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
-          symbolName: c.symbolName || undefined,
-          nikay: c.nikay || undefined,
-          passwordsJson: c.passwordsJson || undefined,
-          electionType: "NIKAY",
-          slipMessage: c.name ? `वोट दें ${c.name} को` : undefined,
-        }));
-      }
+
+      // If cuid candidate exists, filter duplicate cand_1 alias for general listing
+      const hasCuid = d1Candidates.some((c) => c.id === "cmuq2l4zx0002jz04vr6hy570");
+      const filteredD1 = hasCuid && !candidateId ? d1Candidates.filter((c) => c.id !== "cand_1") : d1Candidates;
+
+      // Return D1 result directly (even if empty) so deleted campaigns never reappear
+      return filteredD1.map((c) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        party: c.party || "Independent",
+        electionName: c.electionName || "Municipal Election 2026",
+        wardConstituency: c.wardConstituency || "Ward 34",
+        status: (c.status as CandidateAccount["status"]) || "ACTIVE",
+        voterCount: Number(c.voterCount) || 0,
+        boothCount: Number(c.boothCount) || 1,
+        createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : "2026-10-01",
+        posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
+        symbolName: c.symbolName || undefined,
+        nikay: c.nikay || undefined,
+        passwordsJson: c.passwordsJson || undefined,
+        electionType: "NIKAY",
+        slipMessage: c.name ? `वोट दें ${c.name} को` : undefined,
+      }));
     } catch (d1Err) {
       console.warn("Cloudflare D1 getCandidates notice:", d1Err);
     }
@@ -66,7 +70,7 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
 
   // 2. Try Neon PostgreSQL
   try {
-    const whereClause: any = {};
+    const whereClause: any = { status: { not: "DELETED" } };
     if (candidateId) {
       whereClause.id = candidateId;
     }
@@ -96,8 +100,7 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
       cid === candidateId ||
       ((candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570") &&
         (cid === "cand_1" || cid === "cmuq2l4zx0002jz04vr6hy570"));
-    const filtered = storeCandidates.filter((c) => isTarget(c.id));
-    return filtered.length > 0 ? filtered : [storeCandidates[0]].filter(Boolean);
+    return storeCandidates.filter((c) => isTarget(c.id));
   }
   return storeCandidates;
 }
@@ -111,7 +114,7 @@ export async function getCandidateById(id: string): Promise<CandidateAccount | n
 }
 
 /**
- * Creates a new candidate campaign in Neon PostgreSQL.
+ * Creates a new candidate campaign in Cloudflare D1 with sync to Neon & store.
  */
 export async function createCandidate(data: {
   name: string;
@@ -135,17 +138,111 @@ export async function createCandidate(data: {
   const boothTotal = Number(data.boothCount) || 10;
   const rawPhone = String(data.phone).replace(/\D/g, "");
   const cleanPhone = rawPhone.length === 10 ? rawPhone : `98${Math.floor(10000000 + Math.random() * 90000000)}`;
-  let createdCandidate: CandidateAccount | null = null;
-  const serializedPasswords =
-    data.passwordsJson || (data.passwords && data.passwords.length > 0 ? JSON.stringify(data.passwords) : null);
+  const candidateId = "cand_" + Date.now() + "_" + Math.random().toString(36).substring(2, 7);
 
+  const { hashPassword } = await import("@/lib/auth/password");
+  const candidatePass = data.candidatePassword || "voterdesk";
+  const hashedPassword = await hashPassword(candidatePass);
+
+  // Generate / prepare 100% unique passwords adhering to the 40 limit rule
+  let finalPasswords: BoothAccessPassword[] = [];
+  if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
+    finalPasswords = data.passwords.map((p, idx) => ({
+      ...p,
+      serialNumber: p.serialNumber || idx + 1,
+      candidateId,
+    }));
+  } else {
+    const { generateCandidateBoothPasswords } = await import("@/lib/password-helper");
+    // Collect all existing passwords across D1 and memory store to prevent any collision
+    const existingList = isD1Configured() ? await d1Query<{ password: string }>(`SELECT password FROM "AccessPassword"`) : [];
+    const existingSet = new Set<string>([
+      ...existingList.map((p) => p.password),
+      ...store.getAllAccessPasswords().map((p) => p.password),
+    ]);
+    finalPasswords = generateCandidateBoothPasswords(boothTotal, candidateId, existingSet);
+  }
+
+  const serializedPasswords = JSON.stringify(finalPasswords);
+
+  // 1. Primary: Cloudflare D1 Database Insertion
+  if (isD1Configured()) {
+    try {
+      // 1.1 Insert or update User in D1
+      await d1Execute(
+        `INSERT OR REPLACE INTO "User" (id, name, phone, password, role, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        [`usr_${cleanPhone}`, data.name, cleanPhone, hashedPassword, "CANDIDATE_ADMIN"]
+      );
+
+      // 1.2 Insert Candidate in D1
+      await d1Execute(
+        `INSERT INTO "Candidate" (id, name, phone, party, electionName, wardConstituency, status, voterLimit, posterUrl, symbolName, nikay, passwordsJson, createdAt, updatedAt, userId) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'), ?)`,
+        [
+          candidateId,
+          data.name,
+          cleanPhone,
+          data.party || "Independent",
+          data.electionName || "Municipal Election 2026",
+          data.wardConstituency || "Ward 01",
+          data.status || "ACTIVE",
+          data.voterLimit || 50000,
+          data.posterUrl || null,
+          data.symbolName || null,
+          data.nikay || null,
+          serializedPasswords,
+          `usr_${cleanPhone}`,
+        ]
+      );
+
+      // 1.3 Insert Booths in D1
+      for (let i = 1; i <= Math.min(boothTotal, 50); i++) {
+        await d1Execute(
+          `INSERT INTO "Booth" (id, boothNumber, name, area, totalVoters, candidateId, createdAt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+          [
+            `bth_${candidateId}_${i}`,
+            String(i),
+            `Polling Station Room ${i}`,
+            `${data.wardConstituency || "Ward"} Sector ${Math.ceil(i / 2)}`,
+            0,
+            candidateId,
+          ]
+        );
+      }
+
+      // 1.4 Insert Access Passwords in D1
+      for (const p of finalPasswords) {
+        await d1Execute(
+          `INSERT INTO "AccessPassword" (id, password, role, roleTitle, boothNumber, candidateId, createdAt) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+          [
+            p.id || `pwd_${candidateId}_${p.serialNumber || Math.random().toString(36).substring(2, 6)}`,
+            p.password,
+            p.role,
+            p.roleTitle,
+            String(p.boothNumber || "1"),
+            candidateId,
+          ]
+        );
+      }
+
+      // 1.5 Batch import voters in D1 if provided
+      if (data.voters && Array.isArray(data.voters) && data.voters.length > 0) {
+        const { batchImportVoters } = await import("@/lib/db/voters");
+        const mappedVoters = data.voters.map((v, idx) => ({
+          ...v,
+          candidateId,
+          serialNo: v.serialNo || idx + 1,
+          booth: String(v.booth || "1"),
+          epic: v.epic || `RJX${String(v.booth || "1").padStart(2, "0")}${String(idx + 1).padStart(5, "0")}`,
+        }));
+        await batchImportVoters(candidateId, mappedVoters);
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 createCandidate error:", d1Err);
+    }
+  }
+
+  // 2. Secondary: Sync to Neon PostgreSQL (non-blocking)
   try {
-    const { hashPassword } = await import("@/lib/auth/password");
-    const candidatePass = data.candidatePassword || "voterdesk";
-    const workerPass = data.workerPassword || "karyakarta";
-    const hashedPassword = await hashPassword(candidatePass);
-
-    // 1. Create or update Candidate Admin user (never downgrade SUPER_ADMIN)
     const candUser = await prisma.user.upsert({
       where: { phone: cleanPhone },
       update: {
@@ -161,9 +258,9 @@ export async function createCandidate(data: {
       },
     });
 
-    // 2. Create Candidate Campaign linked to Candidate Admin user
-    const dbRecord = await prisma.candidate.create({
+    await prisma.candidate.create({
       data: {
+        id: candidateId,
         name: data.name,
         phone: cleanPhone,
         party: data.party || "Independent",
@@ -179,92 +276,45 @@ export async function createCandidate(data: {
       },
     });
 
-    // 3. Auto-create initial booths
-    const boothsData = [];
-    for (let i = 1; i <= Math.min(boothTotal, 50); i++) {
-      boothsData.push({
-        boothNumber: String(i),
-        name: `Polling Station Room ${i}`,
-        area: `${data.wardConstituency || "Ward"}, Sector ${Math.ceil(i / 2)}`,
-        candidateId: dbRecord.id,
-        totalVoters: 0,
-      });
-    }
-
-    if (boothsData.length > 0) {
-      await prisma.booth.createMany({
-        data: boothsData,
-        skipDuplicates: true,
-      });
-    }
-
-    // 4. Create Access Passwords if provided (1 booth = 4 passwords, 2 booths = 8 passwords)
-    if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
-      const accessPwdData = data.passwords.map((p) => ({
-        password: p.password,
-        role: p.role,
-        roleTitle: p.roleTitle,
-        boothNumber: String(p.boothNumber || "1"),
-        candidateId: dbRecord.id,
-      }));
-
-      await prisma.accessPassword.createMany({
-        data: accessPwdData,
-        skipDuplicates: true,
-      });
-    }
-
-    // 5. Batch import voters if provided
-    let importedVotersCount = 0;
-    if (data.voters && Array.isArray(data.voters) && data.voters.length > 0) {
-      const { batchImportVoters } = await import("@/lib/db/voters");
-      const mappedVoters = data.voters.map((v, idx) => ({
-        ...v,
-        candidateId: dbRecord.id,
-        serialNo: v.serialNo || idx + 1,
-        booth: String(v.booth || "1"),
-        epic: v.epic || `RJX${String(v.booth || "1").padStart(2, "0")}${String(idx + 1).padStart(5, "0")}`,
-      }));
-      const res = await batchImportVoters(dbRecord.id, mappedVoters);
-      importedVotersCount = res.importedCount;
-    }
-
-    createdCandidate = mapDbCandidateToAccount({
-      ...dbRecord,
-      booths: boothsData,
-      _count: { voters: importedVotersCount },
+    const accessPwdData = finalPasswords.map((p) => ({
+      password: p.password,
+      role: p.role,
+      roleTitle: p.roleTitle,
+      boothNumber: String(p.boothNumber || "1"),
+      candidateId,
+    }));
+    await prisma.accessPassword.createMany({
+      data: accessPwdData,
+      skipDuplicates: true,
     });
-
-    // Also sync to memory store with the EXACT Neon DB id
-    store.addCandidate({
-      name: data.name,
-      phone: cleanPhone,
-      party: data.party || "Independent",
-      electionName: data.electionName || "Municipal Election 2026",
-      wardConstituency: data.wardConstituency || "Ward 01",
-      boothCount: boothTotal,
-      status: data.status || "ACTIVE",
-      posterUrl: data.posterUrl,
-      symbolName: data.symbolName,
-      nikay: data.nikay,
-      slipMessage: data.slipMessage || (data.name ? `Vote for ${data.name.trim()}` : undefined),
-      passwordsJson: serializedPasswords || undefined,
-    });
-
-    if (data.passwords && Array.isArray(data.passwords) && data.passwords.length > 0) {
-      store.addAccessPasswords(
-        data.passwords.map((p) => ({
-          ...p,
-          candidateId: dbRecord.id,
-        }))
-      );
-    }
-
-    return createdCandidate;
-  } catch (err) {
-    console.error("Neon DB createCandidate error:", err);
-    throw err;
+  } catch (neonErr) {
+    console.warn("Neon DB createCandidate sync notice (ignored, D1 is primary):", neonErr);
   }
+
+  // 3. Sync to Memory Store
+  const newAccount: CandidateAccount = {
+    id: candidateId,
+    name: data.name,
+    phone: cleanPhone,
+    party: data.party || "Independent",
+    electionName: data.electionName || "Municipal Election 2026",
+    wardConstituency: data.wardConstituency || "Ward 01",
+    boothCount: boothTotal,
+    status: data.status || "ACTIVE",
+    posterUrl: data.posterUrl,
+    symbolName: data.symbolName,
+    nikay: data.nikay,
+    slipMessage: data.slipMessage || (data.name ? `Vote for ${data.name.trim()}` : undefined),
+    passwordsJson: serializedPasswords,
+    voterCount: data.voters ? data.voters.length : 0,
+    createdAt: new Date().toISOString().split("T")[0],
+    electionType: "NIKAY",
+  };
+
+  store.addCandidate({ ...newAccount, id: candidateId });
+  store.addAccessPasswords(finalPasswords);
+
+  return newAccount;
 }
 
 /**
@@ -289,6 +339,21 @@ export async function getCandidatePasswords(candidateId: string): Promise<BoothA
           candidateId: p.candidateId,
         }));
       }
+
+      // Try reading cached passwordsJson from D1 candidate record
+      const d1Cand = await d1Query<any>(
+        `SELECT passwordsJson FROM "Candidate" WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
+        [candidateId, candidateId]
+      );
+      if (d1Cand.length > 0 && d1Cand[0].passwordsJson) {
+        try {
+          const parsed = JSON.parse(d1Cand[0].passwordsJson);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        } catch {}
+      }
+      return [];
     } catch (d1Err) {
       console.warn("Cloudflare D1 getCandidatePasswords notice:", d1Err);
     }

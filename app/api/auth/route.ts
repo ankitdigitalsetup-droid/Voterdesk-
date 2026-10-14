@@ -59,12 +59,18 @@ export async function POST(req: Request) {
       try {
         // 0.1 Check Access Password in D1
         const d1Pwds = await d1Query<any>(
-          `SELECT p.*, c.status as candidateStatus FROM "AccessPassword" p LEFT JOIN "Candidate" c ON p.candidateId = c.id WHERE p.password = ?`,
+          `SELECT p.*, c.status as candidateStatus, c.id as candId, c.name as candidateName FROM "AccessPassword" p INNER JOIN "Candidate" c ON p.candidateId = c.id WHERE p.password = ?`,
           [trimmedPassword]
         );
         if (d1Pwds.length > 0) {
           const matched = d1Pwds[0];
           const candStatus = (matched.candidateStatus || "").toUpperCase();
+          if (candStatus === "DELETED") {
+            return NextResponse.json(
+              { error: "यह चुनाव अभियान हटा दिया गया है। पासवर्ड अमान्य है।" },
+              { status: 404 }
+            );
+          }
           if (candStatus === "SUSPENDED" || candStatus === "PAUSED") {
             return NextResponse.json(
               { error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। पासवर्ड से लॉगिन बंद है।" },
@@ -73,7 +79,7 @@ export async function POST(req: Request) {
           }
           const userRole = matched.role as "CANDIDATE_ADMIN" | "KARYAKARTA";
           const assignedBooths = [String(matched.boothNumber)];
-          const targetCandidateId = matched.candidateId === "cand_1" || !matched.candidateId ? "cand_1" : matched.candidateId;
+          const targetCandidateId = matched.candidateId;
 
           const token = createSessionToken({
             userId: "usr_" + cleanPhone,
@@ -114,12 +120,21 @@ export async function POST(req: Request) {
             (d1User.role === "SUPER_ADMIN" && trimmedPassword === "96640749699664074969");
 
           if (isMatch) {
+            let targetCandId: string | undefined = undefined;
+            if (d1User.role !== "SUPER_ADMIN") {
+              const uCands = await d1Query<any>(
+                `SELECT id FROM "Candidate" WHERE (userId = ? OR phone = ?) AND (status IS NULL OR status != 'DELETED') LIMIT 1`,
+                [d1User.id, cleanPhone]
+              );
+              targetCandId = uCands.length > 0 ? uCands[0].id : undefined;
+            }
+
             const token = createSessionToken({
               userId: d1User.id,
               phone: cleanPhone,
               name: trimmedName || d1User.name,
               role: d1User.role,
-              candidateId: d1User.role === "SUPER_ADMIN" ? undefined : "cand_1",
+              candidateId: targetCandId,
               assignedBooths: [],
             });
 
@@ -132,7 +147,7 @@ export async function POST(req: Request) {
                 name: trimmedName || d1User.name,
                 phone: cleanPhone,
                 role: d1User.role,
-                candidateId: d1User.role === "SUPER_ADMIN" ? undefined : "cand_1",
+                candidateId: targetCandId,
                 assignedBooths: [],
               },
             });

@@ -187,6 +187,12 @@ class DataStore {
 
   private accessPasswords: BoothAccessPassword[] = [...DEFAULT_PASSWORDS];
 
+  private deletedCandidateIds: Set<string> = new Set();
+
+  getAllAccessPasswords(): BoothAccessPassword[] {
+    return this.accessPasswords.filter((p) => !this.deletedCandidateIds.has(p.candidateId));
+  }
+
   // Auth: Password determines whether the user is ADMIN or MEMBER
   authenticate(phone: string, password?: string, name?: string) {
     const cleanPhone = phone.replace(/\D/g, "");
@@ -216,9 +222,12 @@ class DataStore {
     if (trimmedPass) {
       const matchedPwd = this.accessPasswords.find((p) => p.password === trimmedPass);
       if (matchedPwd) {
-        const cand = this.candidates.find((c) => c.id === matchedPwd.candidateId);
-        if (cand && (cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED")) {
-          return undefined; // Block paused campaign
+        if (this.deletedCandidateIds.has(matchedPwd.candidateId)) {
+          return undefined; // Block deleted campaign password
+        }
+        const cand = this.candidates.find((c) => c.id === matchedPwd.candidateId && !this.deletedCandidateIds.has(c.id));
+        if (!cand || cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED") {
+          return undefined; // Block if campaign does not exist or is paused
         }
         if (matchedPwd.role === "CANDIDATE_ADMIN") {
           const candAdminName = enteredName || cand?.name || "Candidate Admin";
@@ -306,6 +315,8 @@ class DataStore {
   }
 
   getCandidatePasswords(candidateId: string): BoothAccessPassword[] {
+    if (this.deletedCandidateIds.has(candidateId)) return [];
+
     const isTarget = (cid: string) =>
       cid === candidateId ||
       ((candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570") &&
@@ -325,7 +336,7 @@ class DataStore {
         }
       } catch {}
     }
-    if (candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570" || !candidateId) {
+    if ((candidateId === "cand_1" || candidateId === "cmuq2l4zx0002jz04vr6hy570") && !this.deletedCandidateIds.has("cand_1")) {
       return DEFAULT_PASSWORDS;
     }
     return [];
@@ -337,24 +348,22 @@ class DataStore {
 
   // Candidates
   getCandidates() {
-    if (this.candidates.length === 0) {
-      this.candidates = [...DEFAULT_CANDIDATES];
-    }
-    return this.candidates;
+    return this.candidates.filter((c) => !this.deletedCandidateIds.has(c.id));
   }
 
   getCandidate(id: string) {
+    if (this.deletedCandidateIds.has(id)) return undefined;
     return (
-      this.candidates.find((c) => c.id === id) ||
+      this.candidates.find((c) => c.id === id && !this.deletedCandidateIds.has(c.id)) ||
       ((id === "cand_1" || id === "cmuq2l4zx0002jz04vr6hy570")
-        ? this.candidates.find((c) => c.id === "cand_1" || c.id === "cmuq2l4zx0002jz04vr6hy570")
-        : undefined) ||
-      this.candidates[0]
+        ? this.candidates.find((c) => (c.id === "cand_1" || c.id === "cmuq2l4zx0002jz04vr6hy570") && !this.deletedCandidateIds.has(c.id))
+        : undefined)
     );
   }
 
-  addCandidate(cand: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string }) {
-    const id = "cand_" + Date.now();
+  addCandidate(cand: Omit<CandidateAccount, "id" | "createdAt" | "voterCount"> & { password?: string; id?: string }) {
+    const id = cand.id || ("cand_" + Date.now());
+    this.deletedCandidateIds.delete(id);
     const newCand: CandidateAccount = {
       ...cand,
       id,
@@ -378,6 +387,7 @@ class DataStore {
   }
 
   updateCandidate(id: string, updates: Partial<CandidateAccount>): CandidateAccount | null {
+    if (this.deletedCandidateIds.has(id)) return null;
     const cand = this.candidates.find((c) => c.id === id);
     if (cand) {
       Object.assign(cand, updates);
@@ -389,12 +399,21 @@ class DataStore {
   }
 
   deleteCandidate(id: string): boolean {
+    this.deletedCandidateIds.add(id);
+    if (id === "cand_1") this.deletedCandidateIds.add("cmuq2l4zx0002jz04vr6hy570");
+    if (id === "cmuq2l4zx0002jz04vr6hy570") this.deletedCandidateIds.add("cand_1");
+
+    const isMatch = (targetId: string) =>
+      targetId === id ||
+      (id === "cand_1" && targetId === "cmuq2l4zx0002jz04vr6hy570") ||
+      (id === "cmuq2l4zx0002jz04vr6hy570" && targetId === "cand_1");
+
     const initialLen = this.candidates.length;
-    this.candidates = this.candidates.filter((c) => c.id !== id);
-    this.accessPasswords = this.accessPasswords.filter((p) => p.candidateId !== id);
-    this.voters = this.voters.filter((v) => v.candidateId !== id);
-    this.team = this.team.filter((t) => t.candidateId !== id);
-    this.users = this.users.filter((u) => u.candidateId !== id);
+    this.candidates = this.candidates.filter((c) => !isMatch(c.id));
+    this.accessPasswords = this.accessPasswords.filter((p) => !isMatch(p.candidateId));
+    this.voters = this.voters.filter((v) => !isMatch(v.candidateId));
+    this.team = this.team.filter((t) => !isMatch(t.candidateId));
+    this.users = this.users.filter((u) => !isMatch(u.candidateId || ""));
     this.touchVersion();
     this.saveToDisk();
     return this.candidates.length < initialLen;
