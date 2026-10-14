@@ -39,6 +39,7 @@ import {
   Image as ImageIcon,
   ArrowUpDown,
   Send,
+  FileText,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
@@ -1911,6 +1912,78 @@ function SuperAdminView({
     XLSX.writeFile(workbook, fileName);
   };
 
+  // Download Passwords as formatted Text File (.txt)
+  const downloadCredentialsTxt = (cand: CandidateAccount, creds: (BoothAccessPassword | CandidateCredential)[]) => {
+    const isPanchayat = cand.electionType === "PANCHAYAT" || cand.electionName?.includes("पंचायत");
+    const wardLabel = isPanchayat ? "वार्ड" : "बूथ";
+    const totalCount = creds.length;
+    const dateStr = cand.createdAt
+      ? new Date(cand.createdAt).toLocaleDateString("hi-IN")
+      : new Date().toLocaleDateString("hi-IN");
+
+    const admins = creds.filter((c) => c.role === "CANDIDATE_ADMIN");
+    const members = creds.filter((c) => c.role !== "CANDIDATE_ADMIN");
+
+    let text = `================================================================================\n`;
+    text += `🗳️ VOTERDESK - OFFICIAL CANDIDATE PASSWORDS CARD (पासवर्ड कार्ड)\n`;
+    text += `================================================================================\n`;
+    text += `प्रत्याशी नाम (Candidate Name):  ${cand.name}\n`;
+    text += `पद / चुनाव (Election Name):      ${cand.electionName || (isPanchayat ? "पंचायत चुनाव 2026" : "निकाय चुनाव 2026")}\n`;
+    text += `${isPanchayat ? "ग्राम पंचायत" : "वार्ड / क्षेत्र"}:           ${cand.wardConstituency || "—"}\n`;
+    text += `${isPanchayat ? "पंचायत समिति" : "निकाय"}:              ${cand.nikay || "—"}\n`;
+    text += `पार्टी (Party):                  ${cand.party || "निर्दलीय"}\n`;
+    text += `चुनाव चिन्ह (Election Symbol):  ${cand.symbolName || "—"}\n`;
+    text += `संपर्क मोबाइल (Phone):          ${cand.phone}\n`;
+    text += `कुल ${wardLabel} संख्या:                 ${cand.boothCount || admins.length}\n`;
+    text += `कुल पासवर्ड (Total Passwords):   ${totalCount}\n`;
+    text += `तारीख (Generated Date):         ${dateStr}\n`;
+    text += `अभियान ID (Campaign ID):        ${cand.id}\n`;
+    text += `================================================================================\n`;
+    text += `🔑 ALL OFFICIAL LOGIN PASSWORDS (सभी लॉगिन पासवर्ड)\n`;
+    text += `================================================================================\n\n`;
+
+    if (admins.length > 0) {
+      text += `[ADMIN PASSWORDS / एडमिन पासवर्ड (कुल: ${admins.length})]\n`;
+      text += `--------------------------------------------------------------------------------\n`;
+      admins.forEach((a, idx) => {
+        const serial = (a as any).serialNumber || idx + 1;
+        text += `#${String(serial).padEnd(3)} [ADMIN]  : ${a.password} (${wardLabel} ${a.boothNumber})\n`;
+      });
+      text += `\n`;
+    }
+
+    if (members.length > 0) {
+      text += `[MEMBER PASSWORDS / कार्यकर्ता सदस्य पासवर्ड (कुल: ${members.length})]\n`;
+      text += `--------------------------------------------------------------------------------\n`;
+      members.forEach((m, idx) => {
+        const serial = (m as any).serialNumber || (admins.length + idx + 1);
+        text += `#${String(serial).padEnd(3)} [MEMBER] : ${m.password} (${wardLabel} ${m.boothNumber})\n`;
+      });
+      text += `\n`;
+    }
+
+    text += `================================================================================\n`;
+    text += `📱 लॉगिन नियम (Login Instructions):\n`;
+    text += `वेबसाइट URL: ${typeof window !== "undefined" ? window.location.origin : "https://voterdesk.vercel.app"}\n`;
+    text += `1. अपना नाम और 10-अंकों का मोबाइल नंबर दर्ज करें।\n`;
+    text += `2. ऊपर दिए गए कार्ड से संबंधित ${wardLabel} का पासवर्ड दर्ज करें।\n`;
+    text += `3. पासवर्ड ही तय करेगा कि लॉगिन ADMIN है या MEMBER, और कौन-सा ${wardLabel} असाइन है।\n`;
+    text += `4. एक प्रत्याशी के पासवर्ड से केवल उसी प्रत्याशी का डेटा एक्सेस होगा।\n`;
+    text += `================================================================================\n`;
+
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const cleanName = cand.name.replace(/[/\\?%*:|"<>]/g, "").trim().replace(/\s+/g, "_");
+    const cleanWard = (cand.wardConstituency || "").replace(/[/\\?%*:|"<>]/g, "").trim().replace(/\s+/g, "_");
+    a.href = url;
+    a.download = `${cleanName}_${cleanWard || "Campaign"}_Passwords.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   // Copy Passwords formatted for WhatsApp sharing matching the card format
   const copyCredentialsForWhatsApp = (cand: CandidateAccount, creds: (BoothAccessPassword | CandidateCredential)[]) => {
     const isPanchayat = cand.electionType === "PANCHAYAT" || cand.electionName?.includes("पंचायत");
@@ -3135,26 +3208,39 @@ function SuperAdminView({
                           className="outline"
                           style={{ padding: "6px 10px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "4px" }}
                           onClick={async () => {
-                            let creds: (BoothAccessPassword | CandidateCredential)[] = store.getCandidatePasswords(cand.id);
-                            if (!creds || creds.length === 0) {
-                              try {
-                                const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
-                                const headers: Record<string, string> = {};
-                                if (token) headers["Authorization"] = `Bearer ${token}`;
-                                const res = await fetch(`/api/candidates/passwords?candidateId=${cand.id}`, { headers, credentials: "include" });
-                                if (res.ok) {
-                                  const d = await res.json();
-                                  if (Array.isArray(d.passwords) && d.passwords.length > 0) {
-                                    creds = d.passwords;
-                                    store.addAccessPasswords(d.passwords);
-                                  }
+                            let creds: (BoothAccessPassword | CandidateCredential)[] = [];
+
+                            // 1. Fetch exact authoritative passwords for THIS candidate from server/D1
+                            try {
+                              const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+                              const headers: Record<string, string> = {};
+                              if (token) headers["Authorization"] = `Bearer ${token}`;
+                              const res = await fetch(`/api/candidates/passwords?candidateId=${encodeURIComponent(cand.id)}`, { headers, credentials: "include" });
+                              if (res.ok) {
+                                const d = await res.json();
+                                if (Array.isArray(d.passwords) && d.passwords.length > 0) {
+                                  creds = d.passwords;
                                 }
-                              } catch {}
+                              }
+                            } catch {}
+
+                            // 2. Check candidate's own passwordsJson
+                            if (!creds || creds.length === 0) {
+                              if (cand.passwordsJson) {
+                                try {
+                                  const parsed = JSON.parse(cand.passwordsJson);
+                                  if (Array.isArray(parsed) && parsed.length > 0) {
+                                    creds = parsed;
+                                  }
+                                } catch {}
+                              }
                             }
+
+                            // 3. Fallback only if candidate has no passwords yet
                             if (!creds || creds.length === 0) {
                               creds = generateCandidateBoothPasswords(cand.boothCount || 1, cand.id);
-                              store.addAccessPasswords(creds as BoothAccessPassword[]);
                             }
+
                             setViewCredsModal({
                               candidate: cand,
                               creds,
@@ -3243,6 +3329,15 @@ function SuperAdminView({
                       onClick={() => downloadCredentialsExcel(viewCredsModal.candidate, viewCredsModal.creds)}
                     >
                       <Download size={13} /> 📥 Excel
+                    </button>
+                    <button
+                      type="button"
+                      className="outline"
+                      style={{ padding: "6px 12px", fontSize: "12px", display: "inline-flex", alignItems: "center", gap: "5px", background: "#ffffff" }}
+                      onClick={() => downloadCredentialsTxt(viewCredsModal.candidate, viewCredsModal.creds)}
+                      title="टेक्स्ट फ़ाइल (.txt) डाउनलोड करें"
+                    >
+                      <FileText size={13} /> 📄 Text (.txt)
                     </button>
                     <button
                       type="button"

@@ -314,6 +314,14 @@ export async function createCandidate(data: {
   store.addCandidate({ ...newAccount, id: candidateId });
   store.addAccessPasswords(finalPasswords);
 
+  // 4. Automatically save to local text file in candidate_passwords_txt/
+  try {
+    const { saveCandidatePasswordsToFile } = await import("@/lib/password-file-saver");
+    saveCandidatePasswordsToFile(newAccount, finalPasswords);
+  } catch (err) {
+    console.warn("Auto-save passwords text file notice:", err);
+  }
+
   return newAccount;
 }
 
@@ -329,7 +337,7 @@ export async function getCandidatePasswords(candidateId: string): Promise<BoothA
         [candidateId, candidateId]
       );
       if (d1Pwds.length > 0) {
-        return d1Pwds.map((p, idx) => ({
+        const mapped = d1Pwds.map((p, idx) => ({
           id: p.id,
           serialNumber: idx + 1,
           password: p.password,
@@ -338,6 +346,20 @@ export async function getCandidatePasswords(candidateId: string): Promise<BoothA
           boothNumber: p.boothNumber,
           candidateId: p.candidateId,
         }));
+
+        // Automatically archive to candidate_passwords_txt/ text file
+        try {
+          const { saveCandidatePasswordsToFile } = await import("@/lib/password-file-saver");
+          const cands = await d1Query<any>(
+            `SELECT * FROM "Candidate" WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570') LIMIT 1`,
+            [candidateId, candidateId]
+          );
+          if (cands.length > 0) {
+            saveCandidatePasswordsToFile(cands[0], mapped);
+          }
+        } catch {}
+
+        return mapped;
       }
 
       // Try reading cached passwordsJson from D1 candidate record
