@@ -126,7 +126,7 @@ export function WardSetupCard({
               id: `v-${wardId}-${i}`,
               wardId,
               name: parts[0] || `Voter ${i}`,
-              epic: parts[1] || `RJX${1000000 + i}`,
+              epic: parts[1] || "",
               guardian: parts[2] || "Relative",
               age: parts[3] || "35",
               gender: (i % 2 === 0 ? "Male" : "Female"),

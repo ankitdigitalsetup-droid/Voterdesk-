@@ -279,6 +279,7 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
         clean.includes("cardno") ||
         clean.includes("idno") ||
         clean.includes("पहचानपत्र") ||
+        clean.includes("मतदातापहचान") ||
         clean === "वोटरid" ||
         clean === "voterid" ||
         clean === "epic" ||
@@ -297,13 +298,14 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
         c.includes("voter card") ||
         c.includes("वोटर कार्ड") ||
         c.includes("आईडी") ||
+        c.includes("elector") ||
         ((c.includes("वोटर") || c.includes("voter")) && (
           c.includes("id") || c.includes("आईडी") || c.includes("कार्ड") || c.includes("card") ||
           c.includes("no") || c.includes("नं") || c.includes("संख्या") || c.includes("क्रमांक") || c.includes("क्र")
         )) ||
         (c.includes("कार्ड") && !c.includes("आधार") && !c.includes("राशन") && !c.includes("pan"));
 
-      if (isEpicMatch && !c.includes("father") && !c.includes("husband") && !c.includes("माता") && !c.includes("पिता")) {
+      if (isEpicMatch && !c.includes("father") && !c.includes("husband") && !c.includes("माता") && !c.includes("पिता") && !c.includes("aadhar") && !c.includes("आधार") && !c.includes("ration") && !c.includes("राशन")) {
         mapping.epic = col;
       }
     }
@@ -395,7 +397,7 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
  * 1. Explicitly mapped column value
  * 2. Any column in the row whose header contains "वोटर ID", "voter id", "epic", "पहचान पत्र", etc.
  * 3. Any column in the row whose value matches standard Indian EPIC formats (e.g. RJ/22/169/313098, TDL1632066, DXW1519172)
- * 4. Fallback: RJX{booth}{serialNo} only if genuinely no voter ID exists in uploaded data.
+ * 4. Fallback: Returns empty string (""). Never auto-generates or synthesizes dummy EPIC IDs.
  */
 export function extractRowEpic(
   row: Record<string, any>,
@@ -404,24 +406,30 @@ export function extractRowEpic(
   serialVal: string | number = 1
 ): string {
   if (!row) {
-    const b = String(boothVal || "1").trim();
-    const sn = String(serialVal || "1").trim();
-    return `RJX${b.padStart(2, "0")}${sn.padStart(5, "0")}`;
+    return "";
   }
+
+  // Helper to sanitize extracted EPIC string
+  const cleanEpic = (val: any): string => {
+    let s = String(val).trim();
+    if (/^\d+\.0$/.test(s)) s = s.slice(0, -2);
+    if (!s || s === "—" || s === "-" || s === "null" || s === "undefined" || s === "NaN") return "";
+    return s.toUpperCase();
+  };
 
   // 1. Direct mapped column check
   if (epicCol && row[epicCol] !== undefined && row[epicCol] !== null) {
-    const s = String(row[epicCol]).trim();
-    if (s && s !== "—" && s !== "-" && s !== "null" && s !== "undefined") {
-      return s.toUpperCase();
+    const s = cleanEpic(row[epicCol]);
+    if (s) {
+      return s;
     }
   }
 
   // 2. Scan row keys for voter id / epic variations
   for (const [k, v] of Object.entries(row)) {
     if (v === undefined || v === null) continue;
-    const s = String(v).trim();
-    if (!s || s === "—" || s === "-" || s === "null" || s === "undefined") continue;
+    const s = cleanEpic(v);
+    if (!s) continue;
 
     const lowerKey = k.toLowerCase().trim();
     const cleanKey = lowerKey.replace(/[\s\.\-_]/g, "");
@@ -432,15 +440,23 @@ export function extractRowEpic(
       cleanKey.includes("वोटरकार्ड") ||
       cleanKey.includes("voterid") ||
       cleanKey.includes("epicno") ||
+      cleanKey.includes("cardno") ||
+      cleanKey.includes("idno") ||
       cleanKey.includes("पहचानपत्र") ||
+      cleanKey.includes("मतदातापहचान") ||
       cleanKey === "epic" ||
       cleanKey === "id" ||
       cleanKey === "आईडी" ||
       lowerKey.includes("वोटर id") ||
       lowerKey.includes("voter id") ||
+      lowerKey.includes("voter_id") ||
       lowerKey.includes("epic") ||
       lowerKey.includes("पहचान पत्र") ||
-      lowerKey.includes("पहचान");
+      lowerKey.includes("पहचान") ||
+      lowerKey.includes("कार्ड नं") ||
+      lowerKey.includes("कार्ड संख्या") ||
+      lowerKey.includes("कार्ड क्रमांक") ||
+      lowerKey.includes("elector");
 
     if (
       isMatch &&
@@ -449,9 +465,13 @@ export function extractRowEpic(
       !lowerKey.includes("father") &&
       !lowerKey.includes("husband") &&
       !lowerKey.includes("माता") &&
-      !lowerKey.includes("mother")
+      !lowerKey.includes("mother") &&
+      !lowerKey.includes("aadhaar") &&
+      !lowerKey.includes("आधार") &&
+      !lowerKey.includes("ration") &&
+      !lowerKey.includes("राशन")
     ) {
-      return s.toUpperCase();
+      return s;
     }
   }
 
@@ -459,18 +479,18 @@ export function extractRowEpic(
   const slashEpicRegex = /^[A-Za-z]{2,4}\/\d{1,4}\/\d{1,4}\/\d{3,8}$/;
   const standardEpicRegex = /^[A-Za-z]{3}\d{7}$/i;
   const generalEpicRegex = /^[A-Za-z]{2,5}\d{5,10}$/i;
+  const mixedEpicRegex = /^[A-Za-z]{1,4}[0-9\/\-]{4,14}$/i;
   for (const [k, v] of Object.entries(row)) {
     if (v === undefined || v === null) continue;
-    const s = String(v).trim();
-    if (slashEpicRegex.test(s) || standardEpicRegex.test(s) || generalEpicRegex.test(s)) {
-      return s.toUpperCase();
+    const s = cleanEpic(v);
+    if (!s) continue;
+    if (slashEpicRegex.test(s) || standardEpicRegex.test(s) || generalEpicRegex.test(s) || mixedEpicRegex.test(s)) {
+      return s;
     }
   }
 
-  // 4. Fallback only if genuinely no voter ID exists anywhere in the uploaded row
-  const b = String(boothVal || "1").trim();
-  const sn = String(serialVal || "1").trim();
-  return `RJX${b.padStart(2, "0")}${sn.padStart(5, "0")}`;
+  // 4. Do NOT auto-generate or synthesize any dummy EPIC ID. Return empty string if not in the uploaded sheet.
+  return "";
 }
 
 // Normalizes raw gender input into standard values ("Male" | "Female" | "Other")

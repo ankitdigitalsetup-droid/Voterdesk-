@@ -261,7 +261,7 @@ export function generateSampleVotersForWard(wardId: string, totalBooths: number)
         wardId,
         name: `${fn} ${ln}`,
         guardian: `Shri ${(isMale ? firstNames[(i + 4) % firstNames.length] : fn)} ${ln}`,
-        epic: `RJX${1000000 + Math.floor(Math.random() * 900000)}`,
+        epic: "",
         age: age.toString(),
         gender: isMale ? "Male" : "Female",
         house: `${10 + i * 3}-${String.fromCharCode(65 + (i % 4))}`,

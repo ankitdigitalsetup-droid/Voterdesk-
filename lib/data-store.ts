@@ -617,8 +617,10 @@ class DataStore {
         ? item.epic.trim().toUpperCase()
         : extractRowEpic((item as any).extraData ? { ...(item as any).extraData, ...item } : (item as any), undefined, item.booth || "1", item.serialNo || i + 1);
 
-      // Avoid exact duplicate EPIC
-      const existing = this.voters.find((v) => v.candidateId === candidateId && v.epic.trim().toUpperCase() === epicVal);
+      // Avoid exact duplicate EPIC (only when EPIC is provided)
+      const existing = epicVal
+        ? this.voters.find((v) => v.candidateId === candidateId && v.epic && v.epic.trim().toUpperCase() === epicVal)
+        : null;
       if (!existing && item.name) {
         const isSupp = item.isSupporter === "हाँ" || item.isSupporter === "Yes" || item.isSupporter === true;
         const v: VoterRecord = {

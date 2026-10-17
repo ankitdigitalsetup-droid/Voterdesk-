@@ -1662,7 +1662,7 @@ function SuperAdminView({
       alert("कृपया मतदाता का नाम दर्ज करें");
       return;
     }
-    const epicVal = saVoterForm.epic.trim().toUpperCase() || `RJX${String(saVoterForm.booth || "1").padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
+    const epicVal = saVoterForm.epic.trim().toUpperCase();
 
     const newVoterData = {
       candidateId: saAddVoterCand.id,
@@ -5255,17 +5255,20 @@ function BoothManagerView({
   // 4. वोटर स्लिप (Formatted Slip Copy & Share)
   const handleShareVoterSlip = async () => {
     if (!activeActionVoter) return;
-    const activeZp = activeActionVoter.zilaParishad || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).zpVal) || "—";
-    const activePs = activeActionVoter.panchayatSamiti || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).psVal) || "—";
+    const activeZp = activeActionVoter.zilaParishad || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).zpVal) || "";
+    const activePs = activeActionVoter.panchayatSamiti || (activeActionVoter.extraData && extractZpAndPs(activeActionVoter.extraData).psVal) || "";
     const genderStr = formatGenderDisplay(activeActionVoter.gender, "hi");
-    const slipText = `जि. प. : ${activeZp}     पं. स. : ${activePs}
-क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth}
+    const epicStr = activeActionVoter.epic ? activeActionVoter.epic : "—";
+    const boothAddressStr = activeActionVoter.boothAddress ? String(activeActionVoter.boothAddress).trim() : "";
+    const zpPsLine = (activeZp || activePs) ? `जि. प. : ${activeZp || "—"}     पं. स. : ${activePs || "—"}\n` : "";
+    const boothLine = boothAddressStr ? `बुथ पता : ${boothAddressStr}\n` : "";
+
+    const slipText = `${zpPsLine}क्रम सं : ${activeActionVoter.serialNo || "—"}     वार्ड सं : ${activeActionVoter.booth || "—"}
 नाम : ${activeActionVoter.name}
 पिता/पति : ${activeActionVoter.guardian || "—"}
 उम्र : ${activeActionVoter.age ? `${activeActionVoter.age} वर्ष` : "—"}     लिंग : ${genderStr}     मकान नं : ${activeActionVoter.house || "—"}
-वोटर ID : ${activeActionVoter.epic}
-बुथ पता : ${activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
-${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
+वोटर ID : ${epicStr}
+${boothLine}${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
 
     if (navigator.clipboard) {
       try {
@@ -5549,7 +5552,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.textAlign = "left";
           ctx.fillStyle = "#0369a1";
           ctx.font = "bold 17px monospace";
-          ctx.fillText(`वोटर ID : ${v.epic}`, x + 16, y + 166);
+          ctx.fillText(`वोटर ID : ${v.epic || "—"}`, x + 16, y + 166);
 
           // Divider
           ctx.strokeStyle = "#e2e8f0";
@@ -5559,12 +5562,15 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
           ctx.lineTo(x + cardW - 12, y + 182);
           ctx.stroke();
 
-          // Polling Station / Booth Address
-          ctx.fillStyle = "#64748b";
-          ctx.font = "14px sans-serif";
-          ctx.textAlign = "left";
-          const addrText = `केंद्र : ${v.boothAddress || "रा.उ.मा.वि. मतदान केंद्र"}`;
-          ctx.fillText(addrText.length > 44 ? addrText.substring(0, 44) + "..." : addrText, x + 16, y + 212);
+          // Polling Station / Booth Address (from sheet only)
+          const bAddress = v.boothAddress ? String(v.boothAddress).trim() : "";
+          if (bAddress) {
+            ctx.fillStyle = "#64748b";
+            ctx.font = "14px sans-serif";
+            ctx.textAlign = "left";
+            const addrText = `केंद्र : ${bAddress}`;
+            ctx.fillText(addrText.length > 44 ? addrText.substring(0, 44) + "..." : addrText, x + 16, y + 212);
+          }
         } else {
           // Draw empty / blank card placeholder (preserving the 6-slot geometry, leaving slot blank)
           ctx.fillStyle = "#ffffff";
@@ -5793,7 +5799,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       // Voter ID (EPIC)
       ctx.fillStyle = "#0369a1";
       ctx.font = "bold 26px monospace";
-      ctx.fillText(`वोटर ID : ${v.epic}`, cardX + 20, cardY + 205);
+      ctx.fillText(`वोटर ID : ${v.epic || "—"}`, cardX + 20, cardY + 205);
 
       // Age (Left), Gender (Center), House No (Right)
       ctx.fillStyle = "#334155";
@@ -5818,20 +5824,22 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       ctx.lineTo(cardX + cardW - 20, cardY + 278);
       ctx.stroke();
 
-      // Booth Address / Polling Station
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#64748b";
-      ctx.font = "bold 18px sans-serif";
-      ctx.fillText("बुथ पता :", cardX + 24, cardY + 312);
+      // Booth Address / Polling Station (from sheet only)
+      const boothAddr = v.boothAddress ? String(v.boothAddress).trim() : "";
+      if (boothAddr) {
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#64748b";
+        ctx.font = "bold 18px sans-serif";
+        ctx.fillText("बुथ पता :", cardX + 24, cardY + 312);
 
-      ctx.fillStyle = "#1e293b";
-      ctx.font = "20px sans-serif";
-      const boothAddr = v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर";
-      if (boothAddr.length > 42) {
-        ctx.fillText(boothAddr.substring(0, 42), cardX + 24, cardY + 342);
-        ctx.fillText(boothAddr.substring(42, 85), cardX + 24, cardY + 372);
-      } else {
-        ctx.fillText(boothAddr, cardX + 24, cardY + 342);
+        ctx.fillStyle = "#1e293b";
+        ctx.font = "20px sans-serif";
+        if (boothAddr.length > 42) {
+          ctx.fillText(boothAddr.substring(0, 42), cardX + 24, cardY + 342);
+          ctx.fillText(boothAddr.substring(42, 85), cardX + 24, cardY + 372);
+        } else {
+          ctx.fillText(boothAddr, cardX + 24, cardY + 342);
+        }
       }
 
       // Bottom appeal strip inside card
@@ -5865,23 +5873,25 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     const candParty = candidate ? candidate.party : "निर्दलीय";
     const campaignMsg = activeVoterSlipMsg || customSlipMsg.trim() || (candName ? `Vote for ${candName}` : "Vote for Candidate");
 
-    const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "—";
-    const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "—";
-
+    const vZp = v.zilaParishad || (v.extraData && extractZpAndPs(v.extraData).zpVal) || "";
+    const vPs = v.panchayatSamiti || (v.extraData && extractZpAndPs(v.extraData).psVal) || "";
     const genderLabel = formatGenderDisplay(v.gender, "hi");
+    const epicLabel = v.epic ? v.epic : "—";
+    const boothAddressLabel = v.boothAddress ? String(v.boothAddress).trim() : "";
+
+    const zpPsLine = (vZp || vPs) ? `*जि. प. (Zila Parishad) :* ${vZp || "—"}     *पं. स. (Panchayat Samiti) :* ${vPs || "—"}\n` : "";
+    const boothLine = boothAddressLabel ? `*बुथ पता :* ${boothAddressLabel}\n` : "";
 
     const text = `*🇮🇳 मतदाता पर्ची (OFFICIAL VOTER SLIP) 🇮🇳*
 *उम्मीदवार:* ${candName} (${candParty})
 🗳️ *${campaignMsg}*
 ----------------------------------------
-*जि. प. (Zila Parishad) :* ${vZp}     *पं. स. (Panchayat Samiti) :* ${vPs}
-*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth}
+${zpPsLine}*क्रम सं (Sr No) :* ${v.serialNo || "—"}     *वार्ड सं (Ward) :* ${v.booth || "—"}
 *नाम (Name) :* ${v.name}
 *पिता/पति (Guardian) :* ${v.guardian || "—"}
-*वोटर ID (EPIC) :* ${v.epic}
+*वोटर ID (EPIC) :* ${epicLabel}
 *उम्र (Age) :* ${v.age ? `${v.age} वर्ष` : "—"}     *लिंग (Gender) :* ${genderLabel}     *मकान नं :* ${v.house || "—"}
-*बुथ पता :* ${v.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
-----------------------------------------
+${boothLine}----------------------------------------
 🙏 कृपया अपना अमूल्य वोट देकर भारी मतों से विजयी बनाएं 🙏`;
 
     if (ph) {
@@ -6578,7 +6588,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
       alert("कृपया मतदाता का नाम दर्ज करें");
       return;
     }
-    const epicVal = voterForm.epic.trim().toUpperCase() || "RJX" + Math.floor(1000000 + Math.random() * 9000000);
+    const epicVal = voterForm.epic.trim().toUpperCase();
     const added = store.addVoter({
       zilaParishad: voterForm.zilaParishad.trim(),
       panchayatSamiti: voterForm.panchayatSamiti.trim(),
@@ -9348,11 +9358,13 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 <span><b>मकान नं. : {activeActionVoter.house || "—"}</b></span>
               </div>
               <div className="bmSlipField">
-                <b>वोटर ID : {activeActionVoter.epic}</b>
+                <b>वोटर ID : {activeActionVoter.epic || "—"}</b>
               </div>
-              <div className="bmSlipField" style={{ marginTop: "4px" }}>
-                <b>बुथ पता : {activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}</b>
-              </div>
+              {activeActionVoter.boothAddress && (
+                <div className="bmSlipField" style={{ marginTop: "4px" }}>
+                  <b>बुथ पता : {activeActionVoter.boothAddress}</b>
+                </div>
+              )}
             </div>
 
             {/* Bottom Print Button */}
@@ -9413,16 +9425,18 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
                 <span><b>पिता/पति :</b> {activeActionVoter.guardian || "—"}</span>
               </div>
               <div className="bmSlipField">
-                <span><b>वोटर ID :</b> {activeActionVoter.epic}</span>
+                <span><b>वोटर ID :</b> {activeActionVoter.epic || "—"}</span>
               </div>
               <div className="bmSlipRow">
                 <span><b>उम्र :</b> {activeActionVoter.age ? `${activeActionVoter.age} वर्ष` : "—"}</span>
                 <span><b>लिंग :</b> {formatGenderDisplay(activeActionVoter.gender, "hi")}</span>
                 <span><b>मकान नं. :</b> {activeActionVoter.house || "—"}</span>
               </div>
-              <div className="bmSlipField" style={{ marginTop: "4px" }}>
-                <span><b>बुथ पता :</b> {activeActionVoter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}</span>
-              </div>
+              {activeActionVoter.boothAddress && (
+                <div className="bmSlipField" style={{ marginTop: "4px" }}>
+                  <span><b>बुथ पता :</b> {activeActionVoter.boothAddress}</span>
+                </div>
+              )}
             </div>
 
             {/* Recipient Phone Preview / Input */}
@@ -11606,8 +11620,7 @@ function VotersTable({
 
     const boothVal = newVoter.booth.trim() || "1";
     const serialVal = newVoter.serialNo ? Number(newVoter.serialNo) : undefined;
-    const epicVal = newVoter.epic.trim().toUpperCase() ||
-      `RJX${boothVal.padStart(2, "0")}${String(serialVal || Math.floor(1000 + Math.random() * 9000)).padStart(5, "0")}`;
+    const epicVal = newVoter.epic.trim().toUpperCase();
 
     const payload = {
       ...newVoter,
@@ -12905,10 +12918,10 @@ function RealExcelImporter({
 
       if (!name) {
         warnings++;
-      } else if (epicSet.has(epic)) {
+      } else if (epic && epicSet.has(epic)) {
         duplicates++;
       } else {
-        epicSet.add(epic);
+        if (epic) epicSet.add(epic);
         valid++;
       }
     });

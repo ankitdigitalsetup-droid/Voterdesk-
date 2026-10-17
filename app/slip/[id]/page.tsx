@@ -115,7 +115,7 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
           <div style={{ display: "grid", gap: "8px", fontSize: "14.5px", color: "#1e293b" }}>
             <div><b>नाम :</b> <span style={{ fontSize: "17px", fontWeight: 800, color: "#0f172a" }}>{voter.name}</span></div>
             <div><b>पिता/पति :</b> {voter.guardian || "—"}</div>
-            <div><b>वोटर ID :</b> <span style={{ fontFamily: "monospace", fontWeight: 800, color: "#0369a1" }}>{voter.epic}</span></div>
+            <div><b>वोटर ID :</b> <span style={{ fontFamily: "monospace", fontWeight: 800, color: "#0369a1" }}>{voter.epic || "—"}</span></div>
             
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <span><b>उम्र :</b> {voter.age ? `${voter.age} वर्ष` : "—"}</span>
@@ -123,12 +123,14 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
               <span><b>मकान नं. :</b> {voter.house || "—"}</span>
             </div>
 
-            <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "8px", marginTop: "4px" }}>
-              <b style={{ color: "#64748b", fontSize: "12px" }}>बुथ पता :</b>
-              <div style={{ fontSize: "13px", color: "#334155", fontWeight: 600, marginTop: "2px" }}>
-                {voter.boothAddress || "184 - महात्मा गांधी राजकीय विद्यालय इंग्लिश मीडियम का कमरा नं. 2 चौरसियावास अजमेर"}
+            {voter.boothAddress ? (
+              <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "8px", marginTop: "4px" }}>
+                <b style={{ color: "#64748b", fontSize: "12px" }}>बुथ पता :</b>
+                <div style={{ fontSize: "13px", color: "#334155", fontWeight: 600, marginTop: "2px" }}>
+                  {voter.boothAddress}
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
 
           <div style={{ marginTop: "12px", background: "#f0fdf4", color: "#15803d", padding: "8px", borderRadius: "6px", textAlign: "center", fontSize: "13px", fontWeight: 800 }}>
@@ -139,7 +141,7 @@ export default async function VoterSlipPublicPage({ params, searchParams }: Prop
         {/* Action Buttons */}
         <div style={{ padding: "0 16px 20px", display: "flex", gap: "10px" }}>
           <a
-            href={`https://wa.me/?text=${encodeURIComponent(`*🇮🇳 मतदाता पर्ची - ${voter.name}*\nउम्मीदवार: ${candName} (${candParty})\n🗳️ *${slipMsg}*\nवार्ड सं: ${voter.booth} | क्रम सं: ${voter.serialNo || "—"}\nपहचान पत्र: ${voter.epic}\nउम्र: ${voter.age ? `${voter.age} वर्ष` : "—"} | लिंग: ${formatGenderDisplay(voter.gender, "hi")}\nबुथ पता: ${voter.boothAddress || ""}`)}`}
+            href={`https://wa.me/?text=${encodeURIComponent(`*🇮🇳 मतदाता पर्ची - ${voter.name}*\nउम्मीदवार: ${candName} (${candParty})\n🗳️ *${slipMsg}*\nवार्ड सं: ${voter.booth} | क्रम सं: ${voter.serialNo || "—"}\nपहचान पत्र: ${voter.epic || "—"}\nउम्र: ${voter.age ? `${voter.age} वर्ष` : "—"} | लिंग: ${formatGenderDisplay(voter.gender, "hi")}${voter.boothAddress ? `\nबुथ पता: ${voter.boothAddress}` : ""}`)}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{
