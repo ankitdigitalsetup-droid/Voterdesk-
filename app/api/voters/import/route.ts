@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { candidateId, voters } = body;
+    const { candidateId, voters, replaceExisting } = body;
 
     if (!candidateId || !Array.isArray(voters)) {
       return NextResponse.json(
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
     }
 
     const startTime = Date.now();
-    const result = await batchImportVoters(candidateId, voters);
+    const result = await batchImportVoters(candidateId, voters, { replaceExisting: Boolean(replaceExisting) });
     const durationMs = Date.now() - startTime;
 
     return NextResponse.json({

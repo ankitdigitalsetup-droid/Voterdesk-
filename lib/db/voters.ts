@@ -578,11 +578,32 @@ export async function deleteVoter(id: string): Promise<boolean> {
  */
 export async function batchImportVoters(
   candidateId: string,
-  rawVoters: any[]
+  rawVoters: any[],
+  options?: { replaceExisting?: boolean }
 ): Promise<{ importedCount: number; totalVoters: number; boothsCreated: number }> {
   if (!Array.isArray(rawVoters) || rawVoters.length === 0) {
     const currentTotal = await prisma.voter.count({ where: { candidateId } }).catch(() => 0);
     return { importedCount: 0, totalVoters: currentTotal, boothsCreated: 0 };
+  }
+
+  // 0. If replaceExisting is true, clear old errored voters first
+  if (options?.replaceExisting) {
+    try {
+      await prisma.voter.deleteMany({ where: { candidateId } });
+    } catch (e) {
+      console.warn("Neon deleteMany voters notice:", e);
+    }
+    if (isD1Configured()) {
+      try {
+        await d1Execute(
+          `DELETE FROM "Voter" WHERE candidateId = ? OR (candidateId = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
+          [candidateId, candidateId]
+        );
+      } catch (e) {
+        console.warn("Cloudflare D1 delete voters notice:", e);
+      }
+    }
+    store.clearCandidateVoters(candidateId);
   }
 
   // Ensure candidate exists
@@ -718,10 +739,65 @@ export async function batchImportVoters(
     }
   }
 
-  // 4. Sync into in-memory store for instant multi-mobile broadcast
-  const storeRes = store.importVoters(candidateId, storeItems);
+  // 4. Sync into Cloudflare D1 Database
+  if (isD1Configured() && normalizedRecords.length > 0) {
+    try {
+      const D1_CHUNK = 50;
+      for (let i = 0; i < normalizedRecords.length; i += D1_CHUNK) {
+        const chunk = normalizedRecords.slice(i, i + D1_CHUNK);
+        const valueClauses: string[] = [];
+        const params: any[] = [];
+        for (let j = 0; j < chunk.length; j++) {
+          const rec = chunk[j];
+          const vId = "v_" + Date.now() + "_" + i + "_" + j;
+          valueClauses.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+          params.push(
+            vId,
+            rec.name,
+            rec.epic,
+            rec.guardian || "",
+            String(rec.age || "35"),
+            rec.gender || "Male",
+            rec.house || "",
+            rec.booth,
+            rec.serialNo || "",
+            rec.phone || "",
+            rec.address || "",
+            rec.boothAddress || "",
+            rec.voted || "नहीं",
+            rec.isSupporter || "हाँ",
+            rec.isOutside || "नहीं",
+            rec.status || "Pending",
+            rec.workerName || "Unassigned",
+            rec.notes || "",
+            rec.slipMessage || "",
+            candidateId
+          );
+        }
+        await d1Execute(
+          `INSERT OR REPLACE INTO "Voter" (
+            "id", "name", "epic", "guardian", "age", "gender",
+            "house", "booth", "serialNo", "phone", "address",
+            "boothAddress", "voted", "isSupporter", "isOutside",
+            "status", "workerName", "notes", "slipMessage", "candidateId"
+          ) VALUES ${valueClauses.join(", ")}`,
+          params
+        );
+      }
 
-  // 5. Get final total count
+      await d1Execute(
+        `UPDATE "Candidate" SET voterCount = ?, boothCount = ? WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
+        [normalizedRecords.length, distinctBooths.size, candidateId, candidateId]
+      );
+    } catch (d1BatchErr) {
+      console.warn("Cloudflare D1 batch insert notice:", d1BatchErr);
+    }
+  }
+
+  // 5. Sync into in-memory store for instant multi-mobile broadcast
+  const storeRes = store.importVoters(candidateId, storeItems, options);
+
+  // 6. Get final total count
   let totalVoters = storeRes.total;
   try {
     totalVoters = await prisma.voter.count({ where: { candidateId } });

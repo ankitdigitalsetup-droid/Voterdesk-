@@ -603,7 +603,12 @@ class DataStore {
     return newVoter;
   }
 
-  importVoters(candidateId: string, items: Omit<VoterRecord, "id" | "candidateId">[]) {
+  importVoters(candidateId: string, items: Omit<VoterRecord, "id" | "candidateId">[], options?: { replaceExisting?: boolean }) {
+    if (options?.replaceExisting) {
+      this.voters = this.voters.filter(
+        (v) => v.candidateId !== candidateId && (candidateId !== "cmuq2l4zx0002jz04vr6hy570" || v.candidateId !== "cand_1")
+      );
+    }
     let imported = 0;
     const added: VoterRecord[] = [];
     for (let i = 0; i < items.length; i++) {
@@ -631,8 +636,10 @@ class DataStore {
       }
     }
 
-    const cand = this.candidates.find((c) => c.id === candidateId);
-    if (cand) cand.voterCount += imported;
+    const cand = this.candidates.find((c) => c.id === candidateId || (candidateId === "cmuq2l4zx0002jz04vr6hy570" && c.id === "cand_1"));
+    if (cand) {
+      cand.voterCount = options?.replaceExisting ? imported : (cand.voterCount || 0) + imported;
+    }
 
     this.touchVersion();
     return { imported, total: this.voters.filter((v) => v.candidateId === candidateId).length };
@@ -658,6 +665,15 @@ class DataStore {
       return true;
     }
     return false;
+  }
+
+  clearCandidateVoters(candidateId: string) {
+    this.voters = this.voters.filter(
+      (v) => v.candidateId !== candidateId && (candidateId !== "cmuq2l4zx0002jz04vr6hy570" || v.candidateId !== "cand_1")
+    );
+    const cand = this.candidates.find((c) => c.id === candidateId || (candidateId === "cmuq2l4zx0002jz04vr6hy570" && c.id === "cand_1"));
+    if (cand) cand.voterCount = 0;
+    this.touchVersion();
   }
 
   setVotersList(candidateId: string, newVoters: VoterRecord[]) {

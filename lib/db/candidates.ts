@@ -439,8 +439,10 @@ export async function updateCandidate(
     status: "ACTIVE" | "EXPIRED" | "SUSPENDED";
     posterUrl: string;
     symbolName: string;
+    nikay: string;
     voterLimit: number;
     slipMessage: string;
+    electionType: "NIKAY" | "PANCHAYAT";
   }>
 ): Promise<CandidateAccount | null> {
   let updatedRecord: CandidateAccount | null = null;
@@ -456,6 +458,8 @@ export async function updateCandidate(
     if (updates.posterUrl !== undefined) dataToUpdate.posterUrl = updates.posterUrl;
     if (updates.symbolName !== undefined) dataToUpdate.symbolName = updates.symbolName;
     if (updates.voterLimit !== undefined) dataToUpdate.voterLimit = updates.voterLimit;
+    if (updates.nikay !== undefined) dataToUpdate.nikay = updates.nikay;
+    if (updates.slipMessage !== undefined) dataToUpdate.slipMessage = updates.slipMessage;
 
     const dbRecord = await prisma.candidate.update({
       where: { id },

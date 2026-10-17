@@ -40,6 +40,7 @@ import {
   ArrowUpDown,
   Send,
   FileText,
+  Edit,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
@@ -1128,6 +1129,174 @@ function SuperAdminView({
   const [isUpdatingPoster, setIsUpdatingPoster] = useState<boolean>(false);
   const changePosterInputRef = useRef<HTMLInputElement>(null);
 
+  // Upload mode for Super Admin Excel (Replace existing vs Append)
+  const [saUploadMode, setSaUploadMode] = useState<"replace" | "append">("replace");
+
+  // Dedicated Edit Candidate Details Modal (Party Name, Symbol Name, Symbol/Poster, etc.)
+  const [editCand, setEditCand] = useState<CandidateAccount | null>(null);
+  const [editCandForm, setEditCandForm] = useState({
+    name: "",
+    party: "",
+    symbolName: "",
+    electionName: "",
+    wardConstituency: "",
+    nikay: "",
+    phone: "",
+    posterUrl: "",
+    slipMessage: "",
+  });
+  const [editCandPosterPreview, setEditCandPosterPreview] = useState<string>("");
+  const [editCandPosterFile, setEditCandPosterFile] = useState<File | null>(null);
+  const [isSavingCandEdit, setIsSavingCandEdit] = useState<boolean>(false);
+  const editCandPosterInputRef = useRef<HTMLInputElement>(null);
+
+  const openEditCandidateModal = (cand: CandidateAccount) => {
+    setEditCand(cand);
+    setEditCandForm({
+      name: cand.name || "",
+      party: cand.party || "",
+      symbolName: cand.symbolName || "",
+      electionName: cand.electionName || "",
+      wardConstituency: cand.wardConstituency || "",
+      nikay: cand.nikay || "",
+      phone: cand.phone || "",
+      posterUrl: cand.posterUrl || "",
+      slipMessage: cand.slipMessage || "",
+    });
+    setEditCandPosterPreview(cand.posterUrl || "");
+    setEditCandPosterFile(null);
+  };
+
+  const handleEditCandPosterSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setEditCandPosterFile(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const rawDataUrl = ev.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX_W = 1000;
+        const MAX_H = 1000;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > MAX_W) {
+            h = Math.round((h * MAX_W) / w);
+            w = MAX_W;
+          }
+        } else {
+          if (h > MAX_H) {
+            w = Math.round((w * MAX_H) / h);
+            h = MAX_H;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL("image/jpeg", 0.85);
+          setEditCandPosterPreview(compressed);
+        } else {
+          setEditCandPosterPreview(rawDataUrl);
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveCandEdit = async () => {
+    if (!editCand) return;
+    if (!editCandForm.name.trim()) {
+      alert("प्रत्याशी का नाम आवश्यक है!");
+      return;
+    }
+
+    setIsSavingCandEdit(true);
+    try {
+      let finalPosterUrl = editCandPosterPreview || editCandForm.posterUrl;
+
+      if (editCandPosterFile) {
+        try {
+          const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+          const formData = new FormData();
+          formData.append("file", editCandPosterFile);
+          const ext = editCandPosterFile.name.split(".").pop() || "jpg";
+          formData.append("fileName", `symbol_${editCand.id}_${Date.now()}.${ext}`);
+
+          const uploadHeaders: Record<string, string> = {};
+          if (token) uploadHeaders["Authorization"] = `Bearer ${token}`;
+
+          const upRes = await fetch("/api/upload", {
+            method: "POST",
+            headers: uploadHeaders,
+            body: formData,
+          });
+
+          if (upRes.ok) {
+            const upData = await upRes.json();
+            if (upData.url) {
+              finalPosterUrl = upData.url;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("Upload notice:", uploadErr);
+        }
+      }
+
+      const payload = {
+        id: editCand.id,
+        name: editCandForm.name.trim(),
+        party: editCandForm.party.trim(),
+        symbolName: editCandForm.symbolName.trim(),
+        electionName: editCandForm.electionName.trim(),
+        wardConstituency: editCandForm.wardConstituency.trim(),
+        nikay: editCandForm.nikay.trim(),
+        phone: editCandForm.phone.trim(),
+        posterUrl: finalPosterUrl,
+        slipMessage: editCandForm.slipMessage.trim() || `वोट दें ${editCandForm.name.trim()} को`,
+      };
+
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch("/api/candidates", {
+        method: "PATCH",
+        headers,
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || err.message || "विवरण सुरक्षित करने में विफल");
+      }
+
+      // Update in memory store
+      store.updateCandidate(editCand.id, payload);
+
+      const updatedCandidate: CandidateAccount = {
+        ...editCand,
+        ...payload,
+      };
+
+      if (onCandidateUpdated) {
+        onCandidateUpdated(updatedCandidate);
+      }
+
+      alert(`✅ प्रत्याशी '${payload.name}' का विवरण (पार्टी: ${payload.party || "निर्दलीय"}, चुनाव चिन्ह: ${payload.symbolName || "—"}) सफलतापूर्वक अपडेट कर दिया गया है!`);
+      setEditCand(null);
+    } catch (err: any) {
+      alert(`त्रुटि: ${err.message || String(err)}`);
+    } finally {
+      setIsSavingCandEdit(false);
+    }
+  };
+
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const handleToggleCampaignStatus = async (cand: CandidateAccount) => {
@@ -1443,6 +1612,7 @@ function SuperAdminView({
       let totalImported = 0;
       for (let i = 0; i < saParsedVoters.length; i += CHUNK_SIZE) {
         const chunk = saParsedVoters.slice(i, i + CHUNK_SIZE);
+        const isFirstChunk = i === 0;
         const res = await fetch("/api/voters/import", {
           method: "POST",
           headers,
@@ -1450,6 +1620,7 @@ function SuperAdminView({
           body: JSON.stringify({
             candidateId: saUploadCand.id,
             voters: chunk,
+            replaceExisting: isFirstChunk && saUploadMode === "replace",
           }),
         });
         if (res.ok) {
@@ -1458,9 +1629,19 @@ function SuperAdminView({
         }
       }
 
-      store.importVoters(saUploadCand.id, saParsedVoters);
+      store.importVoters(saUploadCand.id, saParsedVoters, { replaceExisting: saUploadMode === "replace" });
       onCandidateCreated();
-      alert(`✅ ${saParsedVoters.length} मतदाता (${saSelectedSheet ? `शीट: ${saSelectedSheet}` : ""}) ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक डेटाबेस में अपलोड हो गए और सभी 15 मोबाइल्स पर लाइव हो गए!`);
+
+      if (saUploadMode === "replace") {
+        alert(
+          `✅ ${saParsedVoters.length} मतदाता (${saSelectedSheet ? `शीट: ${saSelectedSheet}` : ""}) ${saUploadCand.name} (${saUploadCand.wardConstituency}) में सफलतापूर्वक अपडेट हो गए!\n\n` +
+          `• पुरानी त्रुटिपूर्ण वोटर लिस्ट हट चुकी है और नया स्वच्छ डेटा (ओरिजिनल Voter IDs के साथ) लाइव हो गया है।\n` +
+          `• सभी 15 मोबाइल्स पर अब सही पहचान पत्र (EPIC) तुरंत प्रदर्शित होंगे!`
+        );
+      } else {
+        alert(`✅ ${saParsedVoters.length} अतिरिक्त मतदाता (${saSelectedSheet ? `शीट: ${saSelectedSheet}` : ""}) ${saUploadCand.name} में सफलतापूर्वक जोड़ दिए गए हैं!`);
+      }
+
       setSaUploadCand(null);
       setSaUploadFileName("");
       setSaParsedVoters([]);
@@ -3076,7 +3257,14 @@ function SuperAdminView({
                       </div>
                     </td>
                     <td>{cand.phone}</td>
-                    <td>{cand.party}</td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{cand.party}</div>
+                      {cand.symbolName ? (
+                        <small style={{ color: "#7e22ce", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "3px", marginTop: "2px", background: "#faf5ff", padding: "1px 6px", borderRadius: "4px", border: "1px solid #f3e8ff" }}>
+                          चिन्ह: {cand.symbolName}
+                        </small>
+                      ) : null}
+                    </td>
                     <td>
                       <b>{cand.electionName}</b>
                       <small>{cand.wardConstituency}</small>
@@ -3130,6 +3318,25 @@ function SuperAdminView({
                           title="इस पूरे चुनाव अभियान को हमेशा के लिए हटाएं"
                         >
                           <Trash2 size={13} /> 🗑️ हटाएं
+                        </button>
+                        <button
+                          type="button"
+                          className="outline"
+                          style={{
+                            padding: "6px 10px",
+                            fontSize: "12px",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                            background: "#fdf4ff",
+                            color: "#7e22ce",
+                            borderColor: "#e9d5ff",
+                            fontWeight: 700,
+                          }}
+                          onClick={() => openEditCandidateModal(cand)}
+                          title="प्रत्याशी का नाम, पार्टी, चुनाव चिन्ह और अन्य विवरण बदलें (Edit Candidate & Symbol)"
+                        >
+                          <Edit size={13} /> ✏️ विवरण / सिम्बल बदलें
                         </button>
                         <button
                           type="button"
@@ -3591,6 +3798,40 @@ function SuperAdminView({
                 </div>
               )}
 
+              {/* Replace vs Append Upload Mode Option */}
+              {saParsedVoters.length > 0 && (
+                <div style={{ marginTop: "14px", padding: "14px", background: saUploadMode === "replace" ? "#fff1f2" : "#f0fdf4", border: `1.5px solid ${saUploadMode === "replace" ? "#f43f5e" : "#22c55e"}`, borderRadius: "8px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 800, color: saUploadMode === "replace" ? "#9f1239" : "#166534", display: "block", marginBottom: "8px" }}>
+                    ⚙️ अपलोड मोड चुनें (Choose Data Action):
+                  </label>
+                  <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 700, color: saUploadMode === "replace" ? "#be123c" : "#64748b" }}>
+                      <input
+                        type="radio"
+                        name="saUploadModeRadio"
+                        checked={saUploadMode === "replace"}
+                        onChange={() => setSaUploadMode("replace")}
+                      />
+                      <span>🔄 <b>पुरानी / त्रुटिपूर्ण वोटर लिस्ट बदलें (Replace Old List)</b></span>
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "13px", fontWeight: 700, color: saUploadMode === "append" ? "#15803d" : "#64748b" }}>
+                      <input
+                        type="radio"
+                        name="saUploadModeRadio"
+                        checked={saUploadMode === "append"}
+                        onChange={() => setSaUploadMode("append")}
+                      />
+                      <span>➕ <b>नए वोटर जोड़ें (Append New Voters)</b></span>
+                    </label>
+                  </div>
+                  <p style={{ margin: "6px 0 0", fontSize: "11.5px", color: saUploadMode === "replace" ? "#be123c" : "#166534", fontWeight: 600 }}>
+                    {saUploadMode === "replace"
+                      ? "⚠️ इस प्रत्याशी के पुराने सभी वोटर हट जाएंगे और यह नई एक्सेल शीट (स्वच्छ वोटर IDs सहित) पूरी तरह सेट हो जाएगी।"
+                      : "✓ पुराने मतदाता सुरक्षित रहेंगे और नई फ़ाइल के रिकॉर्ड्स उनके साथ जुड़ जाएंगे।"}
+                  </p>
+                </div>
+              )}
+
               {/* Preview of Parsed Voters */}
               {saParsedVoters.length > 0 && (
                 <div style={{ marginTop: "16px" }}>
@@ -3649,17 +3890,36 @@ function SuperAdminView({
                 <button
                   type="button"
                   className="primary"
-                  disabled={saParsedVoters.length === 0}
+                  disabled={saParsedVoters.length === 0 || isParsingSaExcel}
                   style={{
-                    opacity: saParsedVoters.length === 0 ? 0.6 : 1,
-                    cursor: saParsedVoters.length === 0 ? "not-allowed" : "pointer",
-                    background: "#026aa7",
+                    opacity: saParsedVoters.length === 0 || isParsingSaExcel ? 0.6 : 1,
+                    cursor: saParsedVoters.length === 0 || isParsingSaExcel ? "not-allowed" : "pointer",
+                    background: saUploadMode === "replace" ? "#e11d48" : "#026aa7",
+                    borderColor: saUploadMode === "replace" ? "#e11d48" : "#026aa7",
                     color: "#ffffff",
-                    fontWeight: 600,
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
                   }}
                   onClick={handleSaveSaExcel}
                 >
-                  💾 {saParsedVoters.length > 0 ? `${saParsedVoters.length} मतदाता सुरक्षित करें (Save)` : "मतदाता सुरक्षित करें"}
+                  {isParsingSaExcel ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>डेटा अपलोड हो रहा है...</span>
+                    </>
+                  ) : saUploadMode === "replace" ? (
+                    <>
+                      <RefreshCw size={14} />
+                      <span>🔄 पुरानी लिस्ट बदलें ({saParsedVoters.length} वोटर)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      <span>💾 {saParsedVoters.length} मतदाता जोड़ें</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -4039,6 +4299,229 @@ function SuperAdminView({
                     <>
                       <Sparkles size={15} />
                       <span>💾 नया पोस्टर सेव व रिप्लेस करें</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Super Admin - Edit Candidate & Symbol Modal */}
+      {editCand && (
+        <div className="modalOverlay" onClick={() => !isSavingCandEdit && setEditCand(null)}>
+          <div className="modalBox" style={{ maxWidth: "780px", width: "95%" }} onClick={(e) => e.stopPropagation()}>
+            <div className="modalHead" style={{ background: "#4a044e", color: "#ffffff", padding: "14px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <Edit size={22} color="#f472b6" />
+                <div>
+                  <h3 style={{ margin: 0, color: "#ffffff", fontSize: "16px", fontWeight: 800 }}>
+                    ✏️ चुनाव अभियान व प्रत्याशी विवरण संपादित करें (Edit Campaign Details)
+                  </h3>
+                  <small style={{ color: "#fbcfe8", fontSize: "12px" }}>
+                    आईडी: <b>{editCand.id}</b> • {editCand.wardConstituency}
+                  </small>
+                </div>
+              </div>
+              <button onClick={() => !isSavingCandEdit && setEditCand(null)} style={{ color: "#ffffff" }}><X /></button>
+            </div>
+
+            <div className="modalBody" style={{ padding: "20px" }}>
+              <div style={{ background: "#fdf4ff", border: "1px solid #f0abfc", borderRadius: "8px", padding: "10px 14px", marginBottom: "16px", fontSize: "12.5px", color: "#86198f", display: "flex", alignItems: "center", gap: "8px" }}>
+                <Sparkles size={18} color="#a21caf" style={{ flexShrink: 0 }} />
+                <span>
+                  यहाँ किए गए बदलाव (प्रत्याशी नाम, पार्टी, चुनाव चिन्ह और पोस्टर) <b>मोबाइल ऐप, पर्ची कार्ड और सभी 15 लाइव कार्यकर्ताओं के फोन</b> पर तुरंत अपडेट हो जाएंगे।
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    प्रत्याशी का नाम (Candidate Name) *
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.name}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, name: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px", fontWeight: 600 }}
+                    placeholder="उदा. दीपमाला कपूर"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    पार्टी का नाम (Party Name)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.party}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, party: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px", fontWeight: 600 }}
+                    placeholder="उदा. निर्दलीय / भाजपा / कांग्रेस / आम आदमी पार्टी"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    चुनाव चिन्ह का नाम (Election Symbol Name) 🗳️
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.symbolName}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, symbolName: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #c084fc", background: "#faf5ff", fontSize: "13px", fontWeight: 700, color: "#6b21a8" }}
+                    placeholder="उदा. सिलाई मशीन / बल्ला / कप प्लेट / तराजू"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    पद / चुनाव का नाम (Election / Post Name)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.electionName}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, electionName: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px" }}
+                    placeholder="उदा. सरपंच / वार्ड पार्षद / उप-सरपंच"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    वार्ड / क्षेत्र (Ward / Constituency)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.wardConstituency}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, wardConstituency: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px" }}
+                    placeholder="उदा. अरोली / वार्ड 05"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    निकाय / पंचायत समिति (Nikay / Panchayat)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.nikay}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, nikay: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px" }}
+                    placeholder="उदा. बिजोलिया / भीलवाड़ा"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    संपर्क मोबाइल नंबर (Contact Phone)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.phone}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, phone: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px" }}
+                    placeholder="10 अंकों का मोबाइल नंबर"
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#374151", marginBottom: "4px" }}>
+                    पर्ची संदेश / स्लोगन (Voter Slip Slogan)
+                  </label>
+                  <input
+                    type="text"
+                    value={editCandForm.slipMessage}
+                    onChange={(e) => setEditCandForm({ ...editCandForm, slipMessage: e.target.value })}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "13px" }}
+                    placeholder="उदा. वोट दें दीपमाला कपूर को"
+                  />
+                </div>
+              </div>
+
+              {/* Symbol / Poster Image Selection */}
+              <div style={{ marginTop: "18px", padding: "14px", border: "1.5px dashed #c084fc", borderRadius: "10px", background: "#fdf4ff" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "10px", marginBottom: "10px" }}>
+                  <div>
+                    <label style={{ fontSize: "13px", fontWeight: 800, color: "#6b21a8", display: "block" }}>
+                      🖼️ चुनाव चिन्ह या प्रत्याशी पोस्टर फ़ोटो (Symbol / Poster Image)
+                    </label>
+                    <small style={{ color: "#7e22ce" }}>
+                      यहाँ से प्रत्याशी का चुनाव चिन्ह या चुनावी पोस्टर बदला जा सकता है
+                    </small>
+                  </div>
+                  <input
+                    type="file"
+                    ref={editCandPosterInputRef}
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={handleEditCandPosterSelect}
+                  />
+                  <button
+                    type="button"
+                    className="outline"
+                    style={{ fontSize: "12px", background: "#ffffff", color: "#6b21a8", borderColor: "#c084fc", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "5px" }}
+                    onClick={() => editCandPosterInputRef.current?.click()}
+                  >
+                    <Upload size={14} /> नई फ़ोटो / सिम्बल चुनें
+                  </button>
+                </div>
+
+                {editCandPosterPreview ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "14px", background: "#ffffff", padding: "10px", borderRadius: "8px", border: "1px solid #f3e8ff" }}>
+                    <div style={{ width: "70px", height: "70px", borderRadius: "6px", overflow: "hidden", border: "1px solid #cbd5e1", display: "flex", alignItems: "center", justifyContent: "center", background: "#f8fafc", flexShrink: 0 }}>
+                      <img src={editCandPosterPreview} alt="Symbol Preview" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                    </div>
+                    <div>
+                      <span style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", display: "block" }}>
+                        ✓ छवि चयनित है (Image Selected)
+                      </span>
+                      <small style={{ fontSize: "11px", color: "#64748b" }}>
+                        यह चिन्ह / पोस्टर वोटर पर्ची व ऐप हेडर में दिखाई देगा।
+                      </small>
+                    </div>
+                  </div>
+                ) : (
+                  <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>कोई पोस्टर या सिम्बल अभी नहीं चुना गया है।</p>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ marginTop: "20px", display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  className="outline"
+                  disabled={isSavingCandEdit}
+                  onClick={() => setEditCand(null)}
+                >
+                  ✕ रद्द करें (Cancel)
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={isSavingCandEdit}
+                  style={{
+                    background: "#7e22ce",
+                    borderColor: "#7e22ce",
+                    color: "#ffffff",
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                  onClick={handleSaveCandEdit}
+                >
+                  {isSavingCandEdit ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" />
+                      <span>परिवर्तन सुरक्षित हो रहे हैं...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>💾 परिवर्तन सुरक्षित करें (Save Details)</span>
                     </>
                   )}
                 </button>
