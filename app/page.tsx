@@ -45,7 +45,7 @@ import * as XLSX from "xlsx";
 import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
 import { VoterRecord, CandidateAccount, TeamMember, UserAccount, WorkerLocation, CandidateCredential, BoothAccessPassword, isSuperAdminEntity } from "@/lib/types";
 import { generateCandidateBoothPasswords, generateBoothPassword } from "@/lib/password-helper";
-import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData, formatGenderDisplay, normalizeGender } from "@/lib/excel-helper";
+import { parseExcelFile, detectFieldMapping, downloadSampleExcelTemplate, ParsedSheetData, formatGenderDisplay, normalizeGender, extractRowEpic } from "@/lib/excel-helper";
 import { PRESET_POSTERS } from "@/lib/storage";
 import { translations, Lang } from "@/lib/translations";
 import { matchesVoter, singleFieldMatches, getEnglishSortKey } from "@/lib/transliterate";
@@ -1360,7 +1360,7 @@ function SuperAdminView({
       const activeSheet = parsed.selectedSheet || sheets[0] || "";
       setSaSelectedSheet(activeSheet);
 
-      const mapping = detectFieldMapping(parsed.columns);
+      const mapping = detectFieldMapping(parsed.columns, parsed.rows);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx) => {
         const { zpVal, psVal } = extractZpAndPs(r, mapping);
@@ -1377,10 +1377,7 @@ function SuperAdminView({
         const houseVal = mapping.house && r[mapping.house] ? String(r[mapping.house]).trim() : "";
         const addressVal = mapping.address && r[mapping.address] ? String(r[mapping.address]).trim() : "";
         const boothAddrVal = mapping.boothAddress && r[mapping.boothAddress] ? String(r[mapping.boothAddress]).trim() : "";
-        let epicVal = mapping.epic && r[mapping.epic] ? String(r[mapping.epic]).trim().toUpperCase() : "";
-        if (!epicVal) {
-          epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
-        }
+        const epicVal = extractRowEpic(r, mapping.epic, boothVal, serialVal);
         const voterStatusVal = mapping.voterStatus && r[mapping.voterStatus] ? String(r[mapping.voterStatus]).trim() : "";
 
         // Build clean extraData excluding mapped columns and ZP/PS variants
@@ -1606,7 +1603,7 @@ function SuperAdminView({
       const activeSheet = parsed.selectedSheet || sheets[0] || "";
       setSelectedSheet(activeSheet);
 
-      const mapping = detectFieldMapping(parsed.columns);
+      const mapping = detectFieldMapping(parsed.columns, parsed.rows);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
         .map((row, idx) => {
@@ -1616,12 +1613,7 @@ function SuperAdminView({
           const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
             ? String(row[mapping.age]).trim()
             : "35";
-          let epicVal = mapping.epic && row[mapping.epic] !== undefined && String(row[mapping.epic]).trim() !== ""
-            ? String(row[mapping.epic]).trim().toUpperCase()
-            : "";
-          if (!epicVal) {
-            epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
-          }
+          const epicVal = extractRowEpic(row, mapping.epic, boothVal, serialVal);
 
           // Preserve all extra columns from Excel sheet excluding ZP/PS
           const extraData: Record<string, any> = {};
@@ -6186,7 +6178,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
     setUploadMsg("");
     try {
       const parsed = await parseExcelFile(file);
-      const mapping = detectFieldMapping(parsed.columns);
+      const mapping = detectFieldMapping(parsed.columns, parsed.rows);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const toImport = parsed.rows.map((row, idx) => {
         const { zpVal, psVal } = extractZpAndPs(row, mapping);
@@ -6195,12 +6187,7 @@ ${activeVoterSlipMsg ? "\n" + activeVoterSlipMsg : ""}`;
         const ageVal = mapping.age && row[mapping.age] !== undefined && String(row[mapping.age]).trim() !== ""
           ? String(row[mapping.age]).trim()
           : "35";
-        let epicVal = mapping.epic && row[mapping.epic] !== undefined && String(row[mapping.epic]).trim() !== ""
-          ? String(row[mapping.epic]).trim().toUpperCase()
-          : "";
-        if (!epicVal) {
-          epicVal = `RJX${boothVal.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
-        }
+        const epicVal = extractRowEpic(row, mapping.epic, boothVal, serialVal);
 
         const isSupp = String(row[mapping.isSupporter] || "").trim();
         const votedVal = String(row[mapping.voted] || "").trim();
@@ -12408,7 +12395,7 @@ function RealExcelImporter({
     try {
       const data = await parseExcelFile(file, sheetName);
       setParsedData(data);
-      const autoMap = detectFieldMapping(data.columns);
+      const autoMap = detectFieldMapping(data.columns, data.rows);
       setFieldMap(autoMap);
       setStep(2);
     } catch (err: unknown) {
@@ -12431,10 +12418,7 @@ function RealExcelImporter({
       const name = String(row[fieldMap.name] || "").trim();
       const booth = String(row[fieldMap.booth] || "1").trim();
       const serialVal = row[fieldMap.serialNo] || (idx + 1);
-      let epic = String(row[fieldMap.epic] || "").trim().toUpperCase();
-      if (!epic && name) {
-        epic = `RJX${booth.padStart(2, "0")}${String(serialVal).padStart(5, "0")}`;
-      }
+      const epic = extractRowEpic(row, fieldMap.epic, booth, serialVal);
 
       if (!name) {
         warnings++;
@@ -12460,10 +12444,7 @@ function RealExcelImporter({
       const booth = String(row[fieldMap.booth] || "1").trim();
       const serialRaw = row[fieldMap.serialNo];
       const serialNo = serialRaw !== undefined && serialRaw !== "" ? Number(serialRaw) || serialRaw : (idx + 1);
-      let epic = String(row[fieldMap.epic] || "").trim().toUpperCase();
-      if (!epic && name) {
-        epic = `RJX${booth.padStart(2, "0")}${String(serialNo).padStart(5, "0")}`;
-      }
+      const epic = extractRowEpic(row, fieldMap.epic, booth, serialNo);
       const isSupp = String(row[fieldMap.isSupporter] || "").trim();
       const votedVal = String(row[fieldMap.voted] || "").trim();
       const outsideVal = String(row[fieldMap.isOutside] || "").trim();

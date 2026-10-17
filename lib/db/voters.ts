@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { store, compareVotersBySerial } from "@/lib/data-store";
 import { VoterRecord } from "@/lib/types";
-import { normalizeGender } from "@/lib/excel-helper";
+import { normalizeGender, extractRowEpic } from "@/lib/excel-helper";
 import { d1Query, d1Execute, isD1Configured } from "@/lib/d1";
 
 /**
@@ -329,9 +329,9 @@ export async function createVoter(
 ): Promise<VoterRecord> {
   const boothVal = String(data.booth || "1").trim();
   const epicVal =
-    data.epic && String(data.epic).trim()
+    data.epic && String(data.epic).trim() && !String(data.epic).trim().startsWith("—")
       ? String(data.epic).toUpperCase().trim()
-      : `RJX${boothVal.padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
+      : extractRowEpic(data as any, undefined, boothVal, data.serialNo || 1);
 
   const zpVal = data.zilaParishad != null ? String(data.zilaParishad).trim() : "";
   const psVal = data.panchayatSamiti != null ? String(data.panchayatSamiti).trim() : "";
@@ -620,9 +620,9 @@ export async function batchImportVoters(
     distinctBooths.add(boothVal);
 
     const epicVal =
-      raw.epic && String(raw.epic).trim()
+      raw.epic && String(raw.epic).trim() && !String(raw.epic).trim().startsWith("—")
         ? String(raw.epic).toUpperCase().trim()
-        : `RJX${boothVal.padStart(2, "0")}${Math.floor(10000 + Math.random() * 90000)}`;
+        : extractRowEpic(raw.extraData ? { ...raw.extraData, ...raw } : raw, undefined, boothVal, idx + 1);
 
     const rawSerial = raw.serialNo != null ? String(raw.serialNo).trim() : "";
     const parsedSerialNum = rawSerial !== "" ? parseInt(rawSerial.replace(/\D/g, ""), 10) : NaN;

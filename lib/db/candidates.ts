@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
 import { CandidateAccount, BoothAccessPassword } from "@/lib/types";
 import { d1Query, d1Execute, isD1Configured } from "@/lib/d1";
+import { extractRowEpic } from "@/lib/excel-helper";
 
 function mapDbCandidateToAccount(c: any): CandidateAccount {
   return {
@@ -232,7 +233,9 @@ export async function createCandidate(data: {
           candidateId,
           serialNo: v.serialNo || idx + 1,
           booth: String(v.booth || "1"),
-          epic: v.epic || `RJX${String(v.booth || "1").padStart(2, "0")}${String(idx + 1).padStart(5, "0")}`,
+          epic: v.epic && String(v.epic).trim() && !String(v.epic).trim().startsWith("—")
+            ? String(v.epic).toUpperCase().trim()
+            : extractRowEpic(v as any, undefined, v.booth || "1", v.serialNo || idx + 1),
         }));
         await batchImportVoters(candidateId, mappedVoters);
       }

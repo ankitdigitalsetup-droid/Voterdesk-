@@ -16,6 +16,7 @@
 import { CandidateAccount, CandidateCredential, TeamMember, UserAccount, VoterRecord, WorkerLocation, BoothAccessPassword, isSuperAdminEntity } from "./types";
 import { matchesVoter, singleFieldMatches } from "./transliterate";
 import { DEFAULT_CANDIDATES, DEFAULT_PASSWORDS, DEFAULT_USERS, DEFAULT_TEAM, DEFAULT_SAMPLE_VOTERS } from "./default-campaigns";
+import { extractRowEpic } from "./excel-helper";
 
 /**
  * 1. NATURAL NUMERICAL COMPARATOR (क्रम संख्या सॉर्टिंग)
@@ -607,9 +608,9 @@ class DataStore {
     const added: VoterRecord[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const epicVal = item.epic && item.epic.trim()
+      const epicVal = item.epic && item.epic.trim() && !item.epic.trim().startsWith("—")
         ? item.epic.trim().toUpperCase()
-        : `RJX${String(item.booth || "1").padStart(2, "0")}${String(item.serialNo || i + 1).padStart(5, "0")}`;
+        : extractRowEpic((item as any).extraData ? { ...(item as any).extraData, ...item } : (item as any), undefined, item.booth || "1", item.serialNo || i + 1);
 
       // Avoid exact duplicate EPIC
       const existing = this.voters.find((v) => v.candidateId === candidateId && v.epic.trim().toUpperCase() === epicVal);

@@ -125,7 +125,7 @@ export function getExcelSheetNames(file: File): Promise<string[]> {
 }
 
 // Auto-detect matching field based on common Hindi & English headers
-export function detectFieldMapping(columns: string[]) {
+export function detectFieldMapping(columns: string[], sampleRows?: Record<string, any>[]) {
   const mapping: Record<string, string> = {
     zilaParishad: "",
     panchayatSamiti: "",
@@ -268,9 +268,44 @@ export function detectFieldMapping(columns: string[]) {
       mapping.age = col;
     }
 
-    // 13. EPIC / Voter ID (पहचान पत्र क्रमांक)
-    if (!mapping.epic && (c.includes("epic") || c.includes("voter id") || c.includes("voterid") || c.includes("पहचान पत्र") || c.includes("पहचान") || c.includes("card no") || c.includes("cardno") || c.includes("id no") || c.includes("voter card") || c.includes("कार्ड") || c === "id" || c.includes("epc") || c.includes("आईडी"))) {
-      mapping.epic = col;
+    // 13. EPIC / Voter ID (पहचान पत्र क्रमांक / वोटर ID / वोटर आईडी / EPIC / Voter ID Card)
+    if (!mapping.epic) {
+      const isEpicMatch =
+        clean.includes("वोटरid") ||
+        clean.includes("वोटरआईडी") ||
+        clean.includes("वोटरकार्ड") ||
+        clean.includes("voterid") ||
+        clean.includes("epicno") ||
+        clean.includes("cardno") ||
+        clean.includes("idno") ||
+        clean.includes("पहचानपत्र") ||
+        clean === "वोटरid" ||
+        clean === "voterid" ||
+        clean === "epic" ||
+        clean === "id" ||
+        clean === "आईडी" ||
+        c.includes("वोटर id") ||
+        c.includes("voter id") ||
+        c.includes("voter_id") ||
+        c.includes("voter-id") ||
+        c.includes("epic") ||
+        c.includes("epc") ||
+        c.includes("पहचान पत्र") ||
+        c.includes("पहचान") ||
+        c.includes("card no") ||
+        c.includes("id no") ||
+        c.includes("voter card") ||
+        c.includes("वोटर कार्ड") ||
+        c.includes("आईडी") ||
+        ((c.includes("वोटर") || c.includes("voter")) && (
+          c.includes("id") || c.includes("आईडी") || c.includes("कार्ड") || c.includes("card") ||
+          c.includes("no") || c.includes("नं") || c.includes("संख्या") || c.includes("क्रमांक") || c.includes("क्र")
+        )) ||
+        (c.includes("कार्ड") && !c.includes("आधार") && !c.includes("राशन") && !c.includes("pan"));
+
+      if (isEpicMatch && !c.includes("father") && !c.includes("husband") && !c.includes("माता") && !c.includes("पिता")) {
+        mapping.epic = col;
+      }
     }
 
     // 14. Gender (लिंग / स्त्री / पुरुष / Gender)
@@ -300,6 +335,47 @@ export function detectFieldMapping(columns: string[]) {
     }
   }
 
+  // Heuristic Fallback: Inspect sample rows if column headers were ambiguous
+  if (!mapping.epic && sampleRows && sampleRows.length > 0) {
+    const slashEpicRegex = /^[A-Za-z]{2,4}\/\d{1,4}\/\d{1,4}\/\d{3,8}$/;
+    const standardEpicRegex = /^[A-Za-z]{3}\d{7}$/i;
+    const generalEpicRegex = /^[A-Za-z]{2,5}\d{5,10}$/i;
+
+    for (const col of columns) {
+      if (
+        col === mapping.name ||
+        col === mapping.guardian ||
+        col === mapping.phone ||
+        col === mapping.address ||
+        col === mapping.boothAddress ||
+        col === mapping.house ||
+        col === mapping.age ||
+        col === mapping.gender ||
+        col === mapping.serialNo ||
+        col === mapping.booth
+      ) {
+        continue;
+      }
+
+      let matches = 0;
+      let totalChecked = 0;
+      for (const row of sampleRows.slice(0, 20)) {
+        const val = String(row[col] || "").trim();
+        if (val) {
+          totalChecked++;
+          if (slashEpicRegex.test(val) || standardEpicRegex.test(val) || generalEpicRegex.test(val)) {
+            matches++;
+          }
+        }
+      }
+
+      if (totalChecked > 0 && matches / totalChecked >= 0.3) {
+        mapping.epic = col;
+        break;
+      }
+    }
+  }
+
   // Fallback: If name was not matched by keyword, pick the second column if serial was column 0, or first text column
   if (!mapping.name && columns.length > 0) {
     for (const col of columns) {
@@ -311,6 +387,90 @@ export function detectFieldMapping(columns: string[]) {
   }
 
   return mapping;
+}
+
+/**
+ * Intelligently and safely extracts the Voter ID / EPIC from an Excel row object.
+ * Priority:
+ * 1. Explicitly mapped column value
+ * 2. Any column in the row whose header contains "वोटर ID", "voter id", "epic", "पहचान पत्र", etc.
+ * 3. Any column in the row whose value matches standard Indian EPIC formats (e.g. RJ/22/169/313098, TDL1632066, DXW1519172)
+ * 4. Fallback: RJX{booth}{serialNo} only if genuinely no voter ID exists in uploaded data.
+ */
+export function extractRowEpic(
+  row: Record<string, any>,
+  epicCol?: string,
+  boothVal: string | number = "1",
+  serialVal: string | number = 1
+): string {
+  if (!row) {
+    const b = String(boothVal || "1").trim();
+    const sn = String(serialVal || "1").trim();
+    return `RJX${b.padStart(2, "0")}${sn.padStart(5, "0")}`;
+  }
+
+  // 1. Direct mapped column check
+  if (epicCol && row[epicCol] !== undefined && row[epicCol] !== null) {
+    const s = String(row[epicCol]).trim();
+    if (s && s !== "—" && s !== "-" && s !== "null" && s !== "undefined") {
+      return s.toUpperCase();
+    }
+  }
+
+  // 2. Scan row keys for voter id / epic variations
+  for (const [k, v] of Object.entries(row)) {
+    if (v === undefined || v === null) continue;
+    const s = String(v).trim();
+    if (!s || s === "—" || s === "-" || s === "null" || s === "undefined") continue;
+
+    const lowerKey = k.toLowerCase().trim();
+    const cleanKey = lowerKey.replace(/[\s\.\-_]/g, "");
+
+    const isMatch =
+      cleanKey.includes("वोटरid") ||
+      cleanKey.includes("वोटरआईडी") ||
+      cleanKey.includes("वोटरकार्ड") ||
+      cleanKey.includes("voterid") ||
+      cleanKey.includes("epicno") ||
+      cleanKey.includes("पहचानपत्र") ||
+      cleanKey === "epic" ||
+      cleanKey === "id" ||
+      cleanKey === "आईडी" ||
+      lowerKey.includes("वोटर id") ||
+      lowerKey.includes("voter id") ||
+      lowerKey.includes("epic") ||
+      lowerKey.includes("पहचान पत्र") ||
+      lowerKey.includes("पहचान");
+
+    if (
+      isMatch &&
+      !lowerKey.includes("पिता") &&
+      !lowerKey.includes("पति") &&
+      !lowerKey.includes("father") &&
+      !lowerKey.includes("husband") &&
+      !lowerKey.includes("माता") &&
+      !lowerKey.includes("mother")
+    ) {
+      return s.toUpperCase();
+    }
+  }
+
+  // 3. Scan row values for Indian Voter ID / EPIC formats (e.g. RJ/22/169/313098, TDL1632066, DXW1519172)
+  const slashEpicRegex = /^[A-Za-z]{2,4}\/\d{1,4}\/\d{1,4}\/\d{3,8}$/;
+  const standardEpicRegex = /^[A-Za-z]{3}\d{7}$/i;
+  const generalEpicRegex = /^[A-Za-z]{2,5}\d{5,10}$/i;
+  for (const [k, v] of Object.entries(row)) {
+    if (v === undefined || v === null) continue;
+    const s = String(v).trim();
+    if (slashEpicRegex.test(s) || standardEpicRegex.test(s) || generalEpicRegex.test(s)) {
+      return s.toUpperCase();
+    }
+  }
+
+  // 4. Fallback only if genuinely no voter ID exists anywhere in the uploaded row
+  const b = String(boothVal || "1").trim();
+  const sn = String(serialVal || "1").trim();
+  return `RJX${b.padStart(2, "0")}${sn.padStart(5, "0")}`;
 }
 
 // Normalizes raw gender input into standard values ("Male" | "Female" | "Other")
