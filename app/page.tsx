@@ -356,6 +356,29 @@ export default function Page() {
           if (data.activeWorkers !== undefined) {
             setOnlineWorkersCount(Math.max(1, data.activeWorkers));
           }
+          if (data.candidate && data.candidate.id) {
+            setCandidates((prev) => {
+              const idx = prev.findIndex((c) => c.id === data.candidate.id);
+              if (idx !== -1) {
+                const updated = [...prev];
+                updated[idx] = { ...updated[idx], ...data.candidate };
+                return updated;
+              }
+              return [...prev, data.candidate];
+            });
+            store.updateCandidate(data.candidate.id, data.candidate);
+            if (data.candidate.slipMessage && typeof window !== "undefined") {
+              try {
+                localStorage.setItem(`voterdesk_slip_msg_${data.candidate.id}`, data.candidate.slipMessage);
+                localStorage.setItem("voterdesk_slip_msg", data.candidate.slipMessage);
+                window.dispatchEvent(
+                  new CustomEvent("voterdesk_slip_msg_updated", {
+                    detail: { candidateId: data.candidate.id, slipMessage: data.candidate.slipMessage },
+                  })
+                );
+              } catch {}
+            }
+          }
           if (data.hasUpdates && Array.isArray(data.voters)) {
             setVoters(data.voters);
             setServerVersion(data.version);
@@ -1287,6 +1310,18 @@ function SuperAdminView({
 
       if (onCandidateUpdated) {
         onCandidateUpdated(updatedCandidate);
+      }
+
+      if (payload.slipMessage && typeof window !== "undefined") {
+        try {
+          localStorage.setItem(`voterdesk_slip_msg_${editCand.id}`, payload.slipMessage);
+          localStorage.setItem("voterdesk_slip_msg", payload.slipMessage);
+          window.dispatchEvent(
+            new CustomEvent("voterdesk_slip_msg_updated", {
+              detail: { candidateId: editCand.id, slipMessage: payload.slipMessage },
+            })
+          );
+        } catch {}
       }
 
       alert(`✅ प्रत्याशी '${payload.name}' का विवरण (पार्टी: ${payload.party || "निर्दलीय"}, चुनाव चिन्ह: ${payload.symbolName || "—"}) सफलतापूर्वक अपडेट कर दिया गया है!`);
@@ -4821,11 +4856,11 @@ function BoothManagerView({
   // Voter Slip Custom Message (Scoped per candidate)
   const defaultSlipMsg = candidate?.slipMessage || (candidate?.name ? `Vote for ${candidate.name}` : "Vote for Candidate Name");
   const [customSlipMsg, setCustomSlipMsg] = useState<string>(() => {
+    if (candidate?.slipMessage) return candidate.slipMessage;
     if (typeof window !== "undefined" && candidate?.id) {
       const savedScoped = localStorage.getItem(`voterdesk_slip_msg_${candidate.id}`);
       if (savedScoped) return savedScoped;
     }
-    if (candidate?.slipMessage) return candidate.slipMessage;
     return candidate?.name ? `Vote for ${candidate.name}` : "Vote for Candidate Name";
   });
   const [showSlipMsgModal, setShowSlipMsgModal] = useState(false);
@@ -4840,19 +4875,41 @@ function BoothManagerView({
     setShowLoginPoster(true);
   }, [candidateId]);
 
-  // Synchronize customSlipMsg & tempSlipMsg whenever candidate changes or updates
+  // Synchronize customSlipMsg & tempSlipMsg whenever candidate changes or updates from server
   useEffect(() => {
     if (!candidate) return;
-    let initialMsg = candidate.slipMessage || `Vote for ${candidate.name}`;
-    if (typeof window !== "undefined" && candidate.id) {
-      const savedScoped = localStorage.getItem(`voterdesk_slip_msg_${candidate.id}`);
-      if (savedScoped) {
-        initialMsg = savedScoped;
+    const serverMsg = candidate.slipMessage?.trim();
+    if (serverMsg) {
+      setCustomSlipMsg(serverMsg);
+      setTempSlipMsg(serverMsg);
+      if (typeof window !== "undefined" && candidate.id) {
+        try {
+          localStorage.setItem(`voterdesk_slip_msg_${candidate.id}`, serverMsg);
+          localStorage.setItem("voterdesk_slip_msg", serverMsg);
+        } catch {}
       }
+    } else {
+      let fallback = candidate.name ? `Vote for ${candidate.name}` : "Vote for Candidate Name";
+      if (typeof window !== "undefined" && candidate.id) {
+        const savedScoped = localStorage.getItem(`voterdesk_slip_msg_${candidate.id}`);
+        if (savedScoped) fallback = savedScoped;
+      }
+      setCustomSlipMsg(fallback);
+      setTempSlipMsg(fallback);
     }
-    setCustomSlipMsg(initialMsg);
-    setTempSlipMsg(initialMsg);
   }, [candidate?.id, candidate?.slipMessage, candidate?.name]);
+
+  // Real-time listener for broadcasted slip message updates (across components, tabs & background sync)
+  useEffect(() => {
+    const handleCustomMsgUpdate = (e: any) => {
+      if (e.detail?.candidateId === candidate?.id && e.detail?.slipMessage) {
+        setCustomSlipMsg(e.detail.slipMessage);
+        setTempSlipMsg(e.detail.slipMessage);
+      }
+    };
+    window.addEventListener("voterdesk_slip_msg_updated", handleCustomMsgUpdate);
+    return () => window.removeEventListener("voterdesk_slip_msg_updated", handleCustomMsgUpdate);
+  }, [candidate?.id]);
 
   // Age column sorting state (Ascending, Descending, None)
   const [ageSortOrder, setAgeSortOrder] = useState<"none" | "asc" | "desc">("none");
@@ -4906,10 +4963,17 @@ function BoothManagerView({
     const finalMsg = tempSlipMsg.trim() || defaultSlipMsg;
     setCustomSlipMsg(finalMsg);
     if (typeof window !== "undefined") {
-      if (candidate?.id) {
-        localStorage.setItem(`voterdesk_slip_msg_${candidate.id}`, finalMsg);
-      }
-      localStorage.setItem("voterdesk_slip_msg", finalMsg);
+      try {
+        if (candidate?.id) {
+          localStorage.setItem(`voterdesk_slip_msg_${candidate.id}`, finalMsg);
+        }
+        localStorage.setItem("voterdesk_slip_msg", finalMsg);
+        window.dispatchEvent(
+          new CustomEvent("voterdesk_slip_msg_updated", {
+            detail: { candidateId: candidate?.id, slipMessage: finalMsg },
+          })
+        );
+      } catch {}
     }
     if (candidate?.id) {
       try {
@@ -4921,7 +4985,13 @@ function BoothManagerView({
           headers,
           credentials: "include",
           body: JSON.stringify({ id: candidate.id, slipMessage: finalMsg }),
-        }).catch((e) => console.warn("Slip msg patch notice:", e));
+        })
+          .then((res) => {
+            if (res.ok && onRefreshData) {
+              onRefreshData(true);
+            }
+          })
+          .catch((e) => console.warn("Slip msg patch notice:", e));
         store.updateCandidate(candidate.id, { slipMessage: finalMsg });
       } catch (e) {
         console.warn("Failed to patch candidate slip message:", e);
@@ -5122,6 +5192,13 @@ function BoothManagerView({
     setIsPhoneUpdating(false);
     setPhoneUpdatedSuccess(false);
   };
+
+  // Keep active voter slip message updated if customSlipMsg changes while modal is open
+  useEffect(() => {
+    if (activeActionVoter && !activeActionVoter.slipMessage) {
+      setActiveVoterSlipMsg(customSlipMsg);
+    }
+  }, [customSlipMsg, activeActionVoter?.id]);
 
   const handleSavePhoneUpdate = async () => {
     if (!activeActionVoter) return;

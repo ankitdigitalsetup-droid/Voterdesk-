@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { store } from "@/lib/data-store";
 import { getVoters, updateVoter, createVoter } from "@/lib/db/voters";
+import { getCandidateById } from "@/lib/db/candidates";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
 export async function GET(req: Request) {
@@ -80,13 +81,33 @@ export async function GET(req: Request) {
     const serverVersion = store.getVersion();
     const activeWorkers = store.getLiveWorkerCount(candidateId);
 
-    // If client is already up-to-date and not forced, return lightweight response
+    // Retrieve candidate summary so every worker phone stays synchronized with latest slipMessage, symbol, party
+    let candidateSummary: any = null;
+    if (candidateId) {
+      try {
+        const cand = await getCandidateById(candidateId);
+        if (cand) {
+          candidateSummary = {
+            id: cand.id,
+            name: cand.name,
+            party: cand.party,
+            symbolName: cand.symbolName,
+            posterUrl: cand.posterUrl,
+            slipMessage: cand.slipMessage || (cand.name ? `Vote for ${cand.name}` : undefined),
+            status: cand.status,
+          };
+        }
+      } catch {}
+    }
+
+    // If client is already up-to-date and not forced, return lightweight response with latest candidate
     if (!force && clientVersion && Number(clientVersion) >= serverVersion) {
       return NextResponse.json({
         success: true,
         hasUpdates: false,
         version: serverVersion,
         activeWorkers,
+        candidate: candidateSummary,
       });
     }
 
@@ -101,6 +122,7 @@ export async function GET(req: Request) {
       total: result.total,
       source: result.source,
       activeWorkers,
+      candidate: candidateSummary,
       timestamp: Date.now(),
     });
   } catch (err: unknown) {
