@@ -5,6 +5,10 @@ import { d1Query, d1Execute, isD1Configured } from "@/lib/d1";
 import { extractRowEpic } from "@/lib/excel-helper";
 
 function mapDbCandidateToAccount(c: any): CandidateAccount {
+  const optimizedPoster = c.posterUrl?.startsWith("data:image/")
+    ? `/api/candidates/poster?id=${c.id}&v=${c.updatedAt ? new Date(c.updatedAt).getTime() : 1}`
+    : c.posterUrl || undefined;
+
   return {
     id: c.id,
     name: c.name,
@@ -16,7 +20,7 @@ function mapDbCandidateToAccount(c: any): CandidateAccount {
     voterCount: c._count?.voters ?? (c.voters ? c.voters.length : (c.voterLimit || 0)),
     boothCount: c.booths ? c.booths.length : 18,
     createdAt: c.createdAt ? new Date(c.createdAt).toISOString().split("T")[0] : "2026-08-01",
-    posterUrl: c.posterUrl || undefined,
+    posterUrl: optimizedPoster,
     symbolName: c.symbolName || undefined,
     nikay: c.nikay || undefined,
     passwordsJson: c.passwordsJson || undefined,
@@ -48,6 +52,10 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
       const filteredD1 = hasCuid && !candidateId ? d1Candidates.filter((c) => c.id !== "cand_1") : d1Candidates;
 
       for (const c of filteredD1) {
+        const optimizedPoster = c.posterUrl?.startsWith("data:image/")
+          ? `/api/candidates/poster?id=${c.id}&v=${c.updatedAt ? new Date(c.updatedAt).getTime() : 1}`
+          : c.posterUrl || "/default-candidate-poster.jpg";
+
         candidateMap.set(c.id, {
           id: c.id,
           name: c.name,
@@ -59,7 +67,7 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
           voterCount: Number(c.voterCount) || 0,
           boothCount: Number(c.boothCount) || 1,
           createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : "2026-10-01",
-          posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
+          posterUrl: optimizedPoster,
           symbolName: c.symbolName || undefined,
           nikay: c.nikay || undefined,
           passwordsJson: c.passwordsJson || undefined,
@@ -503,6 +511,10 @@ export async function updateCandidate(
       );
       if (d1Rows.length > 0) {
         const c = d1Rows[0];
+        const optimizedPoster = c.posterUrl?.startsWith("data:image/")
+          ? `/api/candidates/poster?id=${c.id}&v=${c.updatedAt ? new Date(c.updatedAt).getTime() : 1}`
+          : c.posterUrl || "/default-candidate-poster.jpg";
+
         updatedRecord = {
           id: c.id,
           name: c.name,
@@ -514,7 +526,7 @@ export async function updateCandidate(
           voterCount: Number(c.voterCount) || 0,
           boothCount: Number(c.boothCount) || 1,
           createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : new Date().toISOString().split("T")[0],
-          posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
+          posterUrl: optimizedPoster,
           symbolName: c.symbolName || undefined,
           nikay: c.nikay || undefined,
           passwordsJson: c.passwordsJson || undefined,
