@@ -29,6 +29,8 @@ function mapDbCandidateToAccount(c: any): CandidateAccount {
  * Retrieves all candidates from Cloudflare D1 or Neon PostgreSQL with fallback to memory store.
  */
 export async function getCandidates(candidateId?: string): Promise<CandidateAccount[]> {
+  const candidateMap = new Map<string, CandidateAccount>();
+
   // 1. Try Cloudflare D1 Database (Ultra-fast serverless SQLite)
   if (isD1Configured()) {
     try {
@@ -45,25 +47,26 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
       const hasCuid = d1Candidates.some((c) => c.id === "cmuq2l4zx0002jz04vr6hy570");
       const filteredD1 = hasCuid && !candidateId ? d1Candidates.filter((c) => c.id !== "cand_1") : d1Candidates;
 
-      // Return D1 result directly (even if empty) so deleted campaigns never reappear
-      return filteredD1.map((c) => ({
-        id: c.id,
-        name: c.name,
-        phone: c.phone,
-        party: c.party || "Independent",
-        electionName: c.electionName || "Municipal Election 2026",
-        wardConstituency: c.wardConstituency || "Ward 34",
-        status: (c.status as CandidateAccount["status"]) || "ACTIVE",
-        voterCount: Number(c.voterCount) || 0,
-        boothCount: Number(c.boothCount) || 1,
-        createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : "2026-10-01",
-        posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
-        symbolName: c.symbolName || undefined,
-        nikay: c.nikay || undefined,
-        passwordsJson: c.passwordsJson || undefined,
-        electionType: "NIKAY",
-        slipMessage: c.name ? `वोट दें ${c.name} को` : undefined,
-      }));
+      for (const c of filteredD1) {
+        candidateMap.set(c.id, {
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          party: c.party || "Independent",
+          electionName: c.electionName || "Municipal Election 2026",
+          wardConstituency: c.wardConstituency || "Ward 34",
+          status: (c.status as CandidateAccount["status"]) || "ACTIVE",
+          voterCount: Number(c.voterCount) || 0,
+          boothCount: Number(c.boothCount) || 1,
+          createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : "2026-10-01",
+          posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
+          symbolName: c.symbolName || undefined,
+          nikay: c.nikay || undefined,
+          passwordsJson: c.passwordsJson || undefined,
+          electionType: (c.electionType as any) || (c.electionName?.includes("पंचायत") || c.electionName?.toLowerCase().includes("panchayat") ? "PANCHAYAT" : "NIKAY"),
+          slipMessage: c.slipMessage || (c.name ? `वोट दें ${c.name} को` : undefined),
+        });
+      }
     } catch (d1Err) {
       console.warn("Cloudflare D1 getCandidates notice:", d1Err);
     }
@@ -87,11 +90,23 @@ export async function getCandidates(candidateId?: string): Promise<CandidateAcco
       orderBy: { createdAt: "desc" },
     });
 
-    if (dbCandidates.length > 0) {
-      return dbCandidates.map(mapDbCandidateToAccount);
+    for (const c of dbCandidates) {
+      const mapped = mapDbCandidateToAccount(c);
+      if (!candidateMap.has(mapped.id)) {
+        candidateMap.set(mapped.id, mapped);
+      } else {
+        const existing = candidateMap.get(mapped.id)!;
+        if (mapped.voterCount > existing.voterCount) {
+          existing.voterCount = mapped.voterCount;
+        }
+      }
     }
   } catch (err) {
     console.warn("Neon DB getCandidates notice, falling back to store:", err);
+  }
+
+  if (candidateMap.size > 0) {
+    return Array.from(candidateMap.values());
   }
 
   // 3. Fallback to store
@@ -447,20 +462,73 @@ export async function updateCandidate(
 ): Promise<CandidateAccount | null> {
   let updatedRecord: CandidateAccount | null = null;
 
-  try {
-    const dataToUpdate: any = {};
-    if (updates.name !== undefined) dataToUpdate.name = updates.name;
-    if (updates.phone !== undefined) dataToUpdate.phone = updates.phone;
-    if (updates.party !== undefined) dataToUpdate.party = updates.party;
-    if (updates.electionName !== undefined) dataToUpdate.electionName = updates.electionName;
-    if (updates.wardConstituency !== undefined) dataToUpdate.wardConstituency = updates.wardConstituency;
-    if (updates.status !== undefined) dataToUpdate.status = updates.status;
-    if (updates.posterUrl !== undefined) dataToUpdate.posterUrl = updates.posterUrl;
-    if (updates.symbolName !== undefined) dataToUpdate.symbolName = updates.symbolName;
-    if (updates.voterLimit !== undefined) dataToUpdate.voterLimit = updates.voterLimit;
-    if (updates.nikay !== undefined) dataToUpdate.nikay = updates.nikay;
-    if (updates.slipMessage !== undefined) dataToUpdate.slipMessage = updates.slipMessage;
+  const dataToUpdate: any = {};
+  if (updates.name !== undefined) dataToUpdate.name = updates.name;
+  if (updates.phone !== undefined) dataToUpdate.phone = updates.phone;
+  if (updates.party !== undefined) dataToUpdate.party = updates.party;
+  if (updates.electionName !== undefined) dataToUpdate.electionName = updates.electionName;
+  if (updates.wardConstituency !== undefined) dataToUpdate.wardConstituency = updates.wardConstituency;
+  if (updates.status !== undefined) dataToUpdate.status = updates.status;
+  if (updates.posterUrl !== undefined) dataToUpdate.posterUrl = updates.posterUrl;
+  if (updates.symbolName !== undefined) dataToUpdate.symbolName = updates.symbolName;
+  if (updates.voterLimit !== undefined) dataToUpdate.voterLimit = updates.voterLimit;
+  if (updates.nikay !== undefined) dataToUpdate.nikay = updates.nikay;
+  if (updates.slipMessage !== undefined) dataToUpdate.slipMessage = updates.slipMessage;
+  if (updates.electionType !== undefined) dataToUpdate.electionType = updates.electionType;
 
+  // 1. Primary: Cloudflare D1 Database Update
+  if (isD1Configured()) {
+    try {
+      const setClauses: string[] = [];
+      const params: any[] = [];
+      for (const [key, value] of Object.entries(dataToUpdate)) {
+        if (value !== undefined) {
+          setClauses.push(`"${key}" = ?`);
+          params.push(value);
+        }
+      }
+      if (setClauses.length > 0) {
+        setClauses.push(`"updatedAt" = datetime('now')`);
+        params.push(id, id);
+        await d1Execute(
+          `UPDATE "Candidate" SET ${setClauses.join(", ")} WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
+          params
+        );
+      }
+
+      // Query updated record directly from D1
+      const d1Rows = await d1Query<any>(
+        `SELECT c.*, (SELECT count(*) FROM "Voter" v WHERE v.candidateId = c.id OR (c.id = 'cand_1' AND v.candidateId = 'cmuq2l4zx0002jz04vr6hy570')) as voterCount FROM "Candidate" c WHERE c.id = ? OR (c.id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570') LIMIT 1`,
+        [id, id]
+      );
+      if (d1Rows.length > 0) {
+        const c = d1Rows[0];
+        updatedRecord = {
+          id: c.id,
+          name: c.name,
+          phone: c.phone,
+          party: c.party || "Independent",
+          electionName: c.electionName || "Municipal Election 2026",
+          wardConstituency: c.wardConstituency || "Ward 34",
+          status: (c.status as CandidateAccount["status"]) || "ACTIVE",
+          voterCount: Number(c.voterCount) || 0,
+          boothCount: Number(c.boothCount) || 1,
+          createdAt: c.createdAt ? String(c.createdAt).split("T")[0] : new Date().toISOString().split("T")[0],
+          posterUrl: c.posterUrl || "/default-candidate-poster.jpg",
+          symbolName: c.symbolName || undefined,
+          nikay: c.nikay || undefined,
+          passwordsJson: c.passwordsJson || undefined,
+          electionType: (c.electionType as any) || (c.electionName?.includes("पंचायत") || c.electionName?.toLowerCase().includes("panchayat") ? "PANCHAYAT" : "NIKAY"),
+          slipMessage: c.slipMessage || (c.name ? `वोट दें ${c.name} को` : undefined),
+        };
+      }
+    } catch (d1Err) {
+      console.warn("Cloudflare D1 updateCandidate notice:", d1Err);
+    }
+  }
+
+  // 2. Neon PostgreSQL Update / Upsert
+  try {
     const dbRecord = await prisma.candidate.update({
       where: { id },
       data: dataToUpdate,
@@ -470,39 +538,92 @@ export async function updateCandidate(
       },
     });
 
-    updatedRecord = mapDbCandidateToAccount(dbRecord);
+    const neonMapped = mapDbCandidateToAccount(dbRecord);
+    if (!updatedRecord) {
+      updatedRecord = neonMapped;
+    } else {
+      if (neonMapped.voterCount > updatedRecord.voterCount) {
+        updatedRecord.voterCount = neonMapped.voterCount;
+      }
+    }
   } catch (err) {
     console.warn(`Neon DB updateCandidate(${id}) notice:`, err);
-  }
-
-  // Update in Cloudflare D1 Database
-  if (isD1Configured()) {
+    // If not found in Neon, attempt upsert so Neon is synced with D1
     try {
-      const setClauses: string[] = [];
-      const params: any[] = [];
-      for (const [key, value] of Object.entries(updates)) {
-        if (value !== undefined) {
-          setClauses.push(`"${key}" = ?`);
-          params.push(value);
-        }
+      const candName = updates.name || updatedRecord?.name || "Candidate";
+      const candPhone = String(updates.phone || updatedRecord?.phone || "9999999999").replace(/\D/g, "");
+      const cleanPhone = candPhone.length === 10 ? candPhone : `98${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+      await prisma.user.upsert({
+        where: { phone: cleanPhone },
+        update: { name: candName },
+        create: {
+          id: `usr_${cleanPhone}`,
+          name: candName,
+          phone: cleanPhone,
+          password: "hashed_pwd",
+          role: "CANDIDATE_ADMIN",
+        },
+      });
+
+      const upserted = await prisma.candidate.upsert({
+        where: { id },
+        update: dataToUpdate,
+        create: {
+          id,
+          name: candName,
+          phone: cleanPhone,
+          party: updates.party || updatedRecord?.party || "Independent",
+          electionName: updates.electionName || updatedRecord?.electionName || "Municipal Election 2026",
+          wardConstituency: updates.wardConstituency || updatedRecord?.wardConstituency || "Ward 01",
+          status: updates.status || updatedRecord?.status || "ACTIVE",
+          voterLimit: updates.voterLimit || (updatedRecord as any)?.voterLimit || 50000,
+          posterUrl: updates.posterUrl || updatedRecord?.posterUrl || null,
+          symbolName: updates.symbolName || updatedRecord?.symbolName || null,
+          nikay: updates.nikay || updatedRecord?.nikay || null,
+          slipMessage: updates.slipMessage || updatedRecord?.slipMessage || null,
+          electionType: updates.electionType || updatedRecord?.electionType || "NIKAY",
+          passwordsJson: updatedRecord?.passwordsJson || null,
+        },
+        include: {
+          booths: true,
+          _count: { select: { voters: true } },
+        },
+      });
+      if (!updatedRecord) {
+        updatedRecord = mapDbCandidateToAccount(upserted);
       }
-      if (setClauses.length > 0) {
-        params.push(id, id);
-        await d1Execute(
-          `UPDATE "Candidate" SET ${setClauses.join(", ")} WHERE id = ? OR (id = 'cand_1' AND ? = 'cmuq2l4zx0002jz04vr6hy570')`,
-          params
-        );
-      }
-    } catch (d1Err) {
-      console.warn("Cloudflare D1 updateCandidate notice:", d1Err);
+    } catch (upsertErr) {
+      console.warn(`Neon DB upsert candidate (${id}) notice:`, upsertErr);
     }
   }
 
-  // Update in memory store
+  // 3. Update in-memory store
   const storeCand = store.updateCandidate(id, updates);
-  store.touchVersion();
+  if (!updatedRecord && storeCand) {
+    updatedRecord = storeCand;
+  }
 
-  return updatedRecord || storeCand || null;
+  // Ensure store has the updated candidate cached
+  if (updatedRecord) {
+    const existingInStore = store.getCandidate(id);
+    if (!existingInStore) {
+      (store as any).candidates.unshift(updatedRecord);
+    } else {
+      Object.assign(existingInStore, updatedRecord);
+    }
+    store.touchVersion();
+  } else {
+    // Ultimate fallback: fetch candidate by ID and merge updates
+    const existing = await getCandidateById(id);
+    if (existing) {
+      updatedRecord = { ...existing, ...updates };
+      (store as any).candidates = [updatedRecord, ...(store as any).candidates.filter((c: any) => c.id !== id)];
+      store.touchVersion();
+    }
+  }
+
+  return updatedRecord;
 }
 
 /**

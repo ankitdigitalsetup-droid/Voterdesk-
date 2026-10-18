@@ -1276,13 +1276,14 @@ function SuperAdminView({
         throw new Error(err.error || err.message || "विवरण सुरक्षित करने में विफल");
       }
 
-      // Update in memory store
-      store.updateCandidate(editCand.id, payload);
-
-      const updatedCandidate: CandidateAccount = {
+      const resData = await res.json().catch(() => ({}));
+      const updatedCandidate: CandidateAccount = resData.candidate || {
         ...editCand,
         ...payload,
       };
+
+      // Update in memory store
+      store.updateCandidate(editCand.id, updatedCandidate);
 
       if (onCandidateUpdated) {
         onCandidateUpdated(updatedCandidate);

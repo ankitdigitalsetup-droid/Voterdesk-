@@ -38,6 +38,8 @@ model Candidate {
   symbolName       String?  // Election Voting Symbol
   nikay            String?  // निकाय e.g. 3000039
   passwordsJson    String?  // JSON cache of generated passwords
+  slipMessage      String?  // Custom slogan / voter slip message
+  electionType     String?  // NIKAY | PANCHAYAT
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
