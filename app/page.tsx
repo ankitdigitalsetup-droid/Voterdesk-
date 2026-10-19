@@ -1577,7 +1577,7 @@ function SuperAdminView({
         const suppVal = mapping.isSupporter && r[mapping.isSupporter] ? String(r[mapping.isSupporter]).trim() : "हाँ";
         const outsideVal = mapping.isOutside && r[mapping.isOutside] ? String(r[mapping.isOutside]).trim() : "नहीं";
         const ageVal = mapping.age && r[mapping.age] ? String(r[mapping.age]).trim() : "35";
-        const genderVal = mapping.gender && r[mapping.gender] ? normalizeGender(r[mapping.gender]) : "Male";
+        const genderVal = mapping.gender && r[mapping.gender] != null ? String(r[mapping.gender]).trim() : "";
         const phoneVal = mapping.phone && r[mapping.phone] ? String(r[mapping.phone]).trim() : "";
         const houseVal = mapping.house && r[mapping.house] ? String(r[mapping.house]).trim() : "";
         const addressVal = mapping.address && r[mapping.address] ? String(r[mapping.address]).trim() : "";
@@ -1852,7 +1852,7 @@ function SuperAdminView({
             booth: boothVal,
             serialNo: serialVal,
             age: ageVal,
-            gender: normalizeGender(row[mapping.gender]),
+            gender: mapping.gender && row[mapping.gender] != null ? String(row[mapping.gender]).trim() : "",
             house: String(row[mapping.house] || "").trim(),
             address: String(row[mapping.address] || "").trim(),
             boothAddress: String(row[mapping.boothAddress] || "").trim(),
@@ -3887,6 +3887,7 @@ function SuperAdminView({
                           <th style={{ padding: "6px 8px" }}>नाम</th>
                           <th style={{ padding: "6px 8px" }}>पिता/पति</th>
                           <th style={{ padding: "6px 8px" }}>आयु</th>
+                          <th style={{ padding: "6px 8px" }}>लिंग</th>
                           <th style={{ padding: "6px 8px" }}>बूथ</th>
                           <th style={{ padding: "6px 8px" }}>EPIC</th>
                           <th style={{ padding: "6px 8px" }}>मोबाइल</th>
@@ -3899,6 +3900,7 @@ function SuperAdminView({
                             <td style={{ padding: "6px 8px", fontWeight: 600 }}>{v.name}</td>
                             <td style={{ padding: "6px 8px" }}>{v.guardian || "-"}</td>
                             <td style={{ padding: "6px 8px" }}>{v.age || "-"}</td>
+                            <td style={{ padding: "6px 8px" }}>{v.gender || "-"}</td>
                             <td style={{ padding: "6px 8px" }}>{v.booth}</td>
                             <td style={{ padding: "6px 8px", fontFamily: "monospace" }}>{v.epic}</td>
                             <td style={{ padding: "6px 8px" }}>{v.phone || "-"}</td>
@@ -5026,7 +5028,7 @@ function BoothManagerView({
     serialNo: "",
     epic: "",
     age: "35",
-    gender: "Male",
+    gender: "",
     house: "",
     address: "",
     boothAddress: "",
@@ -6483,12 +6485,12 @@ ${boothLine}----------------------------------------
           "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
           "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
           "आयु (Age)": v.age || "—",
+          "लिंग (Gender)": v.gender || formatGenderDisplay(v.gender, "hi") || "—",
           "मोबाइल नंबर (Mobile)": v.phone || "—",
           "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
           "मकान नंबर (House No)": v.house || "—",
           "पता (Address)": v.address || "—",
           "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
-          "लिंग (Gender)": formatGenderDisplay(v.gender, "hi"),
           "स्थिति (Status)": v.status || "Pending",
           "कार्यकर्ता (Worker)": v.worker || "—",
         };
@@ -6566,12 +6568,12 @@ ${boothLine}----------------------------------------
           "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
           "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
           "आयु (Age)": v.age || "—",
+          "लिंग (Gender)": v.gender || formatGenderDisplay(v.gender, "hi") || "—",
           "मोबाइल नंबर (Mobile)": v.phone || "—",
           "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
           "मकान नंबर (House No)": v.house || "—",
           "पता (Address)": v.address || "—",
           "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
-          "लिंग (Gender)": formatGenderDisplay(v.gender, "hi"),
           "स्थिति (Status)": v.status || "Pending",
           "कार्यकर्ता (Worker)": v.worker || "—",
         };
@@ -6676,7 +6678,7 @@ ${boothLine}----------------------------------------
       serialNo: voterForm.serialNo ? Number(voterForm.serialNo) : undefined,
       epic: epicVal,
       age: voterForm.age || "35",
-      gender: voterForm.gender || "Male",
+      gender: voterForm.gender ? voterForm.gender.trim() : "",
       house: voterForm.house.trim(),
       address: voterForm.address.trim(),
       boothAddress: voterForm.boothAddress.trim(),
@@ -6704,7 +6706,7 @@ ${boothLine}----------------------------------------
           serialNo: voterForm.serialNo ? Number(voterForm.serialNo) : undefined,
           epic: epicVal,
           age: voterForm.age || "35",
-          gender: voterForm.gender || "Male",
+          gender: voterForm.gender ? voterForm.gender.trim() : "",
           house: voterForm.house.trim(),
           address: voterForm.address.trim(),
           boothAddress: voterForm.boothAddress.trim(),
@@ -6732,7 +6734,7 @@ ${boothLine}----------------------------------------
       serialNo: "",
       epic: "",
       age: "35",
-      gender: "Male",
+      gender: "",
       house: "",
       address: "",
       boothAddress: "",
@@ -6782,7 +6784,7 @@ ${boothLine}----------------------------------------
           zilaParishad: zpVal,
           panchayatSamiti: psVal,
           age: ageVal,
-          gender: normalizeGender(row[mapping.gender]),
+          gender: mapping.gender && row[mapping.gender] != null ? String(row[mapping.gender]).trim() : "",
           house: String(row[mapping.house] || "").trim(),
           booth: boothVal,
           serialNo: serialVal,
@@ -8347,6 +8349,10 @@ ${boothLine}----------------------------------------
                   </>
                 )}
               </th>
+              {/* 8b. लिंग (Gender) */}
+              <th style={{ minWidth: "90px", textAlign: "center" }}>
+                {lang === "hi" ? "लिंग" : "Gender"}
+              </th>
               {/* 9. मोबाइल नो */}
               <th style={{ minWidth: "115px" }}>{t.colPhone}</th>
               {/* 10. वोटर ID / पहचान पत्र - Placed AFTER Mobile No */}
@@ -8372,7 +8378,7 @@ ${boothLine}----------------------------------------
           <tbody>
             {filteredVoters.length === 0 ? (
               <tr>
-                <td colSpan={(familyFilter ? 17 : 16) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                <td colSpan={(familyFilter ? 18 : 17) + extraExcelColumns.length} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
                   {t.noVotersMatch}
                 </td>
               </tr>
@@ -8526,6 +8532,44 @@ ${boothLine}----------------------------------------
                     {/* 8. आयु (Age) - BEFORE Mobile No */}
                     <td className="colCenter" style={{ fontWeight: 700, color: "#1e293b", fontSize: "12.5px" }}>
                       {v.age ? `${v.age} वर्ष` : "—"}
+                    </td>
+
+                    {/* 8b. लिंग (Gender) */}
+                    <td className="colCenter" style={{ textAlign: "center", fontSize: "12px" }}>
+                      {v.gender ? (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            background:
+                              String(v.gender).toLowerCase().includes("f") || String(v.gender).includes("म") || String(v.gender).includes("स्त्री")
+                                ? "#fdf2f8"
+                                : String(v.gender).toLowerCase().includes("m") || String(v.gender).includes("पु")
+                                ? "#f0f9ff"
+                                : "#f8fafc",
+                            color:
+                              String(v.gender).toLowerCase().includes("f") || String(v.gender).includes("म") || String(v.gender).includes("स्त्री")
+                                ? "#db2777"
+                                : String(v.gender).toLowerCase().includes("m") || String(v.gender).includes("पु")
+                                ? "#0284c7"
+                                : "#475569",
+                            border: "1px solid",
+                            borderColor:
+                              String(v.gender).toLowerCase().includes("f") || String(v.gender).includes("म") || String(v.gender).includes("स्त्री")
+                                ? "#fbcfe8"
+                                : String(v.gender).toLowerCase().includes("m") || String(v.gender).includes("पु")
+                                ? "#bae6fd"
+                                : "#cbd5e1",
+                          }}
+                        >
+                          {v.gender}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>—</span>
+                      )}
                     </td>
 
                     {/* 9. मोबाइल नो */}
@@ -10310,6 +10354,26 @@ ${boothLine}----------------------------------------
 
                   <div className="inputGrid">
                     <div className="formGroup">
+                      <label>आयु (Age)</label>
+                      <input
+                        type="number"
+                        value={voterForm.age}
+                        onChange={(e) => setVoterForm({ ...voterForm, age: e.target.value })}
+                        placeholder="जैसे: 35"
+                      />
+                    </div>
+                    <div className="formGroup">
+                      <label>लिंग (Gender)</label>
+                      <input
+                        value={voterForm.gender}
+                        onChange={(e) => setVoterForm({ ...voterForm, gender: e.target.value })}
+                        placeholder="जैसे: पुरुष / महिला / Male / Female"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="inputGrid">
+                    <div className="formGroup">
                       <label>{t.colZilaParishad}</label>
                       <input
                         value={voterForm.zilaParishad}
@@ -11816,12 +11880,12 @@ function VotersTable({
           "समर्थक (Supporter)": (v.isSupporter === "हाँ" || v.isSupporter === "Yes" || v.isSupporter === true || v.status === "In-Favor") ? "हाँ" : "नहीं",
           "बाहर है (Outside)": (v.isOutside === "हाँ" || v.isOutside === "Yes" || v.isOutside === true) ? "हाँ" : "नहीं",
           "आयु (Age)": v.age || "—",
+          "लिंग (Gender)": v.gender || formatGenderDisplay(v.gender, "hi") || "—",
           "मोबाइल नंबर (Mobile)": v.phone || "—",
           "वोटर ID / पहचान पत्र (EPIC)": v.epic || "—",
           "मकान नंबर (House No)": v.house || "—",
           "पता (Address)": v.address || "—",
           "मतदान केंद्र (Booth Address)": v.boothAddress || "—",
-          "लिंग (Gender)": formatGenderDisplay(v.gender, "hi"),
           "स्थिति (Status)": v.status || "Pending",
           "कार्यकर्ता (Worker)": v.worker || "—",
         };
@@ -12470,6 +12534,8 @@ function VotersTable({
                     </>
                   )}
                 </th>
+                {/* 8b. लिंग (Gender) */}
+                <th style={{ minWidth: "90px", textAlign: "center" }}>लिंग (Gender)</th>
                 {/* 9. मोबाइल नो */}
                 <th style={{ minWidth: "115px" }}>मोबाइल नो</th>
                 {/* 10. वोटर ID (EPIC) - AFTER Mobile No */}
@@ -12620,6 +12686,44 @@ function VotersTable({
                     {/* 8. आयु (Age) - BEFORE Mobile No */}
                     <td style={{ textAlign: "center", fontWeight: 700, color: "#1e293b", fontSize: "12.5px" }}>
                       {v.age ? `${v.age} वर्ष` : "—"}
+                    </td>
+
+                    {/* 8b. लिंग (Gender) */}
+                    <td style={{ textAlign: "center", fontSize: "12px" }}>
+                      {v.gender ? (
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            background:
+                              String(v.gender).toLowerCase().includes("f") || String(v.gender).includes("म") || String(v.gender).includes("स्त्री")
+                                ? "#fdf2f8"
+                                : String(v.gender).toLowerCase().includes("m") || String(v.gender).includes("पु")
+                                ? "#f0f9ff"
+                                : "#f8fafc",
+                            color:
+                              String(v.gender).toLowerCase().includes("f") || String(v.gender).includes("म") || String(v.gender).includes("स्त्री")
+                                ? "#db2777"
+                                : String(v.gender).toLowerCase().includes("m") || String(v.gender).includes("पु")
+                                ? "#0284c7"
+                                : "#475569",
+                            border: "1px solid",
+                            borderColor:
+                              String(v.gender).toLowerCase().includes("f") || String(v.gender).includes("म") || String(v.gender).includes("स्त्री")
+                                ? "#fbcfe8"
+                                : String(v.gender).toLowerCase().includes("m") || String(v.gender).includes("पु")
+                                ? "#bae6fd"
+                                : "#cbd5e1",
+                          }}
+                        >
+                          {v.gender}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>—</span>
+                      )}
                     </td>
 
                     {/* 9. मोबाइल नो */}
@@ -12809,14 +12913,14 @@ function VotersTable({
                   />
                 </div>
                 <div className="formGroup">
-                  <label>Gender</label>
+                  <label>Gender (लिंग)</label>
                   <select
                     value={newVoter.gender}
                     onChange={(e) => setNewVoter({ ...newVoter, gender: e.target.value })}
                   >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
+                    <option value="Male">पुरुष (Male)</option>
+                    <option value="Female">महिला (Female)</option>
+                    <option value="Other">अन्य (Other)</option>
                   </select>
                 </div>
               </div>
@@ -13044,7 +13148,7 @@ function RealExcelImporter({
         zilaParishad: zpVal,
         panchayatSamiti: psVal,
         age: ageVal,
-        gender: normalizeGender(row[fieldMap.gender]),
+        gender: fieldMap.gender && row[fieldMap.gender] != null ? String(row[fieldMap.gender]).trim() : "",
         house: String(row[fieldMap.house] || "").trim(),
         booth,
         serialNo,
@@ -13182,17 +13286,17 @@ function RealExcelImporter({
                 { key: "serialNo", label: "2. क्रम संख्या (Serial No. / क्र.सं.)" },
                 { key: "name", label: "3. नाम (Voter Full Name) *" },
                 { key: "guardian", label: "4. पिता/पति (Guardian / Father / Husband)" },
-                { key: "voted", label: "5. वोट डाला (Voted - हाँ/नहीं)" },
-                { key: "isSupporter", label: "6. सपोर्टर है (Supporter - हाँ/नहीं)" },
-                { key: "isOutside", label: "7. बाहर है (Is Outside - हाँ/नहीं)" },
-                { key: "phone", label: "8. मोबाइल नो (Mobile Number)" },
-                { key: "house", label: "9. हाउस No (House No.)" },
-                { key: "address", label: "10. एड्रेस (Address / Ward / Colony)" },
-                { key: "boothAddress", label: "11. Booth Address (मतदान केंद्र का पता)" },
-                { key: "epic", label: "वैकल्पिक: पहचान पत्र (EPIC - खाली होने पर स्वतः बनेगा)" },
-                { key: "age", label: "वैकल्पिक: आयु (Age)" },
-                { key: "gender", label: "वैकल्पिक: लिंग (Gender)" },
-                { key: "voterStatus", label: "वैकल्पिक: स्थिति (Status - Active/Deleted / विलोपित)" },
+                { key: "gender", label: "5. लिंग (Gender / स्त्री / पुरुष)" },
+                { key: "age", label: "6. आयु (Age)" },
+                { key: "voted", label: "7. वोट डाला (Voted - हाँ/नहीं)" },
+                { key: "isSupporter", label: "8. सपोर्टर है (Supporter - हाँ/नहीं)" },
+                { key: "isOutside", label: "9. बाहर है (Is Outside - हाँ/नहीं)" },
+                { key: "phone", label: "10. मोबाइल नो (Mobile Number)" },
+                { key: "house", label: "11. हाउस No (House No.)" },
+                { key: "address", label: "12. एड्रेस (Address / Ward / Colony)" },
+                { key: "boothAddress", label: "13. Booth Address (मतदान केंद्र का पता)" },
+                { key: "epic", label: "14. पहचान पत्र / वोटर ID (EPIC)" },
+                { key: "voterStatus", label: "15. स्थिति (Status - Active/Deleted / विलोपित)" },
               ].map((field) => (
                 <div key={field.key}>
                   <span><b>{field.label}</b></span>

@@ -315,18 +315,25 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
       c.includes("gender") ||
       c.includes("sex") ||
       c.includes("लिंग") ||
+      c.includes("लिङ्ग") ||
       c.includes("स्त्री/पुरुष") ||
       c.includes("पुरुष/महिला") ||
       c.includes("महिला/पुरुष") ||
       c.includes("जेंडर") ||
       c.includes("m/f") ||
+      c === "स्त्री" ||
+      c === "पुरुष" ||
+      c === "महिला" ||
       clean === "gender" ||
       clean === "sex" ||
       clean === "ling" ||
+      clean === "linga" ||
       clean === "m" ||
       clean === "f"
     )) {
-      mapping.gender = col;
+      if (!c.includes("party") && !c.includes("पार्टी")) {
+        mapping.gender = col;
+      }
     }
 
     // 15. Status (Active/Deleted / स्थिति / विलोपित)
@@ -373,6 +380,46 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
 
       if (totalChecked > 0 && matches / totalChecked >= 0.3) {
         mapping.epic = col;
+        break;
+      }
+    }
+  }
+
+  // Heuristic Fallback for Gender: Inspect sample rows if gender column header was ambiguous
+  if (!mapping.gender && sampleRows && sampleRows.length > 0) {
+    const knownGenders = new Set([
+      "male", "female", "other", "m", "f", "o", "t",
+      "पुरुष", "महिला", "स्त्री", "पुरूष", "पु", "म", "अन्य", "तृतीय लिंग"
+    ]);
+
+    for (const col of columns) {
+      if (
+        col === mapping.name ||
+        col === mapping.guardian ||
+        col === mapping.epic ||
+        col === mapping.phone ||
+        col === mapping.booth ||
+        col === mapping.serialNo ||
+        col === mapping.house ||
+        col === mapping.address
+      ) {
+        continue;
+      }
+
+      let matches = 0;
+      let totalChecked = 0;
+      for (const row of sampleRows.slice(0, 25)) {
+        const val = String(row[col] || "").trim();
+        if (val) {
+          totalChecked++;
+          if (knownGenders.has(val.toLowerCase()) || knownGenders.has(val)) {
+            matches++;
+          }
+        }
+      }
+
+      if (totalChecked > 0 && matches / totalChecked >= 0.35) {
+        mapping.gender = col;
         break;
       }
     }
@@ -493,38 +540,43 @@ export function extractRowEpic(
   return "";
 }
 
-// Normalizes raw gender input into standard values ("Male" | "Female" | "Other")
+// Preserves raw gender input exactly as uploaded by the user without modifying or defaulting it
 export function normalizeGender(val?: any): string {
-  if (!val) return "Male";
+  if (val === null || val === undefined) return "";
   const s = String(val).trim();
-  const lower = s.toLowerCase();
-  if (lower === "f" || lower === "female" || s === "महिला" || s === "स्त्री" || s === "म" || s === "म.") {
-    return "Female";
-  }
-  if (lower === "m" || lower === "male" || s === "पुरुष" || s === "पुरूष" || s === "पु" || s === "पु.") {
-    return "Male";
-  }
-  if (lower === "o" || lower === "other" || lower === "t" || lower === "transgender" || s === "अन्य" || s.includes("तृतीय")) {
-    return "Other";
-  }
-  return s || "Male";
+  if (!s || s === "—" || s === "-" || s === "null" || s === "undefined") return "";
+  return s;
 }
 
 // Formats gender for display across slips, cards and messages
 export function formatGenderDisplay(gender?: string, lang: "hi" | "en" = "hi"): string {
   if (!gender) return "—";
   const s = String(gender).trim();
+  if (!s || s === "—" || s === "-" || s === "null" || s === "undefined") return "—";
   const lower = s.toLowerCase();
-  if (lower === "female" || lower === "f" || s === "महिला" || s === "स्त्री" || s === "म") {
-    return lang === "hi" ? "महिला" : "Female";
+  if (lang === "hi") {
+    if (lower === "female" || lower === "f" || s === "महिला" || s === "स्त्री" || s === "म" || s === "म.") {
+      return "महिला";
+    }
+    if (lower === "male" || lower === "m" || s === "पुरुष" || s === "पुरूष" || s === "पु" || s === "पु.") {
+      return "पुरुष";
+    }
+    if (lower === "other" || lower === "o" || lower === "t" || lower === "transgender" || s === "अन्य" || s.includes("तृतीय")) {
+      return "अन्य";
+    }
+    return s;
+  } else {
+    if (lower === "female" || lower === "f" || s === "महिला" || s === "स्त्री" || s === "म" || s === "म.") {
+      return "Female";
+    }
+    if (lower === "male" || lower === "m" || s === "पुरुष" || s === "पुरूष" || s === "पु" || s === "पु.") {
+      return "Male";
+    }
+    if (lower === "other" || lower === "o" || lower === "t" || lower === "transgender" || s === "अन्य" || s.includes("तृतीय")) {
+      return "Other";
+    }
+    return s;
   }
-  if (lower === "male" || lower === "m" || s === "पुरुष" || s === "पुरूष" || s === "पु") {
-    return lang === "hi" ? "पुरुष" : "Male";
-  }
-  if (lower === "other" || lower === "o" || lower === "t" || lower === "transgender" || s === "अन्य") {
-    return lang === "hi" ? "अन्य" : "Other";
-  }
-  return s;
 }
 
 // Generate sample Excel template with the exact requested fields order and trigger download in browser

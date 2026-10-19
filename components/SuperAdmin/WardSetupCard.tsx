@@ -520,7 +520,8 @@ export function WardSetupCard({
                         <th>Voter Name</th>
                         <th>EPIC / ID</th>
                         <th>Guardian</th>
-                        <th>Age / Gender</th>
+                        <th>Age</th>
+                        <th>Gender</th>
                         <th>House No.</th>
                         <th>Assigned Booth</th>
                         <th>Status</th>
@@ -532,7 +533,8 @@ export function WardSetupCard({
                           <td><b>{v.name}</b></td>
                           <td><code>{v.epic}</code></td>
                           <td>{v.guardian}</td>
-                          <td>{v.age} / {v.gender}</td>
+                          <td>{v.age}</td>
+                          <td>{v.gender || "—"}</td>
                           <td>{v.house}</td>
                           <td><span className="boothPillSmall">Booth {v.booth}</span></td>
                           <td><span className={`statusPill ${v.status.toLowerCase()}`}>{v.status}</span></td>
