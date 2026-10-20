@@ -49,7 +49,7 @@ export function compareVotersBySerial(a: VoterRecord, b: VoterRecord, desc = fal
  * Detects whether a voter record has "Deleted" / "विलोपित" status.
  * Checks voterStatus property, extraData, and any raw fields matching "status", "deleted", "विलोपित", etc.
  */
-export function isVoterDeleted(v: VoterRecord): boolean {
+export function isVoterDeleted(v: VoterRecord | any): boolean {
   if (!v) return false;
 
   // 1. Direct voterStatus property
@@ -63,26 +63,95 @@ export function isVoterDeleted(v: VoterRecord): boolean {
     }
   }
 
-  // 2. Extra data or any dynamic column
+  // 2. Direct status property if set to deleted
+  if (v.status) {
+    const st = String(v.status).trim().toLowerCase();
+    if (st === "deleted" || st === "delete" || st === "विलोपित" || st === "हटाया" || st === "हटाया गया" || st === "inactive" || st === "निरस्त") {
+      return true;
+    }
+  }
+
+  // 3. Notes property (may contain serialized extraData or deletion notes)
+  if (v.notes) {
+    const nStr = String(v.notes).trim();
+    if (nStr.startsWith("{")) {
+      try {
+        const parsed = JSON.parse(nStr);
+        if (parsed && typeof parsed === "object") {
+          if (parsed.voterStatus) {
+            const ps = String(parsed.voterStatus).trim().toLowerCase();
+            if (ps.includes("delete") || ps.includes("विलोपित") || ps.includes("हटा") || ps.includes("निरस्त") || ps.includes("inactive") || ps === "d" || ps === "del") {
+              return true;
+            }
+          }
+          if (parsed.extraData && typeof parsed.extraData === "object") {
+            for (const [ek, ev] of Object.entries(parsed.extraData)) {
+              const ekLow = ek.toLowerCase();
+              const evStr = String(ev || "").trim().toLowerCase();
+              if (ekLow.includes("status") || ekLow.includes("स्थिति") || ekLow.includes("active") || ekLow.includes("delete") || ekLow.includes("विलोपित") || ekLow.includes("हटा") || ekLow.includes("निरस्त")) {
+                if (evStr.includes("delete") || evStr.includes("विलोपित") || evStr.includes("हटा") || evStr.includes("निरस्त") || evStr.includes("inactive") || evStr === "d" || evStr === "del") {
+                  return true;
+                }
+              }
+            }
+          }
+        }
+      } catch {}
+    }
+    const nLow = nStr.toLowerCase();
+    if (nLow === "deleted" || nLow === "विलोपित" || nLow.includes("विलोपित मतदाता") || nLow.includes("deleted voter")) {
+      return true;
+    }
+  }
+
+  // 4. Extra data or any dynamic column
   if (v.extraData && typeof v.extraData === "object") {
     for (const [k, val] of Object.entries(v.extraData)) {
       const kLow = k.toLowerCase();
-      if (kLow.includes("status") || kLow.includes("स्थिति") || kLow.includes("active") || kLow.includes("delete") || kLow.includes("विलोपित") || kLow.includes("हटा")) {
-        const vStr = String(val || "").trim().toLowerCase();
+      const vStr = String(val || "").trim().toLowerCase();
+      if (!vStr) continue;
+
+      if (kLow.includes("status") || kLow.includes("स्थिति") || kLow.includes("active") || kLow.includes("delete") || kLow.includes("विलोपित") || kLow.includes("हटा") || kLow.includes("निरस्त") || kLow.includes("state") || kLow.includes("हालत") || kLow.includes("दशा")) {
         if (vStr.includes("delete") || vStr.includes("विलोपित") || vStr.includes("हटा") || vStr.includes("निरस्त") || vStr.includes("inactive") || vStr === "d" || vStr === "del") {
+          return true;
+        }
+      } else {
+        if (vStr === "deleted" || vStr === "विलोपित" || vStr === "हटाया" || vStr === "हटाया गया" || vStr === "निरस्त" || vStr === "inactive") {
           return true;
         }
       }
     }
   }
 
-  // 3. Fallback check on top-level record keys
+  // 5. Fallback check on top-level record keys (from raw row parsing)
   for (const [k, val] of Object.entries(v as Record<string, any>)) {
-    if (k === "status" || k === "worker" || k === "notes" || k === "slipMessage" || k === "survey" || k === "extraData") continue; // campaign fields
+    if (
+      k === "status" ||
+      k === "worker" ||
+      k === "notes" ||
+      k === "slipMessage" ||
+      k === "survey" ||
+      k === "extraData" ||
+      k === "name" ||
+      k === "guardian" ||
+      k === "address" ||
+      k === "boothAddress" ||
+      k === "house" ||
+      k === "id" ||
+      k === "candidateId"
+    ) {
+      continue;
+    }
     const kLow = k.toLowerCase();
-    if (kLow.includes("status") || kLow.includes("स्थिति") || kLow.includes("active") || kLow.includes("delete") || kLow.includes("विलोपित") || kLow.includes("हटा")) {
-      const vStr = String(val || "").trim().toLowerCase();
+    const vStr = String(val || "").trim().toLowerCase();
+    if (!vStr) continue;
+
+    if (kLow.includes("status") || kLow.includes("स्थिति") || kLow.includes("active") || kLow.includes("delete") || kLow.includes("विलोपित") || kLow.includes("हटा") || kLow.includes("निरस्त") || kLow.includes("state") || kLow.includes("हालत") || kLow.includes("दशा")) {
       if (vStr.includes("delete") || vStr.includes("विलोपित") || vStr.includes("हटा") || vStr.includes("निरस्त") || vStr.includes("inactive") || vStr === "d" || vStr === "del") {
+        return true;
+      }
+    } else {
+      if (vStr === "deleted" || vStr === "विलोपित" || vStr === "हटाया" || vStr === "हटाया गया" || vStr === "निरस्त" || vStr === "inactive") {
         return true;
       }
     }
@@ -551,7 +620,7 @@ class DataStore {
     address?: string;
     epic?: string;
   }) {
-    let list = this.voters;
+    let list = this.voters.filter((v) => !isVoterDeleted(v));
     if (params.candidateId) {
       const cId = params.candidateId;
       const isTarget = (vCid?: string) =>
@@ -589,13 +658,17 @@ class DataStore {
   }
 
   getVoter(id: string) {
-    return this.voters.find((v) => v.id === id);
+    const v = this.voters.find((v) => v.id === id);
+    return v && !isVoterDeleted(v) ? v : undefined;
   }
 
   addVoter(voter: Omit<VoterRecord, "id"> & { id?: string }) {
+    if (isVoterDeleted(voter as any)) {
+      return undefined;
+    }
     let serialNo = voter.serialNo;
     if (!serialNo) {
-      const boothVoters = this.voters.filter((v) => v.candidateId === voter.candidateId && v.booth === voter.booth);
+      const boothVoters = this.voters.filter((v) => v.candidateId === voter.candidateId && v.booth === voter.booth && !isVoterDeleted(v));
       serialNo = boothVoters.length + 1;
     }
     const newVoter: VoterRecord = {
@@ -623,6 +696,7 @@ class DataStore {
     const added: VoterRecord[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
+      if (isVoterDeleted(item as any)) continue; // Drop deleted voter completely
       const epicVal = item.epic && item.epic.trim() && !item.epic.trim().startsWith("—")
         ? item.epic.trim().toUpperCase()
         : extractRowEpic((item as any).extraData ? { ...(item as any).extraData, ...item } : (item as any), undefined, item.booth || "1", item.serialNo || i + 1);
@@ -636,7 +710,7 @@ class DataStore {
         const v: VoterRecord = {
           ...item,
           epic: epicVal,
-          serialNo: item.serialNo || (this.voters.filter((x) => x.candidateId === candidateId && x.booth === item.booth).length + 1),
+          serialNo: item.serialNo || (this.voters.filter((x) => x.candidateId === candidateId && x.booth === item.booth && !isVoterDeleted(x)).length + 1),
           id: "v_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
           candidateId,
           status: item.status || (isSupp ? "In-Favor" : "Pending"),
@@ -654,7 +728,7 @@ class DataStore {
     }
 
     this.touchVersion();
-    return { imported, total: this.voters.filter((v) => v.candidateId === candidateId).length };
+    return { imported, total: this.voters.filter((v) => v.candidateId === candidateId && !isVoterDeleted(v)).length };
   }
 
   updateVoter(id: string, updates: Partial<VoterRecord>) {
@@ -689,11 +763,12 @@ class DataStore {
   }
 
   setVotersList(candidateId: string, newVoters: VoterRecord[]) {
-    const sorted = [...newVoters].sort((a, b) => compareVotersBySerial(a, b));
+    const cleanVoters = newVoters.filter((v) => !isVoterDeleted(v));
+    const sorted = [...cleanVoters].sort((a, b) => compareVotersBySerial(a, b));
     const otherVoters = this.voters.filter((v) => v.candidateId !== candidateId);
     this.voters = [...sorted, ...otherVoters];
     const cand = this.candidates.find((c) => c.id === candidateId);
-    if (cand) cand.voterCount = newVoters.length;
+    if (cand) cand.voterCount = cleanVoters.length;
   }
 
   // Team (Super Admin is strictly excluded from candidate teams)
@@ -727,7 +802,7 @@ class DataStore {
 
   // Stats
   getStats(candidateId: string) {
-    const candVoters = this.voters.filter((v) => v.candidateId === candidateId);
+    const candVoters = this.voters.filter((v) => v.candidateId === candidateId && !isVoterDeleted(v));
     const total = candVoters.length;
     const contacted = candVoters.filter((v) => v.status === "Contacted" || v.status === "In-Favor" || v.status === "Slip-Given").length;
     const pending = candVoters.filter((v) => v.status === "Pending").length;

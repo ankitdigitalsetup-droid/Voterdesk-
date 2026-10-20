@@ -337,7 +337,25 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
     }
 
     // 15. Status (Active/Deleted / स्थिति / विलोपित)
-    if (!mapping.voterStatus && (c.includes("deleted") || c.includes("विलोपित") || c.includes("हटाया") || c.includes("हटाये") || c.includes("active/deleted") || c.includes("voter status") || c === "status" || c === "स्थिति" || c.includes("active") || c.includes("सक्रिय"))) {
+    if (!mapping.voterStatus && (
+      c.includes("deleted") ||
+      c.includes("विलोपित") ||
+      c.includes("हटाया") ||
+      c.includes("हटाये") ||
+      c.includes("active/deleted") ||
+      c.includes("active / deleted") ||
+      c.includes("active_deleted") ||
+      c.includes("activedeleted") ||
+      c.includes("active-deleted") ||
+      c.includes("voter status") ||
+      c.includes("voterstatus") ||
+      c === "status" ||
+      c === "स्थिति" ||
+      c.includes("active") ||
+      c.includes("सक्रिय") ||
+      c.includes("हालत") ||
+      c.includes("दशा")
+    )) {
       if (!c.includes("campaign") && !c.includes("marital") && !c.includes("वैवाहिक")) {
         mapping.voterStatus = col;
       }
@@ -420,6 +438,50 @@ export function detectFieldMapping(columns: string[], sampleRows?: Record<string
 
       if (totalChecked > 0 && matches / totalChecked >= 0.35) {
         mapping.gender = col;
+        break;
+      }
+    }
+  }
+
+  // Heuristic Fallback for voterStatus (Active/Deleted): Inspect sample rows if column headers were ambiguous
+  if (!mapping.voterStatus && sampleRows && sampleRows.length > 0) {
+    const knownStatusTerms = new Set([
+      "active", "deleted", "inactive", "delete",
+      "सक्रिय", "विलोपित", "हटाया", "हटाया गया", "निरस्त",
+      "a", "d"
+    ]);
+
+    for (const col of columns) {
+      if (
+        col === mapping.name ||
+        col === mapping.guardian ||
+        col === mapping.epic ||
+        col === mapping.phone ||
+        col === mapping.address ||
+        col === mapping.boothAddress ||
+        col === mapping.house ||
+        col === mapping.age ||
+        col === mapping.gender ||
+        col === mapping.serialNo ||
+        col === mapping.booth
+      ) {
+        continue;
+      }
+
+      let statusMatches = 0;
+      let totalChecked = 0;
+      for (const row of sampleRows.slice(0, 30)) {
+        const val = String(row[col] || "").trim().toLowerCase();
+        if (val) {
+          totalChecked++;
+          if (knownStatusTerms.has(val) || val.includes("विलोपित") || val.includes("deleted")) {
+            statusMatches++;
+          }
+        }
+      }
+
+      if (totalChecked > 0 && statusMatches / totalChecked >= 0.2) {
+        mapping.voterStatus = col;
         break;
       }
     }

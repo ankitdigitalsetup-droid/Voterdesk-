@@ -268,7 +268,7 @@ export default function Page() {
     }
     const initialMerged = Array.from(mergedMap.values());
     setCandidates(initialMerged);
-    setVoters([...store.getVoters({ candidateId: activeCandidateId })]);
+    setVoters([...store.getVoters({ candidateId: activeCandidateId })].filter((v) => !isVoterDeleted(v)));
     setTeam([...store.getTeam(activeCandidateId)]);
 
     try {
@@ -380,10 +380,11 @@ export default function Page() {
             }
           }
           if (data.hasUpdates && Array.isArray(data.voters)) {
-            setVoters(data.voters);
+            const cleanList = data.voters.filter((v: VoterRecord) => !isVoterDeleted(v));
+            setVoters(cleanList);
             setServerVersion(data.version);
             serverVersionRef.current = data.version;
-            store.setVotersList(activeCandidateId, data.voters);
+            store.setVotersList(activeCandidateId, cleanList);
             if (force) {
               setSyncToast("✅ डेटा तुरंत रिफ्रेश और 15 मोबाइल्स के साथ सिंक हो गया!");
               setTimeout(() => setSyncToast(""), 3500);
@@ -1567,7 +1568,7 @@ function SuperAdminView({
 
       const mapping = detectFieldMapping(parsed.columns, parsed.rows);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
-      const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx) => {
+      const rows: Omit<VoterRecord, "id">[] = parsed.rows.map((r, idx): Omit<VoterRecord, "id"> => {
         const { zpVal, psVal } = extractZpAndPs(r, mapping);
         const boothVal = mapping.booth && r[mapping.booth] ? String(r[mapping.booth]).trim() : "1";
         const serialVal = mapping.serialNo && r[mapping.serialNo] ? Number(String(r[mapping.serialNo]).replace(/\D/g, "")) || (idx + 1) : idx + 1;
@@ -1613,11 +1614,11 @@ function SuperAdminView({
           boothAddress: boothAddrVal,
           epic: epicVal,
           voterStatus: isDel ? "Deleted" : (voterStatusVal || "Active"),
-          status: "Pending",
+          status: "Pending" as VoterRecord["status"],
           worker: "Super Admin",
           extraData,
         };
-      });
+      }).filter((v) => v.name && !isVoterDeleted(v as VoterRecord));
       setSaParsedVoters(rows);
     } catch (err: unknown) {
       alert("Excel फ़ाइल पार्स करने में त्रुटि: " + (err instanceof Error ? err.message : String(err)));
@@ -1823,7 +1824,7 @@ function SuperAdminView({
       const mapping = detectFieldMapping(parsed.columns, parsed.rows);
       const mappedColNames = new Set(Object.values(mapping).filter(Boolean));
       const votersToImport: Omit<VoterRecord, "id">[] = parsed.rows
-        .map((row, idx) => {
+        .map((row, idx): Omit<VoterRecord, "id"> => {
           const { zpVal, psVal } = extractZpAndPs(row, mapping);
           const boothVal = String(row[mapping.booth] || "1").trim();
           const serialVal = row[mapping.serialNo] ? Number(row[mapping.serialNo]) || (idx + 1) : (idx + 1);
@@ -1867,8 +1868,7 @@ function SuperAdminView({
             extraData,
             ...extraData,
           };
-        })
-        .filter((v) => v.name);
+        }).filter((v) => v.name && !isVoterDeleted(v as VoterRecord));
 
       setParsedVoters(votersToImport);
 
@@ -6331,6 +6331,7 @@ ${boothLine}----------------------------------------
   // --------------------------------------------------------------------------
   const filteredVoters = useMemo(() => {
     let list = voters.filter((v) => {
+      if (isVoterDeleted(v)) return false;
       if (user.role === "KARYAKARTA" && user.assignedBooths && user.assignedBooths.length > 0) {
         if (!user.assignedBooths.includes(v.booth)) return false;
       }
@@ -6724,7 +6725,7 @@ ${boothLine}----------------------------------------
 
     onVoterUpdated();
     setShowUpdateModal(false);
-    setSelectedVoter(added);
+    setSelectedVoter(added || null);
     setVoterForm({
       zilaParishad: "",
       panchayatSamiti: "",
@@ -6800,7 +6801,7 @@ ${boothLine}----------------------------------------
           extraData,
           ...extraData,
         };
-      }).filter((v) => v.name);
+      }).filter((v) => v.name && !isVoterDeleted(v as VoterRecord));
 
       if (toImport.length === 0) {
         throw new Error("फ़ाइल में कोई वैध मतदाता रिकॉर्ड नहीं मिले।");
@@ -11681,6 +11682,7 @@ function VotersTable({
 
   const filtered = useMemo(() => {
     let list = voters.filter((v) => {
+      if (isVoterDeleted(v)) return false;
       if (boothFilter !== "ALL" && v.booth !== boothFilter) return false;
       if (statusFilter !== "ALL" && v.status.toLowerCase() !== statusFilter.toLowerCase()) return false;
 
@@ -13164,7 +13166,7 @@ function RealExcelImporter({
         extraData,
         ...extraData,
       };
-    }).filter((v) => v.name && v.epic);
+    }).filter((v) => v.name && v.epic && !isVoterDeleted(v as VoterRecord));
 
     store.importVoters(candidateId, votersToImport);
     authFetch("/api/voters/import", {

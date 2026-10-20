@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { store, compareVotersBySerial } from "@/lib/data-store";
+import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
 import { VoterRecord } from "@/lib/types";
 import { normalizeGender, extractRowEpic } from "@/lib/excel-helper";
 import { d1Query, d1Execute, isD1Configured } from "@/lib/d1";
@@ -11,38 +11,42 @@ function mapDbVoterToRecord(v: any): VoterRecord {
   let zilaParishad = v.zilaParishad || "";
   let panchayatSamiti = v.panchayatSamiti || "";
   let userNotes = v.notes || "";
+  let voterStatusVal = v.voterStatus || "";
+  let extraDataObj = v.extraData || undefined;
 
-  // Structured metadata stored in notes (e.g. { zp, ps, text })
+  // Structured metadata stored in notes (e.g. { zp, ps, text, voterStatus, extraData })
   if (v.notes && typeof v.notes === "string" && v.notes.startsWith("{")) {
     try {
       const parsedNotes = JSON.parse(v.notes);
       if (parsedNotes && typeof parsedNotes === "object") {
         if (parsedNotes.zp !== undefined && parsedNotes.zp !== null) zilaParishad = String(parsedNotes.zp).trim();
         if (parsedNotes.ps !== undefined && parsedNotes.ps !== null) panchayatSamiti = String(parsedNotes.ps).trim();
+        if (parsedNotes.voterStatus !== undefined && parsedNotes.voterStatus !== null) voterStatusVal = String(parsedNotes.voterStatus).trim();
+        if (parsedNotes.extraData !== undefined && parsedNotes.extraData !== null) extraDataObj = parsedNotes.extraData;
         if (parsedNotes.text !== undefined && parsedNotes.text !== null) userNotes = String(parsedNotes.text).trim();
       }
     } catch {}
   }
 
   // Fallbacks to extraData if present
-  if (!zilaParishad && v.extraData && typeof v.extraData === "object") {
+  if (!zilaParishad && extraDataObj && typeof extraDataObj === "object") {
     zilaParishad =
-      v.extraData["जि. प."] ||
-      v.extraData["जि.प."] ||
-      v.extraData["जि. प. Sankhya"] ||
-      v.extraData["जि. प. संख्या"] ||
-      v.extraData["जिला परिषद"] ||
-      v.extraData["Zila Parishad"] ||
+      extraDataObj["जि. प."] ||
+      extraDataObj["जि.प."] ||
+      extraDataObj["जि. प. Sankhya"] ||
+      extraDataObj["जि. प. संख्या"] ||
+      extraDataObj["जिला परिषद"] ||
+      extraDataObj["Zila Parishad"] ||
       "";
   }
-  if (!panchayatSamiti && v.extraData && typeof v.extraData === "object") {
+  if (!panchayatSamiti && extraDataObj && typeof extraDataObj === "object") {
     panchayatSamiti =
-      v.extraData["पं. स."] ||
-      v.extraData["पं.स."] ||
-      v.extraData["पं. स. sankhya"] ||
-      v.extraData["पं. स. संख्या"] ||
-      v.extraData["पंचायत समिति"] ||
-      v.extraData["Panchayat Samiti"] ||
+      extraDataObj["पं. स."] ||
+      extraDataObj["पं.स."] ||
+      extraDataObj["पं. स. sankhya"] ||
+      extraDataObj["पं. स. संख्या"] ||
+      extraDataObj["पंचायत समिति"] ||
+      extraDataObj["Panchayat Samiti"] ||
       "";
   }
 
@@ -69,6 +73,8 @@ function mapDbVoterToRecord(v: any): VoterRecord {
     notes: userNotes,
     slipMessage: v.slipMessage || "",
     candidateId: v.candidateId,
+    voterStatus: voterStatusVal || undefined,
+    extraData: extraDataObj || undefined,
   };
 }
 
@@ -210,14 +216,14 @@ export async function getVoters(params: {
 
       const d1Voters = await d1Query<any>(selectSql, queryParams);
       if (d1Voters.length > 0 || total > 0) {
-        const mapped = d1Voters.map(mapDbVoterToRecord);
+        const mapped = d1Voters.map(mapDbVoterToRecord).filter((v) => !isVoterDeleted(v));
         mapped.sort((a, b) => compareVotersBySerial(a, b));
         return {
           voters: mapped,
-          total,
+          total: total > 0 ? mapped.length : 0,
           page: hasPagination ? page : 1,
           pageSize: hasPagination ? pageSize : mapped.length,
-          totalPages: hasPagination ? Math.ceil(total / pageSize) : 1,
+          totalPages: hasPagination ? Math.ceil(mapped.length / pageSize) : 1,
           source: "database",
         };
       }
@@ -280,14 +286,14 @@ export async function getVoters(params: {
 
     // If database has records or total > 0, return formatted records
     if (dbVoters.length > 0 || total > 0) {
-      const voters = dbVoters.map(mapDbVoterToRecord);
+      const voters = dbVoters.map(mapDbVoterToRecord).filter((v) => !isVoterDeleted(v));
       voters.sort((a, b) => compareVotersBySerial(a, b));
       return {
         voters,
-        total,
+        total: total > 0 ? voters.length : 0,
         page: hasPagination ? page : 1,
         pageSize: hasPagination ? pageSize : voters.length,
-        totalPages: hasPagination ? Math.ceil(total / pageSize) : 1,
+        totalPages: hasPagination ? Math.ceil(voters.length / pageSize) : 1,
         source: "database",
       };
     }
@@ -327,6 +333,10 @@ export async function getVoters(params: {
 export async function createVoter(
   data: Partial<VoterRecord> & { candidateId: string; name: string }
 ): Promise<VoterRecord> {
+  if (isVoterDeleted(data as any)) {
+    throw new Error("विलोपित मतदाता को नहीं जोड़ा जा सकता (Cannot add deleted voter).");
+  }
+
   const boothVal = String(data.booth || "1").trim();
   const epicVal =
     data.epic && String(data.epic).trim() && !String(data.epic).trim().startsWith("—")
@@ -430,7 +440,32 @@ export async function createVoter(
     slipMessage: data.slipMessage || "",
   });
 
-  return createdRecord || storeVoter;
+  const fallbackRecord: VoterRecord = {
+    id: data.id || "v_" + Date.now(),
+    name: data.name,
+    epic: epicVal,
+    guardian: data.guardian || "",
+    age: String(data.age || "35"),
+    gender: data.gender || "",
+    house: data.house || "",
+    booth: boothVal,
+    serialNo: data.serialNo != null ? String(data.serialNo) : "1",
+    zilaParishad: zpVal,
+    panchayatSamiti: psVal,
+    phone: data.phone || "",
+    address: data.address || "",
+    boothAddress: data.boothAddress || "",
+    voted: data.voted || "नहीं",
+    isSupporter: data.isSupporter || "हाँ",
+    isOutside: data.isOutside || "नहीं",
+    status: data.status || (data.isSupporter === "हाँ" ? "In-Favor" : "Pending"),
+    worker: data.worker || "Unassigned",
+    notes: rawNote,
+    candidateId: data.candidateId,
+    slipMessage: data.slipMessage || "",
+  };
+
+  return createdRecord || storeVoter || fallbackRecord;
 }
 
 /**
@@ -636,6 +671,7 @@ export async function batchImportVoters(
     const raw = rawVoters[idx];
     const name = String(raw.name || "").trim();
     if (!name) continue; // Skip entries without a valid name
+    if (isVoterDeleted(raw)) continue; // Strictly drop deleted voters from being imported!
 
     const boothVal = String(raw.booth || "1").trim();
     distinctBooths.add(boothVal);
@@ -652,10 +688,17 @@ export async function batchImportVoters(
     const zpVal = raw.zilaParishad != null ? String(raw.zilaParishad).trim() : "";
     const psVal = raw.panchayatSamiti != null ? String(raw.panchayatSamiti).trim() : "";
     const rawNote = raw.notes != null ? String(raw.notes).trim() : "";
+    const voterStatus = raw.voterStatus != null ? String(raw.voterStatus).trim() : "";
 
     let notesVal: string | null = null;
-    if (zpVal || psVal) {
-      notesVal = JSON.stringify({ zp: zpVal, ps: psVal, text: rawNote });
+    if (zpVal || psVal || voterStatus || raw.extraData) {
+      notesVal = JSON.stringify({
+        zp: zpVal,
+        ps: psVal,
+        voterStatus: voterStatus || undefined,
+        extraData: raw.extraData || undefined,
+        text: rawNote,
+      });
     } else if (rawNote) {
       notesVal = rawNote;
     }
@@ -689,6 +732,8 @@ export async function batchImportVoters(
       panchayatSamiti: psVal,
       notes: rawNote,
       worker: dbRecord.workerName,
+      voterStatus: voterStatus || undefined,
+      extraData: raw.extraData || undefined,
     });
   }
 
