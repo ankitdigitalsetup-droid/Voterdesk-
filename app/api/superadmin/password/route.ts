@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { store } from "@/lib/data-store";
 import { d1Execute, isD1Configured } from "@/lib/d1";
+import { createAuditLog } from "@/lib/db/audit";
 
 export async function POST(req: Request) {
   try {
@@ -64,6 +65,14 @@ export async function POST(req: Request) {
     if (storeAdmin) {
       (storeAdmin as any).password = newPassword;
     }
+
+    await createAuditLog({
+      action: "PASSWORD_CHANGED",
+      entityType: "USER",
+      entityName: "Master Super Admin",
+      details: "Super Admin मास्टर पासवर्ड सफलतापूर्वक बदला गया",
+      performedBy: session?.name || "Super Admin",
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,

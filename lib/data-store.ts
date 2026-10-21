@@ -257,7 +257,19 @@ class DataStore {
 
   private accessPasswords: BoothAccessPassword[] = [...DEFAULT_PASSWORDS];
 
+  private auditLogs: any[] = [];
+
   private deletedCandidateIds: Set<string> = new Set();
+
+  addAuditLog(entry: any) {
+    this.auditLogs.unshift(entry);
+    if (this.auditLogs.length > 200) this.auditLogs.pop();
+    this.touchVersion();
+  }
+
+  getAuditLogs(limit: number = 50): any[] {
+    return this.auditLogs.slice(0, limit);
+  }
 
   getAllAccessPasswords(): BoothAccessPassword[] {
     return this.accessPasswords.filter((p) => !this.deletedCandidateIds.has(p.candidateId));

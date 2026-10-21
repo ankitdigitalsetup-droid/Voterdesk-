@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCandidates, createCandidate, updateCandidate, deleteCandidate, getCandidatePasswords } from "@/lib/db/candidates";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { createAuditLog } from "@/lib/db/audit";
 
 export async function GET(req: Request) {
   try {
@@ -105,6 +106,15 @@ export async function POST(req: Request) {
       status: "ACTIVE",
     });
 
+    await createAuditLog({
+      action: "CAMPAIGN_CREATE",
+      entityType: "CAMPAIGN",
+      entityId: candidate.id,
+      entityName: candidate.name,
+      details: "नया चुनाव अभियान बनाया गया (" + (candidate.electionName || "चुनाव") + ", " + (candidate.wardConstituency || "वार्ड") + ")",
+      performedBy: session?.name || "Super Admin",
+    }).catch(() => {});
+
     return NextResponse.json({ success: true, candidate }, { status: 201 });
   } catch (err: unknown) {
     return NextResponse.json(
@@ -148,6 +158,25 @@ export async function PATCH(req: Request) {
     if (!updated) {
       return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
     }
+
+    let auditAction = "CAMPAIGN_EDIT";
+    let detailText = "अभियान विवरण अपडेट किया गया: " + Object.keys(updates).join(", ");
+    if (updates.status === "PAUSED" || updates.status === "SUSPENDED") {
+      auditAction = "CAMPAIGN_PAUSE";
+      detailText = "अभियान को रोक (PAUSED) दिया गया";
+    } else if (updates.status === "ACTIVE") {
+      auditAction = "CAMPAIGN_LIVE";
+      detailText = "अभियान को सक्रिय (LIVE) किया गया";
+    }
+
+    await createAuditLog({
+      action: auditAction,
+      entityType: "CAMPAIGN",
+      entityId: id,
+      entityName: updated.name,
+      details: detailText,
+      performedBy: session?.name || "Super Admin",
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, candidate: updated });
   } catch (err: unknown) {

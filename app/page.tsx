@@ -41,6 +41,7 @@ import {
   Send,
   FileText,
   Edit,
+  Clock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { store, compareVotersBySerial, isVoterDeleted } from "@/lib/data-store";
@@ -1155,6 +1156,35 @@ function SuperAdminView({
 
   // Upload mode for Super Admin Excel (Replace existing vs Append)
   const [saUploadMode, setSaUploadMode] = useState<"replace" | "append">("replace");
+
+  // Live System Audit Logs & Edits Tracking State
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [loadingAuditLogs, setLoadingAuditLogs] = useState<boolean>(false);
+  const [auditFilter, setAuditFilter] = useState<string>("ALL");
+
+  const fetchAuditLogs = useCallback(async () => {
+    try {
+      setLoadingAuditLogs(true);
+      const token = typeof window !== "undefined" ? localStorage.getItem("voterdesk_token") : null;
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = "Bearer " + token;
+      const res = await fetch("/api/superadmin/audit-logs?limit=80", { headers, credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.logs)) {
+          setAuditLogs(data.logs);
+        }
+      }
+    } catch (err) {
+      console.warn("fetchAuditLogs notice:", err);
+    } finally {
+      setLoadingAuditLogs(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAuditLogs();
+  }, [fetchAuditLogs]);
 
   // Dedicated Edit Candidate Details Modal (Party Name, Symbol Name, Symbol/Poster, etc.)
   const [editCand, setEditCand] = useState<CandidateAccount | null>(null);
@@ -3497,6 +3527,180 @@ function SuperAdminView({
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        {/* Live System Activity & Edits Tracking Panel */}
+        <Panel
+          title="🕒 लाइव सिस्टम ऑडिट एवं एडिट्स ट्रैकिंग (Live System Edits & Activity Log)"
+          sub="सिस्टम में किस समय क्या बदलाव, पॉज़, लाइव या डिलीट किया गया है — इसका पूरा रीयल-टाइम रिकॉर्ड।"
+        >
+          <div style={{ marginBottom: "16px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", marginRight: "4px" }}>फ़िल्टर करें:</span>
+              {[
+                { id: "ALL", label: "सभी (All)" },
+                { id: "LIVE", label: "🟢 लाइव (Live)" },
+                { id: "PAUSE", label: "⏸️ पॉज़ (Pause)" },
+                { id: "DELETE", label: "🗑️ डिलीट (Delete)" },
+                { id: "EDIT", label: "✏️ एडिट्स (Edits)" },
+                { id: "PASSWORD", label: "🔑 पासवर्ड (Password)" },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setAuditFilter(f.id)}
+                  style={{
+                    padding: "5px 12px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    borderRadius: "20px",
+                    cursor: "pointer",
+                    border: auditFilter === f.id ? "1.5px solid #0284c7" : "1px solid #cbd5e1",
+                    background: auditFilter === f.id ? "#e0f2fe" : "#ffffff",
+                    color: auditFilter === f.id ? "#0369a1" : "#475569",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "5px", fontSize: "11.5px", fontWeight: 800, color: "#16a34a", background: "#f0fdf4", padding: "4px 10px", borderRadius: "12px", border: "1px solid #bbf7d0" }}>
+                <span style={{ width: "8px", height: "8px", borderRadius: "50", background: "#22c55e", display: "inline-block" }}></span>
+                Live Monitoring Active
+              </span>
+              <button
+                type="button"
+                className="outline"
+                disabled={loadingAuditLogs}
+                onClick={fetchAuditLogs}
+                style={{ padding: "5px 12px", fontSize: "12px", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "5px", cursor: "pointer" }}
+                title="लॉग्स को तुरंत रीफ्रेश करें"
+              >
+                <RefreshCw size={13} className={loadingAuditLogs ? "spin" : ""} />
+                {loadingAuditLogs ? "लोड हो रहा है..." : "🔄 रीफ्रेश करें"}
+              </button>
+            </div>
+          </div>
+
+          <div className="tableWrap" style={{ maxHeight: "440px", overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
+            <table>
+              <thead style={{ position: "sticky", top: 0, background: "#f8fafc", zIndex: 2 }}>
+                <tr>
+                  <th style={{ width: "180px" }}>समय (Time & Date)</th>
+                  <th style={{ width: "150px" }}>एक्शन (Action)</th>
+                  <th style={{ width: "190px" }}>अभियान / प्रत्याशी</th>
+                  <th>बदलाव का विवरण (Live Edit Details)</th>
+                  <th style={{ width: "150px" }}>यूज़र (By)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const filtered = auditLogs.filter((log) => {
+                    if (auditFilter === "ALL") return true;
+                    if (auditFilter === "LIVE") return String(log.action).includes("LIVE");
+                    if (auditFilter === "PAUSE") return String(log.action).includes("PAUSE");
+                    if (auditFilter === "DELETE") return String(log.action).includes("DELETE");
+                    if (auditFilter === "EDIT") return String(log.action).includes("EDIT");
+                    if (auditFilter === "PASSWORD") return String(log.action).includes("PASSWORD");
+                    return true;
+                  });
+
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={5} style={{ textAlign: "center", padding: "30px", color: "#64748b" }}>
+                          कोई ऑडिट लॉग उपलब्ध नहीं है।
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filtered.map((log) => {
+                    const act = String(log.action || "");
+                    let badgeBg = "#f1f5f9";
+                    let badgeColor = "#475569";
+                    let badgeLabel = act;
+
+                    if (act.includes("LIVE")) {
+                      badgeBg = "#dcfce7";
+                      badgeColor = "#166534";
+                      badgeLabel = "🟢 लाइव (LIVE)";
+                    } else if (act.includes("PAUSE")) {
+                      badgeBg = "#fef3c7";
+                      badgeColor = "#92400e";
+                      badgeLabel = "⏸️ पॉज़ (PAUSE)";
+                    } else if (act.includes("DELETE")) {
+                      badgeBg = "#fee2e2";
+                      badgeColor = "#991b1b";
+                      badgeLabel = "🗑️ डिलीट (DELETE)";
+                    } else if (act.includes("EDIT")) {
+                      badgeBg = "#ede9fe";
+                      badgeColor = "#5b21b6";
+                      badgeLabel = "✏️ एडिट (EDIT)";
+                    } else if (act.includes("CREATE")) {
+                      badgeBg = "#e0f2fe";
+                      badgeColor = "#0369a1";
+                      badgeLabel = "✨ नया (CREATE)";
+                    } else if (act.includes("PASSWORD")) {
+                      badgeBg = "#fef9c3";
+                      badgeColor = "#854d0e";
+                      badgeLabel = "🔑 पासवर्ड (PASS)";
+                    } else if (act.includes("FIX") || act.includes("SYNC")) {
+                      badgeBg = "#f0fdf4";
+                      badgeColor = "#15803d";
+                      badgeLabel = "⚙️ सिंक/फिक्स";
+                    }
+
+                    let timeFormatted = log.createdAt || "—";
+                    try {
+                      const d = new Date(log.createdAt);
+                      if (!isNaN(d.getTime())) {
+                        timeFormatted = d.toLocaleString("hi-IN", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                          hour12: true,
+                        });
+                      }
+                    } catch {}
+
+                    return (
+                      <tr key={log.id}>
+                        <td style={{ whiteSpace: "nowrap", fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                            <Clock size={13} color="#64748b" />
+                            <span>{timeFormatted}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ background: badgeBg, color: badgeColor, padding: "3px 8px", borderRadius: "6px", fontWeight: 800, fontSize: "11.5px", display: "inline-block" }}>
+                            {badgeLabel}
+                          </span>
+                        </td>
+                        <td>
+                          <b style={{ color: "#0f172a" }}>{log.entityName || "—"}</b>
+                          {log.entityId ? <small style={{ display: "block", color: "#64748b", fontSize: "10.5px" }}>ID: {log.entityId}</small> : null}
+                        </td>
+                        <td style={{ fontSize: "12.5px", color: "#334155" }}>
+                          {log.details}
+                        </td>
+                        <td>
+                          <span style={{ fontSize: "11px", fontWeight: 700, background: "#f1f5f9", padding: "3px 8px", borderRadius: "6px", color: "#475569" }}>
+                            👤 {log.performedBy || "Super Admin"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
