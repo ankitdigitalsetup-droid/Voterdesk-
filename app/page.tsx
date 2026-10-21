@@ -308,6 +308,7 @@ export default function Page() {
   }, [activeCandidateId]);
 
   const handleLogout = useCallback(async () => {
+    const isSuper = user?.role === "SUPER_ADMIN";
     try {
       await fetch("/api/auth", { method: "DELETE", credentials: "include" });
     } catch {}
@@ -315,11 +316,16 @@ export default function Page() {
       try {
         localStorage.removeItem("voterdesk_token");
         localStorage.removeItem("voterdesk_user");
+        localStorage.removeItem("voterdesk_vault_session");
       } catch {}
+      if (isSuper) {
+        window.location.href = "/vault";
+        return;
+      }
     }
     setUser(null);
     setPage("boothmanager");
-  }, []);
+  }, [user?.role]);
 
   // Synchronize with server across all 15 mobile devices in real time
   const syncWithServer = useCallback(
@@ -788,6 +794,19 @@ function Login({
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [logoTaps, setLogoTaps] = useState(0);
+
+  const handleLogoTap = () => {
+    const next = logoTaps + 1;
+    if (next >= 5) {
+      if (typeof window !== "undefined") {
+        window.location.href = "/vault";
+      }
+    } else {
+      setLogoTaps(next);
+      setTimeout(() => setLogoTaps(0), 3000);
+    }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -801,6 +820,12 @@ function Login({
     }
     if (!password.trim()) {
       setError(lang === "hi" ? "कृपया पासवर्ड दर्ज करें" : "Please enter password");
+      return;
+    }
+
+    const cleanP = phone.replace(/\D/g, "");
+    if (cleanP === "9664074969" || cleanP === "9999999999") {
+      setError(lang === "hi" ? "अमान्य क्रेडेंशियल या अनधिकृत एक्सेस।" : "Invalid credentials or unauthorized access.");
       return;
     }
 
@@ -833,6 +858,10 @@ function Login({
       // Fallback to client-side store
       const localUser = store.authenticate(phone, password, name);
       if (localUser) {
+        if (localUser.role === "SUPER_ADMIN") {
+          setError(lang === "hi" ? "अमान्य क्रेडेंशियल या अनधिकृत एक्सेस।" : "Invalid credentials or unauthorized access.");
+          return;
+        }
         onLogin({
           id: localUser.id,
           name: localUser.name,
@@ -891,7 +920,7 @@ function Login({
         }}
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-          <div className="loginBrand" style={{ position: "static", margin: 0 }}>
+          <div className="loginBrand" onClick={handleLogoTap} style={{ position: "static", margin: 0, cursor: "pointer", userSelect: "none" }} title="VoterDesk">
             <Logo />
             <div>
               <b>{t.loginBrandTitle}</b>

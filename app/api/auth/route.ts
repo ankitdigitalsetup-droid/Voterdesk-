@@ -6,6 +6,7 @@ import { createSessionToken, setSessionCookie, clearSessionCookie } from "@/lib/
 import { ensureDefaultUsers } from "@/lib/auth/seed";
 import { checkRateLimit, getClientIp, rateLimitResponse } from "@/lib/rate-limit";
 import { d1Query, isD1Configured } from "@/lib/d1";
+import { createAuditLog } from "@/lib/db/audit";
 
 export async function POST(req: Request) {
   try {
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
     }
 
     const body = await req.json();
-    const { name, phone, password } = body;
+    const { name, phone, password, isVault, vaultPasskey } = body;
 
     // Requirement: Name, Mobile Number, and Password are ALL required
     if (!name || !String(name).trim()) {
