@@ -19,7 +19,7 @@ export async function ensureDefaultUsers() {
     });
 
     if (!admin) {
-      const initialPassword = process.env.SUPER_ADMIN_PASSWORD || "96640749699664074969";
+      const initialPassword = process.env.SUPER_ADMIN_PASSWORD || "VoterDesk@Admin#2026";
       const superAdminPassword = await hashPassword(initialPassword);
 
       await prisma.user.create({

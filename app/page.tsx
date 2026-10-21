@@ -339,7 +339,7 @@ export default function Page() {
         );
 
         // If candidate campaign is paused or deleted, immediately alert and logout non-Super Admin users
-        if (user && user.role !== "SUPER_ADMIN" && (res.status === 403 || res.status === 404)) {
+        if (user && user.role !== "SUPER_ADMIN" && res.status === 403) {
           const errData = await res.json().catch(() => ({}));
           const msg =
             errData.error ||

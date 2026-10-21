@@ -287,7 +287,7 @@ export const DEFAULT_USERS: (UserAccount & { password: string })[] = [
     id: "usr_super_1",
     name: "Master Super Admin",
     phone: "9664074969",
-    password: "96640749699664074969",
+    password: "VoterDesk@Admin#2026",
     role: "SUPER_ADMIN",
   },
   {

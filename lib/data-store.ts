@@ -296,7 +296,7 @@ class DataStore {
           return undefined; // Block deleted campaign password
         }
         const cand = this.candidates.find((c) => c.id === matchedPwd.candidateId && !this.deletedCandidateIds.has(c.id));
-        if (!cand || cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED") {
+        if (cand && (cand.status === "SUSPENDED" || (cand.status as string) === "PAUSED")) {
           return undefined; // Block if campaign does not exist or is paused
         }
         if (matchedPwd.role === "CANDIDATE_ADMIN") {

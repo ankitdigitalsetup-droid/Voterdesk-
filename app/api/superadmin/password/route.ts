@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { getSessionFromRequest } from "@/lib/auth/session";
 import { store } from "@/lib/data-store";
+import { d1Execute, isD1Configured } from "@/lib/d1";
 
 export async function POST(req: Request) {
   try {
@@ -45,6 +46,18 @@ export async function POST(req: Request) {
       where: { id: adminUser.id },
       data: { password: newHashed },
     });
+
+    // Also update Cloudflare D1 if configured
+    if (isD1Configured()) {
+      try {
+        await d1Execute(
+          `UPDATE "User" SET password = ? WHERE role = 'SUPER_ADMIN' OR phone = '9664074969'`,
+          [newHashed]
+        );
+      } catch (d1Err) {
+        console.warn("Cloudflare D1 Super Admin password update notice:", d1Err);
+      }
+    }
 
     // Also update in-memory store if present
     const storeAdmin = store.getUser("usr_super_1");

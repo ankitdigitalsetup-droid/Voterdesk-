@@ -18,72 +18,9 @@ export async function GET(req: Request) {
     const booth = searchParams.get("booth") || "";
     const force = searchParams.get("force") === "true";
 
-    // Check candidate campaign status (Pause / Live / Deleted)
-    if (candidateId && candidateId !== "null" && candidateId !== "undefined") {
-      let dbChecked = false;
-      let candidateFound: { id: string; status: string } | null = null;
-
-      try {
-        const dbCandidate = await prisma.candidate.findUnique({
-          where: { id: candidateId },
-          select: { id: true, status: true },
-        });
-        dbChecked = true;
-        if (dbCandidate) {
-          candidateFound = dbCandidate;
-        }
-      } catch (cErr) {
-        // Fallback to store
-      }
-
-      if (!candidateFound) {
-        const storeCand = store.getCandidate(candidateId);
-        if (storeCand) {
-          candidateFound = { id: storeCand.id, status: storeCand.status };
-        }
-      }
-
-      // If DB checked and confirmed not found, and store also doesn't have it -> campaign was DELETED
-      if (dbChecked && !candidateFound) {
-        return NextResponse.json(
-          {
-            success: false,
-            deleted: true,
-            campaignStatus: "DELETED",
-            error: "यह चुनाव अभियान हटा दिया गया है। आप लॉगआउट किए जा रहे हैं।",
-          },
-          { status: 404 }
-        );
-      }
-
-      // If campaign is PAUSED / SUSPENDED
-      if (candidateFound) {
-        const upperStatus = candidateFound.status?.toUpperCase();
-        if (upperStatus === "SUSPENDED" || upperStatus === "PAUSED") {
-          return NextResponse.json(
-            {
-              success: false,
-              paused: true,
-              campaignStatus: "PAUSED",
-              error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। आप लॉगआउट किए जा रहे हैं।",
-            },
-            { status: 403 }
-          );
-        }
-      }
-    }
-
-    // Track active worker heartbeat
-    if (worker) {
-      store.recordHeartbeat(worker, booth);
-    }
-
-    const serverVersion = store.getVersion();
-    const activeWorkers = store.getLiveWorkerCount(candidateId);
-
-    // Retrieve candidate summary so every worker phone stays synchronized with latest slipMessage, symbol, party
+    // Retrieve candidate summary using robust multi-database lookup (Cloudflare D1 -> Neon -> Store)
     let candidateSummary: any = null;
-    if (candidateId) {
+    if (candidateId && candidateId !== "null" && candidateId !== "undefined") {
       try {
         const cand = await getCandidateById(candidateId);
         if (cand) {
@@ -94,11 +31,35 @@ export async function GET(req: Request) {
             symbolName: cand.symbolName,
             posterUrl: cand.posterUrl,
             slipMessage: cand.slipMessage || (cand.name ? `Vote for ${cand.name}` : undefined),
-            status: cand.status,
+            status: cand.status || "ACTIVE",
           };
+
+          // Only block if Super Admin explicitly and intentionally paused this campaign
+          const upperStatus = String(cand.status || "").toUpperCase();
+          if (upperStatus === "SUSPENDED" || upperStatus === "PAUSED") {
+            return NextResponse.json(
+              {
+                success: false,
+                paused: true,
+                campaignStatus: "PAUSED",
+                error: "यह चुनाव अभियान अभी रोक (PAUSED) दिया गया है। आप लॉगआउट किए जा रहे हैं।",
+              },
+              { status: 403 }
+            );
+          }
         }
-      } catch {}
+      } catch (cErr) {
+        // Fallback: On temporary DB hiccups, NEVER pause or delete! Always let sync continue.
+      }
     }
+
+    // Track active worker heartbeat
+    if (worker) {
+      store.recordHeartbeat(worker, booth);
+    }
+
+    const serverVersion = store.getVersion();
+    const activeWorkers = store.getLiveWorkerCount(candidateId);
 
     // If client is already up-to-date and not forced, return lightweight response with latest candidate
     if (!force && clientVersion && Number(clientVersion) >= serverVersion) {
